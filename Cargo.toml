@@ -1,0 +1,17 @@
+[package]
+name = "async-php"
+version = "0.3.0"
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ext-php-rs = { path = "../" }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+thiserror = "1"
+futures = "0.3"
+httparse = "1.8"
