@@ -10,8 +10,8 @@ mod channel;
 mod util;
 
 use future::RustFuture;
-use net::{AsyncTcpListener, AsyncTcpStream};
-use fs::AsyncFile;
+use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
+use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{HttpParser, HttpReq};
 use channel::AsyncChannel;
 
@@ -42,8 +42,6 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
         if let Some(rust_fut) = <&mut RustFuture as ext_php_rs::convert::FromZvalMut>::from_zval_mut(&mut current_val) {
             if let Some(fut) = rust_fut.take_inner() {
                 let result = fut.await;
-                // Check if exception was thrown during await
-                
                 let args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = vec![&result];
                 current_val = fiber
                     .try_call_method("resume", args)
@@ -79,7 +77,9 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<RustFuture>()
         .class::<AsyncTcpListener>()
         .class::<AsyncTcpStream>()
-        .class::<AsyncFile>()
+        .class::<AsyncUdpSocket>()
+        .class::<AsyncFilesystem>()
+        .class::<AsyncFileHandle>()
         .class::<HttpParser>()
         .class::<HttpReq>()
         .class::<AsyncChannel>()

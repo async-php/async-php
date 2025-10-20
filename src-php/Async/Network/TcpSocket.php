@@ -3,7 +3,6 @@
 namespace Async\Network;
 
 use AsyncTcpStream;
-use RustFuture;
 use Fiber;
 
 class TcpSocket
@@ -15,23 +14,37 @@ class TcpSocket
         $this->stream = $stream;
     }
 
-    public function read(int $length = 1024): string
+    public static function connect(string $host, int $port): ?self
     {
-        $future = $this->stream->read($length);
-        $result = Fiber::suspend($future);
-        return $result === false ? '' : $result;
+        $addr = "$host:$port";
+        $stream = Fiber::suspend(AsyncTcpStream::connect($addr));
+        
+        if (!$stream) return null;
+        return new self($stream);
     }
 
-    public function write(string $data): int
+    public function read(int $length = 1024): string|false
     {
-        $future = $this->stream->write($data);
-        $result = Fiber::suspend($future);
-        return $result === false ? 0 : $result;
+        return Fiber::suspend($this->stream->read($length));
     }
 
-    public function close(): void
+    public function write(string $data): int|false
     {
-        $future = $this->stream->close();
-        Fiber::suspend($future);
+        return Fiber::suspend($this->stream->write($data));
+    }
+
+    public function close(): bool
+    {
+        return Fiber::suspend($this->stream->close());
+    }
+
+    public function getPeerName(): string
+    {
+        return $this->stream->peerAddr();
+    }
+
+    public function setNoDelay(bool $enable): bool
+    {
+        return $this->stream->setNodelay($enable);
     }
 }
