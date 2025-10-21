@@ -5,8 +5,8 @@ use crate::future::RustFuture;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt, SeekFrom};
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /// Stateless filesystem operations (replacing file_*, is_*, etc.)
 #[php_class]
@@ -144,7 +144,8 @@ impl AsyncFilesystem {
 /// Stateful file handle (replacing fopen, fread, fwrite)
 #[php_class]
 pub struct AsyncFileHandle {
-    inner: Arc<Mutex<fs::File>>,
+    // Rc<RefCell> allows single-threaded shared mutability without locking overhead.
+    inner: Rc<RefCell<fs::File>>,
 }
 
 #[php_impl]
@@ -153,23 +154,21 @@ impl AsyncFileHandle {
         let future = async move {
             let mut opts = fs::OpenOptions::new();
             
-            // Basic mode simulation
             match mode.as_str() {
                 "r" | "rb" => { opts.read(true); },
                 "w" | "wb" => { opts.write(true).create(true).truncate(true); },
                 "a" | "ab" => { opts.append(true).create(true); },
                 "r+" | "r+b" => { opts.read(true).write(true); },
                 "w+" | "w+b" => { opts.read(true).write(true).create(true).truncate(true); },
-                // Defaults/Fallbacks
                 _ => { opts.read(true); } 
             };
 
             match opts.open(path).await {
                 Ok(file) => {
-                    let obj = AsyncFileHandle { inner: Arc::new(Mutex::new(file)) };
+                    let obj = AsyncFileHandle { inner: Rc::new(RefCell::new(file)) };
                     ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                 }
-                Err(_) => Zval::new(), // Return false/null on fail
+                Err(_) => Zval::new(),
             }
         };
         RustFuture::new(future)
@@ -179,25 +178,34 @@ impl AsyncFileHandle {
         let file = self.inner.clone();
         let future = async move {
             let mut buf = vec![0u8; length];
-            let mut lock = file.lock().await;
-            match lock.read(&mut buf).await {
-                Ok(0) => {
-                     let mut z = Zval::new();
-                     z.set_string("", false).unwrap();
-                     z
-                },
-                Ok(n) => {
-                    buf.truncate(n);
-                    let s = String::from_utf8_lossy(&buf).to_string();
-                    let mut z = Zval::new();
-                    z.set_string(&s, false).unwrap();
-                    z
+            
+            // Try to borrow mutably. If strictly used in one Fiber at a time, this works.
+            // If user calls read() in two fibers on the same handle concurrently, this returns error immediately.
+            if let Ok(mut lock) = file.try_borrow_mut() {
+                match lock.read(&mut buf).await {
+                    Ok(0) => {
+                         let mut z = Zval::new();
+                         z.set_string("", false).unwrap();
+                         z
+                    },
+                    Ok(n) => {
+                        buf.truncate(n);
+                        let s = String::from_utf8_lossy(&buf).to_string();
+                        let mut z = Zval::new();
+                        z.set_string(&s, false).unwrap();
+                        z
+                    }
+                    Err(_) => {
+                         let mut z = Zval::new();
+                         z.set_bool(false);
+                         z
+                    }
                 }
-                Err(_) => {
-                     let mut z = Zval::new();
-                     z.set_bool(false);
-                     z
-                }
+            } else {
+                // Resource Busy
+                let mut z = Zval::new();
+                z.set_bool(false); 
+                z
             }
         };
         RustFuture::new(future)
@@ -206,18 +214,23 @@ impl AsyncFileHandle {
     pub fn write(&self, data: String) -> RustFuture {
         let file = self.inner.clone();
         let future = async move {
-            let mut lock = file.lock().await;
-            match lock.write_all(data.as_bytes()).await {
-                Ok(_) => {
-                    let mut z = Zval::new();
-                    z.set_long(data.len() as i64);
-                    z
+            if let Ok(mut lock) = file.try_borrow_mut() {
+                match lock.write_all(data.as_bytes()).await {
+                    Ok(_) => {
+                        let mut z = Zval::new();
+                        z.set_long(data.len() as i64);
+                        z
+                    }
+                    Err(_) => {
+                         let mut z = Zval::new();
+                         z.set_bool(false);
+                         z
+                    }
                 }
-                Err(_) => {
-                     let mut z = Zval::new();
-                     z.set_bool(false);
-                     z
-                }
+            } else {
+                let mut z = Zval::new();
+                z.set_bool(false); 
+                z
             }
         };
         RustFuture::new(future)
@@ -226,11 +239,14 @@ impl AsyncFileHandle {
     pub fn seek(&self, pos: i64) -> RustFuture {
         let file = self.inner.clone();
         let future = async move {
-            let mut lock = file.lock().await;
             let mut z = Zval::new();
-            match lock.seek(SeekFrom::Start(pos as u64)).await {
-                Ok(new_pos) => z.set_long(new_pos as i64),
-                Err(_) => z.set_bool(false),
+            if let Ok(mut lock) = file.try_borrow_mut() {
+                match lock.seek(SeekFrom::Start(pos as u64)).await {
+                    Ok(new_pos) => z.set_long(new_pos as i64),
+                    Err(_) => z.set_bool(false),
+                }
+            } else {
+                z.set_bool(false);
             }
             z
         };
@@ -240,10 +256,13 @@ impl AsyncFileHandle {
     pub fn close(&self) -> RustFuture {
         let file = self.inner.clone();
         let future = async move {
-             let mut lock = file.lock().await;
-             let _ = lock.shutdown().await; // Ensure flushed
              let mut z = Zval::new();
-             z.set_bool(true);
+             if let Ok(mut lock) = file.try_borrow_mut() {
+                 let _ = lock.shutdown().await;
+                 z.set_bool(true);
+             } else {
+                 z.set_bool(false);
+             }
              z
         };
         RustFuture::new(future)
