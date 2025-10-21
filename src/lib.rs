@@ -7,6 +7,7 @@ mod net;
 mod fs;
 mod http;
 mod channel;
+mod db;
 mod util;
 
 use future::RustFuture;
@@ -14,6 +15,7 @@ use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{HttpParser, HttpReq};
 use channel::AsyncChannel;
+use db::{AsyncMySql, AsyncPgSql};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -83,5 +85,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<HttpParser>()
         .class::<HttpReq>()
         .class::<AsyncChannel>()
+        .class::<AsyncMySql>()
+        .class::<AsyncPgSql>()
         .function(wrap_function!(run))
 }
