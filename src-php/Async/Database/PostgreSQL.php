@@ -3,6 +3,7 @@
 namespace Async\Database;
 
 use AsyncPgSql;
+use AsyncPgSqlTransaction;
 use Fiber;
 
 class PostgreSQL implements DriverInterface
@@ -16,20 +17,55 @@ class PostgreSQL implements DriverInterface
 
     public static function connect(string $dsn, int $maxConnections = 10): ?static
     {
-        // DSN Example: postgres://user:pass@127.0.0.1:5432/db
         $driver = Fiber::suspend(AsyncPgSql::connect($dsn, $maxConnections));
         if (!$driver) return null;
-        
         return new static($driver);
     }
 
-    public function query(string $sql): array|false
+    public function query(string $sql, ?array $params = null): array|false
     {
-        return Fiber::suspend($this->driver->query($sql));
+        return Fiber::suspend($this->driver->query($sql, $params));
     }
 
-    public function execute(string $sql): int|false
+    public function execute(string $sql, ?array $params = null): int|false
     {
-        return Fiber::suspend($this->driver->execute($sql));
+        return Fiber::suspend($this->driver->execute($sql, $params));
+    }
+
+    public function beginTransaction(): TransactionInterface|false
+    {
+        $tx = Fiber::suspend($this->driver->beginTransaction());
+        if (!$tx) return false;
+        return new PostgreSQLTransaction($tx);
+    }
+}
+
+class PostgreSQLTransaction implements TransactionInterface
+{
+    private AsyncPgSqlTransaction $tx;
+
+    public function __construct(AsyncPgSqlTransaction $tx)
+    {
+        $this->tx = $tx;
+    }
+
+    public function query(string $sql, ?array $params = null): array|false
+    {
+        return Fiber::suspend($this->tx->query($sql, $params));
+    }
+
+    public function execute(string $sql, ?array $params = null): int|false
+    {
+        return Fiber::suspend($this->tx->execute($sql, $params));
+    }
+
+    public function commit(): bool
+    {
+        return Fiber::suspend($this->tx->commit());
+    }
+
+    public function rollback(): bool
+    {
+        return Fiber::suspend($this->tx->rollback());
     }
 }

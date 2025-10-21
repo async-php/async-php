@@ -4,28 +4,26 @@ namespace Async\Database;
 
 interface DriverInterface
 {
-    /**
-     * Connect to database.
-     *
-     * @param string $dsn
-     * @param int $maxConnections
-     * @return static
-     */
     public static function connect(string $dsn, int $maxConnections = 10): ?static;
 
     /**
-     * Execute a query and return result set (array of arrays).
-     *
      * @param string $sql
+     * @param array|null $params
      * @return array|false
      */
-    public function query(string $sql): array|false;
+    public function query(string $sql, ?array $params = null): array|false;
 
     /**
-     * Execute a statement and return affected rows.
-     *
      * @param string $sql
+     * @param array|null $params
      * @return int|false
      */
-    public function execute(string $sql): int|false;
+    public function execute(string $sql, ?array $params = null): int|false;
+
+    /**
+     * Begin a transaction. Returns a Transaction object.
+     *
+     * @return TransactionInterface|false
+     */
+    public function beginTransaction(): TransactionInterface|false;
 }

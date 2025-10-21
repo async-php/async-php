@@ -15,7 +15,7 @@ use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{HttpParser, HttpReq};
 use channel::AsyncChannel;
-use db::{AsyncMySql, AsyncPgSql};
+use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -86,6 +86,8 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<HttpReq>()
         .class::<AsyncChannel>()
         .class::<AsyncMySql>()
+        .class::<AsyncMySqlTransaction>()
         .class::<AsyncPgSql>()
+        .class::<AsyncPgSqlTransaction>()
         .function(wrap_function!(run))
 }
