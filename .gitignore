@@ -1,7 +1,7 @@
 /target
-/vendor
-*.so
-*.dylib
-*.dll
-.DS_Store
-*.log
+Cargo.lock
+/.vscode
+/.idea
+/tmp
+/.direnv
+expand.rs
