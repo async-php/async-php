@@ -34,11 +34,11 @@ impl RustFuture {
 
 #[php_impl]
 impl RustFuture {
-    /// Creates a timer future.
-    pub fn sleep(ms: i64) -> Self {
+    /// Simulates fetching data via FFI.
+    pub fn ffi_fetch_data(id: i64) -> Self {
         let future = async move {
-            tokio::time::sleep(std::time::Duration::from_millis(ms as u64)).await;
-            Zval::new() // void return
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            format!("Fetched data for {}", id)
         };
         Self::new(future)
     }

@@ -30,7 +30,7 @@ $main = new Fiber(function () {
     echo "[Main] Child spawned. Sleeping 200ms...\n";
     
     // Main continues doing something else concurrently
-    for ($i = 0; $i < 3; $i++) {
+    for ($i = 0; $i < 4; $i++) {
         Fiber::suspend(RustFuture::nativeSleep(200));
         echo "[Main] Tick $i (200ms interval)\n";
     }

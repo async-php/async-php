@@ -59,7 +59,7 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
 }
 
 #[php_function]
-pub fn run(fiber: &mut Zval) -> PhpResult<()> {
+pub fn run_on_tokio(fiber: &mut Zval) -> PhpResult<()> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -89,5 +89,5 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncMySqlTransaction>()
         .class::<AsyncPgSql>()
         .class::<AsyncPgSqlTransaction>()
-        .function(wrap_function!(run))
+        .function(wrap_function!(run_on_tokio))
 }
