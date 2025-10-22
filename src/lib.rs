@@ -8,6 +8,7 @@ mod fs;
 mod http;
 mod channel;
 mod db;
+mod time;
 mod util;
 
 use future::RustFuture;
@@ -16,6 +17,7 @@ use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{HttpParser, HttpReq};
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
+use time::AsyncTime;
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -89,5 +91,6 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncMySqlTransaction>()
         .class::<AsyncPgSql>()
         .class::<AsyncPgSqlTransaction>()
+        .class::<AsyncTime>()
         .function(wrap_function!(run_on_tokio))
 }

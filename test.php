@@ -17,7 +17,7 @@ $main = new Fiber(function () {
     RustFuture::spawn(function () {
         echo "  [Child] Started. Sleeping 500ms...\n";
         // Child does a long sleep
-        Fiber::suspend(RustFuture::nativeSleep(500));
+        Fiber::suspend(AsyncTime::sleep(500));
         echo "  [Child] Woke up!\n";
         
         echo "  [Child] Fetching FFI...\n";
@@ -31,7 +31,7 @@ $main = new Fiber(function () {
     
     // Main continues doing something else concurrently
     for ($i = 0; $i < 4; $i++) {
-        Fiber::suspend(RustFuture::nativeSleep(200));
+        Fiber::suspend(AsyncTime::sleep(200));
         echo "[Main] Tick $i (200ms interval)\n";
     }
     
