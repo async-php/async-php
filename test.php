@@ -1,9 +1,9 @@
 <?php
 
-// run_on_tokio acts as the entry point for our async runtime.
+// 'run' acts as the entry point for our async runtime.
 // It takes a Fiber, runs it, and allows it to spawn concurrent fibers.
 
-if (!function_exists('run_on_tokio')) {
+if (!function_exists('run')) {
     die("Extension 'async-php' not loaded.\n");
 }
 
@@ -11,22 +11,39 @@ if (!function_exists('run_on_tokio')) {
 $main = new Fiber(function () {
     echo "[Main] Started.\n";
 
-    // Spawn a child fiber
+    // Spawn a child fiber using go()
     echo "[Main] Spawning child...\n";
     
-    RustFuture::spawn(function () {
+    go(function () {
         echo "  [Child] Started. Sleeping 500ms...\n";
         // Child does a long sleep
         Fiber::suspend(AsyncTime::sleep(500));
         echo "  [Child] Woke up!\n";
         
-        echo "  [Child] Fetching FFI...\n";
-        $res = Fiber::suspend(RustFuture::ffiFetchData(99));
-        echo "  [Child] FFI Result: $res\n";
-        
         echo "  [Child] Done.\n";
     });
     
+    // Demonstrate AsyncTime::after
+    go(function() {
+        echo "    [After] Started. Will fire after 300ms...\n";
+        Fiber::suspend(AsyncTime::after(300));
+        echo "    [After] Fired after 300ms!\n";
+    });
+
+    // Demonstrate AsyncTicker (Commented out due to issue)
+    /*
+    spawn_task(function() {
+        echo "      [Ticker] Started. Will tick every 100ms for 3 times...\n";
+        $ticker = AsyncTime::createTicker(100);
+        for ($i = 0; $i < 3; $i++) {
+            Fiber::suspend($ticker->next_tick());
+            echo "      [Ticker] Tick " . ($i + 1) . "\n";
+        }
+        $ticker->stop();
+        echo "      [Ticker] Stopped after 3 ticks.\n";
+    });
+    */
+
     echo "[Main] Child spawned. Sleeping 200ms...\n";
     
     // Main continues doing something else concurrently
@@ -41,7 +58,7 @@ $main = new Fiber(function () {
 echo "Starting Event Loop...\n";
 $start = microtime(true);
 
-run_on_tokio($main);
+run($main);
 
 $duration = microtime(true) - $start;
 echo "Loop Finished in " . round($duration, 2) . "s\n";

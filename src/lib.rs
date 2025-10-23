@@ -17,7 +17,7 @@ use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{HttpParser, HttpReq};
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
-use time::AsyncTime;
+use time::{AsyncTime, AsyncTicker};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -60,8 +60,36 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     Ok(())
 }
 
+use ext_php_rs::zend::ClassEntry;
+use ext_php_rs::convert::IntoZval;
+
 #[php_function]
-pub fn run_on_tokio(fiber: &mut Zval) -> PhpResult<()> {
+pub fn go(callable: &Zval) -> PhpResult<Zval> {
+    let fiber_class = ClassEntry::try_find("Fiber")
+        .ok_or_else(|| PhpException::default("Fiber class not found".into()))?;
+    
+    let fiber_obj = fiber_class.new();
+    let fiber_zval = fiber_obj.into_zval(false).map_err(|e| {
+        PhpException::default(format!("Failed to convert fiber object: {:?}", e))
+    })?;
+
+    fiber_zval.try_call_method("__construct", vec![callable]).map_err(|e| {
+        PhpException::default(format!("Failed to construct Fiber: {:?}", e))
+    })?;
+    
+    let fiber_clone = fiber_zval.shallow_clone();
+    
+    tokio::task::spawn_local(async move {
+            if let Err(e) = crate::drive_fiber(fiber_clone).await {
+                eprintln!("Spawned fiber failed: {:?}", e);
+            }
+    });
+    
+    Ok(fiber_zval)
+}
+
+#[php_function]
+pub fn run(fiber: &mut Zval) -> PhpResult<()> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -92,5 +120,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPgSql>()
         .class::<AsyncPgSqlTransaction>()
         .class::<AsyncTime>()
-        .function(wrap_function!(run_on_tokio))
+        .class::<AsyncTicker>()
+        .function(wrap_function!(run))
+        .function(wrap_function!(go))
 }
