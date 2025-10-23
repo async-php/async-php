@@ -2,7 +2,7 @@
 
 namespace Async;
 
-use RustFuture;
+use AsyncTime;
 
 class Kernel
 {
@@ -18,11 +18,11 @@ class Kernel
 
     public static function sleep(int $ms): void
     {
-        \Fiber::suspend(RustFuture::sleep($ms));
+        \Fiber::suspend(AsyncTime::sleep($ms));
     }
 
     public static function spawn(callable $task): void
     {
-        RustFuture::spawn($task);
+        \go($task);
     }
 }

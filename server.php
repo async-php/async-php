@@ -9,9 +9,9 @@ use Async\Network\TcpSocket;
 // Ensure extension is loaded
 if (!extension_loaded('async-php')) {
     // Try to load dynamically if possible (Mac/Linux specifics)
-    $extPath = __DIR__ . '/target/release/libasync_php.dylib';
+    $extPath = __DIR__ . '/target/debug/libasync_php.dylib';
     if (!file_exists($extPath)) {
-        $extPath = __DIR__ . '/target/release/libasync_php.so';
+        $extPath = __DIR__ . '/target/debug/libasync_php.so';
     }
     if (file_exists($extPath)) {
         dl($extPath);

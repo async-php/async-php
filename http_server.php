@@ -8,7 +8,7 @@ use Async\Channel;
 
 // Load extension
 if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/target/release/libasync_php.dylib';
+    $extPath = __DIR__ . '/target/debug/libasync_php.dylib';
     if (file_exists($extPath)) dl($extPath);
 }
 
