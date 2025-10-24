@@ -10,14 +10,16 @@ mod channel;
 mod db;
 mod time;
 mod util;
+mod quic; // Add quic module
 
 use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
 use fs::{AsyncFilesystem, AsyncFileHandle};
-use http::{HttpParser, HttpReq};
+use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse}; // Updated http imports
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
-use time::{AsyncTime, AsyncTicker};
+use time::AsyncTime;
+use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -112,15 +114,17 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncUdpSocket>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
-        .class::<HttpParser>()
-        .class::<HttpReq>()
+        .class::<AsyncHttpServer>()
+        .class::<AsyncHttpRequest>()
+        .class::<AsyncHttpResponse>()
+        .class::<AsyncQuicServer>()
+        .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()
         .class::<AsyncMySql>()
         .class::<AsyncMySqlTransaction>()
         .class::<AsyncPgSql>()
         .class::<AsyncPgSqlTransaction>()
         .class::<AsyncTime>()
-        .class::<AsyncTicker>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }
