@@ -11,6 +11,7 @@ use bytes::Bytes;
 use tokio::net::TcpListener;
 use std::collections::HashMap;
 use std::rc::Rc;
+use tracing::{info, error}; // Added tracing imports
 
 /// Represents an HTTP Request received from Hyper.
 #[php_class]
@@ -93,12 +94,12 @@ impl AsyncHttpServer {
             let listener = match TcpListener::bind(&addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("Failed to bind to {}: {}", addr, e);
+                    error!("Failed to bind to {}: {}", addr, e); // Replaced eprintln!
                     return Zval::new();
                 }
             };
 
-            println!("Listening on http://{}", addr);
+            info!("Listening on http://{}", addr); // Replaced println!
 
             loop {
                 let (stream, _) = match listener.accept().await {
@@ -178,7 +179,7 @@ impl AsyncHttpServer {
                         }
                     });
 
-                    if let Err(err) = http1::Builder::new()
+                    if let Err(_err) = http1::Builder::new() // Prefix with underscore to avoid warning
                         .serve_connection(io, service)
                         .await
                     {

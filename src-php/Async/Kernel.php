@@ -25,4 +25,9 @@ class Kernel
     {
         \go($task);
     }
+
+    public static function setupLog(array $config): void
+    {
+        \AsyncLogger::init($config);
+    }
 }

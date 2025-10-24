@@ -1,6 +1,8 @@
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::exception::PhpException;
+use ext_php_rs::zend::ClassEntry;
+use ext_php_rs::convert::IntoZval; // Added import
 
 mod future;
 mod net;
@@ -11,6 +13,7 @@ mod db;
 mod time;
 mod util;
 mod quic; // Add quic module
+mod logger; // Add logger mod
 
 use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
@@ -20,6 +23,7 @@ use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
+use logger::AsyncLogger; // Import AsyncLogger
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -62,9 +66,6 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     Ok(())
 }
 
-use ext_php_rs::zend::ClassEntry;
-use ext_php_rs::convert::IntoZval;
-
 #[php_function]
 pub fn go(callable: &Zval) -> PhpResult<Zval> {
     let fiber_class = ClassEntry::try_find("Fiber")
@@ -83,7 +84,7 @@ pub fn go(callable: &Zval) -> PhpResult<Zval> {
     
     tokio::task::spawn_local(async move {
             if let Err(e) = crate::drive_fiber(fiber_clone).await {
-                eprintln!("Spawned fiber failed: {:?}", e);
+                tracing::error!("Spawned fiber failed: {:?}", e);
             }
     });
     
@@ -125,6 +126,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPgSql>()
         .class::<AsyncPgSqlTransaction>()
         .class::<AsyncTime>()
+        .class::<AsyncLogger>() // Register AsyncLogger
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }
