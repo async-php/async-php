@@ -6,14 +6,6 @@ use Async\Kernel;
 use Async\Http\Server;
 use Async\Channel;
 
-// Load extension
-if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) {
-        dl($extPath);
-    }
-}
-
 Kernel::run(function () {
     echo "Starting HTTP Server on http://127.0.0.1:8081\n";
     

@@ -6,7 +6,10 @@
     "autoload": {
         "psr-4": {
             "Async\\": "src-php/Async/"
-        }
+        },
+        "files": [
+            "src-php/Async/functions.php"
+        ]
     },
     "require": {}
 }

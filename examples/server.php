@@ -6,14 +6,6 @@ use Async\Kernel;
 use Async\Network\TcpServer;
 use Async\Network\TcpSocket;
 
-// Load extension
-if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) {
-        dl($extPath);
-    }
-}
-
 Kernel::run(function () {
     echo "Starting TCP Echo Server on 127.0.0.1:8080...\n";
     

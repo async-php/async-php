@@ -14,9 +14,10 @@ mod time;
 mod util;
 mod quic; // Add quic module
 mod logger; // Add logger mod
+mod tls;
 
 use future::RustFuture;
-use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket};
+use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse}; // Updated http imports
 use channel::AsyncChannel;
@@ -24,6 +25,7 @@ use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
 use logger::AsyncLogger; // Import AsyncLogger
+use tls::AsyncTlsStream;
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -113,6 +115,9 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncTcpListener>()
         .class::<AsyncTcpStream>()
         .class::<AsyncUdpSocket>()
+        .class::<AsyncUnixListener>()
+        .class::<AsyncUnixStream>()
+        .class::<AsyncTlsStream>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
         .class::<AsyncHttpServer>()

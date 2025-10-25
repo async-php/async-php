@@ -2,14 +2,6 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Load extension
-if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) {
-        dl($extPath);
-    }
-}
-
 // Main Fiber
 $main = new Fiber(function () {
     echo "[Main] Started.\n";

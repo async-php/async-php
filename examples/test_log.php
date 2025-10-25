@@ -5,14 +5,6 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Async\Kernel;
 use Async\Http\Server;
 
-// Load extension
-if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) {
-        dl($extPath);
-    }
-}
-
 // Setup Logger
 // Level 'debug' should show detailed logs if any libraries use debug.
 // 'info' will show our "Listening on..." message.

@@ -250,3 +250,159 @@ impl AsyncUdpSocket {
         RustFuture::new(future)
     }
 }
+
+// --- Unix Listener ---
+
+#[php_class]
+#[php(name = "Async\\Kernel\\Network\\UnixListener")]
+pub struct AsyncUnixListener {
+    inner: Rc<tokio::net::UnixListener>,
+}
+
+#[php_impl]
+impl AsyncUnixListener {
+    pub fn bind(path: String) -> PhpResult<RustFuture> {
+        let future = async move {
+            let path_clone = path.clone(); // Clone path for use within the async block
+            // Remove file if it exists to avoid EADDRINUSE
+            let _ = tokio::fs::remove_file(&path_clone).await; 
+            
+            match tokio::net::UnixListener::bind(&path_clone) {
+                Ok(listener) => {
+                    let obj = AsyncUnixListener { inner: Rc::new(listener) };
+                    ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
+                }
+                Err(e) => {
+                     println!("Unix bind failed to {}: {:?}", path_clone, e); // Debug
+                     let mut z = Zval::new();
+                     z.set_bool(false);
+                     z
+                }
+            }
+        };
+        Ok(RustFuture::new(future))
+    }
+
+    pub fn accept(&self) -> RustFuture {
+        let listener = self.inner.clone();
+        let future = async move {
+            match listener.accept().await {
+                Ok((stream, _addr)) => {
+                    let obj = AsyncUnixStream { inner: Rc::new(RefCell::new(stream)) };
+                    ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
+                }
+                Err(_) => {
+                     let mut z = Zval::new();
+                     z.set_bool(false);
+                     z
+                }
+            }
+        };
+        RustFuture::new(future)
+    }
+}
+
+// --- Unix Stream ---
+
+#[php_class]
+#[php(name = "Async\\Kernel\\Network\\UnixStream")]
+pub struct AsyncUnixStream {
+    inner: Rc<RefCell<tokio::net::UnixStream>>,
+}
+
+#[php_impl]
+impl AsyncUnixStream {
+    pub fn connect(path: String) -> PhpResult<RustFuture> {
+        let future = async move {
+            match tokio::net::UnixStream::connect(&path).await {
+                Ok(stream) => {
+                    let obj = AsyncUnixStream { inner: Rc::new(RefCell::new(stream)) };
+                    ext_php_rs::types::ZendClassObject::new(obj)
+                        .into_zval(false)
+                        .unwrap_or_else(|e| {
+                            println!("Error converting AsyncUnixStream to Zval after connect success: {:?}", e);
+                            Zval::new()
+                        })
+                }
+                Err(e) => {
+                    println!("Unix connect failed to {}: {:?}", path, e); 
+                    Zval::new()
+                }
+            }
+        };
+        Ok(RustFuture::new(future))
+    }
+
+    pub fn read(&self, length: usize) -> RustFuture {
+        let stream = self.inner.clone();
+        let future = async move {
+            let mut buf = vec![0u8; length];
+            if let Ok(mut lock) = stream.try_borrow_mut() {
+                match lock.read(&mut buf).await {
+                    Ok(0) => {
+                        let mut z = Zval::new();
+                        z.set_string("", false).unwrap();
+                        z
+                    }, 
+                    Ok(n) => {
+                        buf.truncate(n);
+                        let s = String::from_utf8_lossy(&buf).to_string();
+                        let mut z = Zval::new();
+                        z.set_string(&s, false).unwrap();
+                        z
+                    }
+                    Err(_) => {
+                         let mut z = Zval::new();
+                         z.set_bool(false);
+                         z
+                    }
+                }
+            } else {
+                let mut z = Zval::new();
+                z.set_bool(false); 
+                z
+            }
+        };
+        RustFuture::new(future)
+    }
+
+    pub fn write(&self, data: String) -> RustFuture {
+        let stream = self.inner.clone();
+        let future = async move {
+            if let Ok(mut lock) = stream.try_borrow_mut() {
+                match lock.write_all(data.as_bytes()).await {
+                    Ok(_) => {
+                        let mut z = Zval::new();
+                        z.set_long(data.len() as i64);
+                        z
+                    }
+                    Err(_) => {
+                         let mut z = Zval::new();
+                         z.set_bool(false);
+                         z
+                    }
+                }
+            } else {
+                let mut z = Zval::new();
+                z.set_bool(false); 
+                z
+            }
+        };
+        RustFuture::new(future)
+    }
+
+    pub fn close(&self) -> RustFuture {
+        let stream = self.inner.clone();
+        let future = async move {
+             let mut z = Zval::new();
+             if let Ok(mut lock) = stream.try_borrow_mut() {
+                 let _ = lock.shutdown().await;
+                 z.set_bool(true);
+             } else {
+                 z.set_bool(false);
+             }
+             z
+        };
+        RustFuture::new(future)
+    }
+}
