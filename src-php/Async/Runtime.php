@@ -28,6 +28,14 @@ class Runtime
 
         if (($flags & self::HOOK_TCP) && !self::isHooked(self::HOOK_TCP)) {
             self::hook('tcp', TcpStreamWrapper::class);
+            
+            // Also hook stream_socket_client if TCP is hooked
+            // Using function table overwrite via Rust extension
+            // Replacement function must be a global function. 
+            // We will define a stub in this file.
+            
+            \override_function('stream_socket_client', 'Async\\stream_socket_client_stub');
+            
             self::$hookedFlags |= self::HOOK_TCP;
         }
         
@@ -36,7 +44,7 @@ class Runtime
             self::$hookedFlags |= self::HOOK_FILE;
         }
     }
-
+    
     private static function isHooked(int $flag): bool
     {
         return (self::$hookedFlags & $flag) === $flag;
@@ -47,5 +55,35 @@ class Runtime
         // Ignore warnings if wrapper doesn't exist or can't be unregistered (will fail on register then)
         @stream_wrapper_unregister($protocol);
         stream_wrapper_register($protocol, $class);
+    }
+}
+
+// Stub function in global namespace (but inside namespace Async in this file? No, needs to be global or FQDN)
+// Let's define it in Async namespace and pass FQDN to override_function.
+
+function stream_socket_client_stub(
+    string $address, 
+    &$errno = null, 
+    &$errstr = null, 
+    ?float $timeout = null, 
+    int $flags = STREAM_CLIENT_CONNECT, 
+    $context = null
+) {
+    // Simply delegate to fopen, which is already hooked by TcpStreamWrapper!
+    // TcpStreamWrapper supports tcp:// 
+    
+    // Note: context handling is basic here.
+    $mode = ($flags & STREAM_CLIENT_CONNECT) ? 'r+' : 'r'; // Simplified
+    
+    // fopen returns false on failure, stream_socket_client implies false too.
+    // But TcpStreamWrapper::stream_open returns bool.
+    
+    // We need to handle timeout logic if provided (passed to wrapper options?).
+    // For now, just call fopen.
+    
+    if ($context) {
+        return fopen($address, $mode, false, $context);
+    } else {
+        return fopen($address, $mode);
     }
 }

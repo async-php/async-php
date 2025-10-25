@@ -25,6 +25,78 @@ use time::AsyncTime;
 use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
 use logger::AsyncLogger; // Import AsyncLogger
 
+use std::ffi::CString;
+use ext_php_rs::zend::Function;
+
+// Minimal FFI for Zend Function Table manipulation
+mod zend_ffi {
+    use std::ffi::{c_char, c_void};
+
+    extern "C" {
+        pub fn zend_hash_str_find(ht: *mut c_void, key: *const c_char, len: usize) -> *mut c_void;
+        pub fn zend_hash_str_update(ht: *mut c_void, key: *const c_char, len: usize, data: *mut c_void) -> *mut c_void;
+    }
+}
+
+#[php_function]
+pub fn override_function(original: String, replacement: &Zval) -> bool {
+    // We need to be very careful here. This is modifying the Zend Engine state globally.
+    
+    unsafe {
+        // 1. Get EG(function_table)
+        let eg = ext_php_rs::zend::ExecutorGlobals::get();
+        
+        // function_table is *mut zend_array. 
+        // Dereference to get the struct, then take pointer again? No.
+        // eg.function_table is already *mut zend_array.
+        // We just need to cast it to *mut c_void.
+        let ht_ptr = eg.function_table as *mut std::ffi::c_void;
+        
+        let original_lower = original.to_lowercase();
+        let key_c = CString::new(original_lower.clone()).unwrap();
+        
+        // Check if original function exists
+        let original_ptr = zend_ffi::zend_hash_str_find(
+            ht_ptr, 
+            key_c.as_ptr(), 
+            key_c.as_bytes().len()
+        );
+
+        if original_ptr.is_null() {
+             return false;
+        }
+
+        // Replacement
+        if !replacement.is_string() {
+             return false;
+        }
+        let repl_name = replacement.string().unwrap();
+        let repl_name_lower = repl_name.to_lowercase();
+        let repl_c = CString::new(repl_name_lower).unwrap();
+        
+        let source_ptr = zend_ffi::zend_hash_str_find(
+            ht_ptr, 
+            repl_c.as_ptr(), 
+            repl_c.as_bytes().len()
+        );
+        
+        if source_ptr.is_null() {
+            return false; 
+        }
+        
+        // Overwrite
+        let target_c = CString::new(original_lower).unwrap();
+        zend_ffi::zend_hash_str_update(
+            ht_ptr,
+            target_c.as_ptr(),
+            target_c.as_bytes().len(),
+            source_ptr 
+        );
+        
+        true
+    }
+}
+
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
         .try_call_method("start", vec![])
@@ -129,4 +201,5 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncLogger>() // Register AsyncLogger
         .function(wrap_function!(run))
         .function(wrap_function!(go))
+        .function(wrap_function!(override_function))
 }
