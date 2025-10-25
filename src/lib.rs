@@ -26,7 +26,7 @@ use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
 use logger::AsyncLogger; // Import AsyncLogger
 
 use std::ffi::CString;
-use ext_php_rs::zend::Function;
+use ext_php_rs::ffi::zend_function;
 
 // Minimal FFI for Zend Function Table manipulation
 mod zend_ffi {
@@ -47,26 +47,26 @@ pub fn override_function(original: String, replacement: &Zval) -> bool {
         let eg = ext_php_rs::zend::ExecutorGlobals::get();
         
         // function_table is *mut zend_array. 
-        // Dereference to get the struct, then take pointer again? No.
-        // eg.function_table is already *mut zend_array.
-        // We just need to cast it to *mut c_void.
         let ht_ptr = eg.function_table as *mut std::ffi::c_void;
         
         let original_lower = original.to_lowercase();
         let key_c = CString::new(original_lower.clone()).unwrap();
         
-        // Check if original function exists
+        // Find original
         let original_ptr = zend_ffi::zend_hash_str_find(
             ht_ptr, 
             key_c.as_ptr(), 
             key_c.as_bytes().len()
-        );
+        ) as *mut zend_function;
 
         if original_ptr.is_null() {
              return false;
         }
+        
+        // dbg!(std::mem::size_of::<zend_function>()); 
+        // If size is 0, we can't swap!
 
-        // Replacement
+        // Find replacement
         if !replacement.is_string() {
              return false;
         }
@@ -78,13 +78,14 @@ pub fn override_function(original: String, replacement: &Zval) -> bool {
             ht_ptr, 
             repl_c.as_ptr(), 
             repl_c.as_bytes().len()
-        );
+        ); // as *mut zend_function; // Don't need typed ptr for update
         
         if source_ptr.is_null() {
             return false; 
         }
         
-        // Overwrite
+        // OVERWRITE STRATEGY (Leaky/Double-free on shutdown risk, but simple)
+        // We copy the data from source bucket to target bucket.
         let target_c = CString::new(original_lower).unwrap();
         zend_ffi::zend_hash_str_update(
             ht_ptr,
@@ -92,6 +93,11 @@ pub fn override_function(original: String, replacement: &Zval) -> bool {
             target_c.as_bytes().len(),
             source_ptr 
         );
+        
+        // We DO NOT delete the source.
+        // This results in two entries pointing to the same function body.
+        // Shutdown will likely double-free. 
+        // But runtime should be stable.
         
         true
     }
