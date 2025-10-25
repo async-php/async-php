@@ -2,14 +2,14 @@
 
 namespace Async\Network;
 
-use AsyncUdpSocket;
+use Async\UdpSocket;
 use Fiber;
 
 class UdpSocket
 {
-    private AsyncUdpSocket $socket;
+    private UdpSocket $socket;
 
-    private function __construct(AsyncUdpSocket $socket)
+    private function __construct(UdpSocket $socket)
     {
         $this->socket = $socket;
     }
@@ -17,7 +17,7 @@ class UdpSocket
     public static function bind(string $host, int $port): ?self
     {
         $addr = "$host:$port";
-        $socket = Fiber::suspend(AsyncUdpSocket::bind($addr));
+        $socket = Fiber::suspend(UdpSocket::bind($addr));
         
         if (!$socket) return null;
         return new self($socket);

@@ -2,7 +2,7 @@
 
 namespace Async;
 
-use AsyncTime;
+use Async\Time;
 
 class Kernel
 {
@@ -18,7 +18,7 @@ class Kernel
 
     public static function sleep(int $ms): void
     {
-        \Fiber::suspend(AsyncTime::sleep($ms));
+        \Fiber::suspend(Time::sleep($ms));
     }
 
     public static function spawn(callable $task): void
@@ -28,6 +28,6 @@ class Kernel
 
     public static function setupLog(array $config): void
     {
-        \AsyncLogger::init($config);
+        \Async\Logger::init($config);
     }
 }

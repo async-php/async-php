@@ -2,9 +2,9 @@
 
 namespace Async\Http;
 
-use AsyncHttpServer;
-use AsyncHttpRequest;
-use AsyncHttpResponse;
+use Async\HttpServer;
+use Async\HttpRequest;
+use Async\HttpResponse;
 use Fiber;
 
 class Server
@@ -19,8 +19,8 @@ class Server
     public function handle(callable $handler): void
     {
         // delegating to Rust Hyper server
-        // Handler: function(AsyncHttpRequest $req): AsyncHttpResponse|string
-        $future = AsyncHttpServer::listen($this->addr, $handler);
+        // Handler: function(HttpRequest $req): HttpResponse|string
+        $future = HttpServer::listen($this->addr, $handler);
         Fiber::suspend($future);
     }
 }

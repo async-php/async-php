@@ -33,14 +33,14 @@ Kernel::run(function () {
     $server = new Server('127.0.0.1', 8081);
     
     $server->handle(function ($req) use ($stats) {
-        /** @var \AsyncHttpRequest $req */
+        /** @var \Async\HttpRequest $req */
         $stats->push(1);
         
         $body = "Hello from Async PHP (Hyper)!\n";
         $body .= "Method: {$req->method}\n";
         $body .= "Path: {$req->uri}\n";
         
-        $res = new \AsyncHttpResponse(200, $body);
+        $res = new \Async\HttpResponse(200, $body);
         $res->withHeader("Content-Type", "text/plain");
         
         return $res;

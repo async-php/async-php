@@ -2,8 +2,8 @@
 
 namespace Async;
 
-use AsyncFilesystem;
-use AsyncFileHandle;
+use Async\Driver\Filesystem as DriverFilesystem;
+use Async\Driver\FileHandle as DriverFileHandle;
 use Fiber;
 use RustFuture;
 
@@ -13,64 +13,64 @@ class Filesystem
 
     public static function exists(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::exists($path));
+        return Fiber::suspend(DriverFilesystem::exists($path));
     }
 
     public static function isFile(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::isFile($path));
+        return Fiber::suspend(DriverFilesystem::isFile($path));
     }
 
     public static function isDir(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::isDir($path));
+        return Fiber::suspend(DriverFilesystem::isDir($path));
     }
 
     public static function unlink(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::unlink($path));
+        return Fiber::suspend(DriverFilesystem::unlink($path));
     }
 
     public static function rename(string $from, string $to): bool
     {
-        return Fiber::suspend(AsyncFilesystem::rename($from, $to));
+        return Fiber::suspend(DriverFilesystem::rename($from, $to));
     }
 
     public static function copy(string $from, string $to): bool
     {
-        return Fiber::suspend(AsyncFilesystem::copy($from, $to));
+        return Fiber::suspend(DriverFilesystem::copy($from, $to));
     }
 
     public static function mkdir(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::mkdir($path));
+        return Fiber::suspend(DriverFilesystem::mkdir($path));
     }
 
     public static function rmdir(string $path): bool
     {
-        return Fiber::suspend(AsyncFilesystem::rmdir($path));
+        return Fiber::suspend(DriverFilesystem::rmdir($path));
     }
 
     public static function size(string $path): int|false
     {
-        return Fiber::suspend(AsyncFilesystem::size($path));
+        return Fiber::suspend(DriverFilesystem::size($path));
     }
 
     public static function getContents(string $path): string|false
     {
-        return Fiber::suspend(AsyncFilesystem::getContents($path));
+        return Fiber::suspend(DriverFilesystem::getContents($path));
     }
 
     public static function putContents(string $path, string $contents): bool
     {
-        return Fiber::suspend(AsyncFilesystem::putContents($path, $contents));
+        return Fiber::suspend(DriverFilesystem::putContents($path, $contents));
     }
 
     // --- Stateful Stream Operations (fopen replacement) ---
 
     public static function open(string $path, string $mode = 'r'): ?FileStream
     {
-        $handle = Fiber::suspend(AsyncFileHandle::open($path, $mode));
+        $handle = Fiber::suspend(DriverFileHandle::open($path, $mode));
         if (!$handle) return null;
         return new FileStream($handle);
     }
@@ -78,9 +78,9 @@ class Filesystem
 
 class FileStream
 {
-    private AsyncFileHandle $handle;
+    private DriverFileHandle $handle;
 
-    public function __construct(AsyncFileHandle $handle)
+    public function __construct(DriverFileHandle $handle)
     {
         $this->handle = $handle;
     }

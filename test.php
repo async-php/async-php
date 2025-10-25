@@ -17,7 +17,7 @@ $main = new Fiber(function () {
     go(function () {
         echo "  [Child] Started. Sleeping 500ms...\n";
         // Child does a long sleep
-        Fiber::suspend(AsyncTime::sleep(500));
+        Fiber::suspend(\Async\Time::sleep(500));
         echo "  [Child] Woke up!\n";
         
         echo "  [Child] Done.\n";
@@ -26,7 +26,7 @@ $main = new Fiber(function () {
     // Demonstrate AsyncTime::after
     go(function() {
         echo "    [After] Started. Will fire after 300ms...\n";
-        Fiber::suspend(AsyncTime::after(300));
+        Fiber::suspend(\Async\Time::after(300));
         echo "    [After] Fired after 300ms!\n";
     });
 
@@ -34,7 +34,7 @@ $main = new Fiber(function () {
     /*
     spawn_task(function() {
         echo "      [Ticker] Started. Will tick every 100ms for 3 times...\n";
-        $ticker = AsyncTime::createTicker(100);
+        $ticker = \Async\Time::createTicker(100);
         for ($i = 0; $i < 3; $i++) {
             Fiber::suspend($ticker->next_tick());
             echo "      [Ticker] Tick " . ($i + 1) . "\n";
@@ -48,7 +48,7 @@ $main = new Fiber(function () {
     
     // Main continues doing something else concurrently
     for ($i = 0; $i < 4; $i++) {
-        Fiber::suspend(AsyncTime::sleep(200));
+        Fiber::suspend(\Async\Time::sleep(200));
         echo "[Main] Tick $i (200ms interval)\n";
     }
     

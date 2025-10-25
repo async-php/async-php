@@ -15,6 +15,7 @@ use tracing::{info, error}; // Added tracing imports
 
 /// Represents an HTTP Request received from Hyper.
 #[php_class]
+#[php(name = "Async\\HttpRequest")]
 #[derive(Debug)]
 pub struct AsyncHttpRequest {
     #[php(prop)]
@@ -48,6 +49,7 @@ impl AsyncHttpRequest {
 
 /// Represents an HTTP Response to be sent back via Hyper.
 #[php_class]
+#[php(name = "Async\\HttpResponse")]
 #[derive(Debug)]
 pub struct AsyncHttpResponse {
     status: u16,
@@ -80,6 +82,7 @@ impl AsyncHttpResponse {
 
 /// The HTTP Server implementation using Hyper.
 #[php_class]
+#[php(name = "Async\\HttpServer")]
 pub struct AsyncHttpServer;
 
 #[php_impl]

@@ -2,18 +2,18 @@
 
 namespace Async\Network;
 
-use AsyncTcpListener;
+use Async\TcpListener;
 use RustFuture;
 use Fiber;
 
 class TcpServer
 {
-    private AsyncTcpListener $listener;
+    private TcpListener $listener;
 
     public function __construct(string $host, int $port)
     {
         $addr = "$host:$port";
-        $future = AsyncTcpListener::bind($addr);
+        $future = TcpListener::bind($addr);
         $this->listener = Fiber::suspend($future);
         
         if (!$this->listener) {

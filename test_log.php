@@ -24,7 +24,7 @@ Kernel::run(function () {
     // Spawn server in a background fiber
     Kernel::spawn(function() use ($server) {
         $server->handle(function ($req) {
-            return new \AsyncHttpResponse(200, "ok");
+            return new \Async\HttpResponse(200, "ok");
         });
     });
 

@@ -2,22 +2,22 @@
 
 namespace Async\Database;
 
-use AsyncMySql;
-use AsyncMySqlTransaction;
+use Async\MySql;
+use Async\MySqlTransaction;
 use Fiber;
 
 class MySQL implements DriverInterface
 {
-    private AsyncMySql $driver;
+    private MySql $driver;
 
-    private function __construct(AsyncMySql $driver)
+    private function __construct(MySql $driver)
     {
         $this->driver = $driver;
     }
 
     public static function connect(string $dsn, int $maxConnections = 10): ?static
     {
-        $driver = Fiber::suspend(AsyncMySql::connect($dsn, $maxConnections));
+        $driver = Fiber::suspend(MySql::connect($dsn, $maxConnections));
         if (!$driver) return null;
         return new static($driver);
     }
@@ -42,9 +42,9 @@ class MySQL implements DriverInterface
 
 class MySQLTransaction implements TransactionInterface
 {
-    private AsyncMySqlTransaction $tx;
+    private MySqlTransaction $tx;
 
-    public function __construct(AsyncMySqlTransaction $tx)
+    public function __construct(MySqlTransaction $tx)
     {
         $this->tx = $tx;
     }

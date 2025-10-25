@@ -10,6 +10,7 @@ use std::cell::RefCell;
 // --- TCP Listener ---
 
 #[php_class]
+#[php(name = "Async\\TcpListener")]
 pub struct AsyncTcpListener {
     inner: Rc<TcpListener>,
 }
@@ -60,6 +61,7 @@ impl AsyncTcpListener {
 // --- TCP Stream ---
 
 #[php_class]
+#[php(name = "Async\\TcpStream")]
 pub struct AsyncTcpStream {
     inner: Rc<RefCell<TcpStream>>,
 }
@@ -176,6 +178,7 @@ impl AsyncTcpStream {
 // --- UDP Socket ---
 
 #[php_class]
+#[php(name = "Async\\UdpSocket")]
 pub struct AsyncUdpSocket {
     inner: Rc<UdpSocket>,
 }

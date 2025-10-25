@@ -10,6 +10,7 @@ use std::cell::RefCell;
 
 /// Stateless filesystem operations (replacing file_*, is_*, etc.)
 #[php_class]
+#[php(name = "Async\\Driver\\Filesystem")]
 pub struct AsyncFilesystem;
 
 #[php_impl]
@@ -143,6 +144,7 @@ impl AsyncFilesystem {
 
 /// Stateful file handle (replacing fopen, fread, fwrite)
 #[php_class]
+#[php(name = "Async\\Driver\\FileHandle")]
 pub struct AsyncFileHandle {
     // Rc<RefCell> allows single-threaded shared mutability without locking overhead.
     inner: Rc<RefCell<fs::File>>,

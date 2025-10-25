@@ -2,14 +2,14 @@
 
 namespace Async\Network;
 
-use AsyncTcpStream;
+use Async\TcpStream;
 use Fiber;
 
 class TcpSocket
 {
-    private AsyncTcpStream $stream;
+    private TcpStream $stream;
 
-    public function __construct(AsyncTcpStream $stream)
+    public function __construct(TcpStream $stream)
     {
         $this->stream = $stream;
     }
@@ -17,7 +17,7 @@ class TcpSocket
     public static function connect(string $host, int $port): ?self
     {
         $addr = "$host:$port";
-        $stream = Fiber::suspend(AsyncTcpStream::connect($addr));
+        $stream = Fiber::suspend(TcpStream::connect($addr));
         
         if (!$stream) return null;
         return new self($stream);

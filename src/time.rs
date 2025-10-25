@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep as tokio_sleep;
 
 #[php_class]
+#[php(name = "Async\\Time")]
 pub struct AsyncTime;
 
 #[php_impl]
@@ -68,6 +69,7 @@ struct TickerState {
 }
 
 #[php_class]
+#[php(name = "Async\\Ticker")]
 pub struct AsyncTicker {
     state: Arc<Mutex<TickerState>>,
 }

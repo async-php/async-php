@@ -2,22 +2,22 @@
 
 namespace Async\Database;
 
-use AsyncPgSql;
-use AsyncPgSqlTransaction;
+use Async\PgSql;
+use Async\PgSqlTransaction;
 use Fiber;
 
 class PostgreSQL implements DriverInterface
 {
-    private AsyncPgSql $driver;
+    private PgSql $driver;
 
-    private function __construct(AsyncPgSql $driver)
+    private function __construct(PgSql $driver)
     {
         $this->driver = $driver;
     }
 
     public static function connect(string $dsn, int $maxConnections = 10): ?static
     {
-        $driver = Fiber::suspend(AsyncPgSql::connect($dsn, $maxConnections));
+        $driver = Fiber::suspend(PgSql::connect($dsn, $maxConnections));
         if (!$driver) return null;
         return new static($driver);
     }
@@ -42,9 +42,9 @@ class PostgreSQL implements DriverInterface
 
 class PostgreSQLTransaction implements TransactionInterface
 {
-    private AsyncPgSqlTransaction $tx;
+    private PgSqlTransaction $tx;
 
-    public function __construct(AsyncPgSqlTransaction $tx)
+    public function __construct(PgSqlTransaction $tx)
     {
         $this->tx = $tx;
     }
