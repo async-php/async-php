@@ -1,6 +1,6 @@
 <?php
 
-require __DIR__ . '/src-php/bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Http\Server;
@@ -8,8 +8,10 @@ use Async\Channel;
 
 // Load extension
 if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) dl($extPath);
+    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
+    if (file_exists($extPath)) {
+        dl($extPath);
+    }
 }
 
 Kernel::run(function () {
@@ -33,14 +35,14 @@ Kernel::run(function () {
     $server = new Server('127.0.0.1', 8081);
     
     $server->handle(function ($req) use ($stats) {
-        /** @var \Async\HttpRequest $req */
+        /** @var \Async\Http\Request $req */
         $stats->push(1);
         
         $body = "Hello from Async PHP (Hyper)!\n";
         $body .= "Method: {$req->method}\n";
         $body .= "Path: {$req->uri}\n";
         
-        $res = new \Async\HttpResponse(200, $body);
+        $res = new \Async\Http\Response(200, $body);
         $res->withHeader("Content-Type", "text/plain");
         
         return $res;

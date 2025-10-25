@@ -1,18 +1,14 @@
 <?php
 
-require __DIR__ . '/src-php/bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Network\TcpServer;
 use Async\Network\TcpSocket;
 
-// Ensure extension is loaded
+// Load extension
 if (!extension_loaded('async-php')) {
-    // Try to load dynamically if possible (Mac/Linux specifics)
-    $extPath = __DIR__ . '/target/debug/libasync_php.dylib';
-    if (!file_exists($extPath)) {
-        $extPath = __DIR__ . '/target/debug/libasync_php.so';
-    }
+    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
     if (file_exists($extPath)) {
         dl($extPath);
     }

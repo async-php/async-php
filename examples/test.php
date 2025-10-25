@@ -1,10 +1,13 @@
 <?php
 
-// 'run' acts as the entry point for our async runtime.
-// It takes a Fiber, runs it, and allows it to spawn concurrent fibers.
+require_once __DIR__ . '/../vendor/autoload.php';
 
-if (!function_exists('run')) {
-    die("Extension 'async-php' not loaded.\n");
+// Load extension
+if (!extension_loaded('async-php')) {
+    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
+    if (file_exists($extPath)) {
+        dl($extPath);
+    }
 }
 
 // Main Fiber

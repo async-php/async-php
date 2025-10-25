@@ -1,13 +1,15 @@
 <?php
 
-require __DIR__ . '/src-php/bootstrap.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 
 // Load extension
 if (!extension_loaded('async-php')) {
-    $extPath = __DIR__ . '/target/debug/libasync_php.dylib';
-    if (file_exists($extPath)) dl($extPath);
+    $extPath = __DIR__ . '/../target/debug/libasync_php.dylib';
+    if (file_exists($extPath)) {
+        dl($extPath);
+    }
 }
 
 Kernel::run(function () {

@@ -1,0 +1,12 @@
+{
+    "name": "async-php/async-php",
+    "description": "Async PHP Library",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Async\\": "src-php/Async/"
+        }
+    },
+    "require": {}
+}
