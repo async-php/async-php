@@ -15,7 +15,7 @@ fn generate_self_signed_cert() -> (Vec<CertificateDer<'static>>, PrivateKeyDer<'
 }
 
 #[php_class]
-#[php(name = "Async\\QuicServer")]
+#[php(name = "Async\\Kernel\\Network\\QuicServer")]
 pub struct AsyncQuicServer {
     endpoint: Endpoint,
 }
@@ -67,7 +67,7 @@ impl AsyncQuicServer {
 }
 
 #[php_class]
-#[php(name = "Async\\QuicConnection")]
+#[php(name = "Async\\Kernel\\Network\\QuicConnection")]
 pub struct AsyncQuicConnection {
     inner: quinn::Connection,
 }

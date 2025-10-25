@@ -7,6 +7,7 @@ use std::pin::Pin;
 pub type DynFuture = Pin<Box<dyn Future<Output = Zval> + 'static>>;
 
 #[php_class]
+#[php(name = "Async\\Kernel\\RustFuture")]
 pub struct RustFuture {
     inner: Option<DynFuture>,
 }
@@ -30,7 +31,3 @@ impl RustFuture {
     }
 }
 
-#[php_impl]
-impl RustFuture {
-    // spawn removed, logic moved to global go() function
-}

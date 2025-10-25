@@ -2,8 +2,8 @@
 
 namespace Async\Stream;
 
-use Async\Driver\FileHandle;
-use Async\Driver\Filesystem;
+use Async\Kernel\Filesystem;
+use Async\Kernel\Filesystem\FileHandle;
 use Fiber;
 
 class FileStreamWrapper

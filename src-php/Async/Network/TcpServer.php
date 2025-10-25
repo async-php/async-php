@@ -2,8 +2,7 @@
 
 namespace Async\Network;
 
-use Async\TcpListener;
-use RustFuture;
+use Async\Kernel\Network\TcpListener;
 use Fiber;
 
 class TcpServer

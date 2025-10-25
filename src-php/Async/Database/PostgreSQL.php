@@ -2,8 +2,8 @@
 
 namespace Async\Database;
 
-use Async\PgSql;
-use Async\PgSqlTransaction;
+use Async\Kernel\PgSql;
+use Async\Kernel\PgSql\Transaction as PgSqlTransaction;
 use Fiber;
 
 class PostgreSQL implements DriverInterface

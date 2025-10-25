@@ -2,9 +2,9 @@
 
 namespace Async\Http;
 
-use Async\HttpServer;
-use Async\HttpRequest;
-use Async\HttpResponse;
+use Async\Kernel\Network\Http\Server as HttpServer;
+use Async\Kernel\Network\Http\Request as HttpRequest;
+use Async\Kernel\Network\Http\Response as HttpResponse;
 use Fiber;
 
 class Server

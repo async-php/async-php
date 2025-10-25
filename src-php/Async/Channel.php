@@ -2,17 +2,17 @@
 
 namespace Async;
 
-use Async\Driver\Channel as DriverChannel;
+use Async\Kernel\Channel as KernelChannel;
 use Fiber;
 use RustFuture;
 
 class Channel
 {
-    private DriverChannel $inner;
+    private KernelChannel $inner;
 
     public function __construct()
     {
-        $this->inner = new DriverChannel();
+        $this->inner = new KernelChannel();
     }
 
     public function push(mixed $data): bool

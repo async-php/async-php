@@ -39,7 +39,7 @@ where
 }
 
 #[php_class]
-#[php(name = "Async\\Logger")]
+#[php(name = "Async\\Kernel\\Logger")]
 pub struct AsyncLogger;
 
 #[php_impl]

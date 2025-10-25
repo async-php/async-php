@@ -10,7 +10,7 @@ struct SendZval(Zval);
 unsafe impl Send for SendZval {}
 
 #[php_class]
-#[php(name = "Async\\Driver\\Channel")]
+#[php(name = "Async\\Kernel\\Channel")]
 pub struct AsyncChannel {
     sender: mpsc::UnboundedSender<SendZval>,
     receiver: Rc<RefCell<mpsc::UnboundedReceiver<SendZval>>>,

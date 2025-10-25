@@ -2,8 +2,8 @@
 
 namespace Async\Stream;
 
-use Async\TcpStream;
-use Async\TcpListener;
+use Async\Kernel\Network\TcpStream;
+use Async\Kernel\Network\TcpListener;
 use Fiber;
 
 class TcpStreamWrapper

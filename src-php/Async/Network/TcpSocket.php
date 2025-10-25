@@ -2,7 +2,7 @@
 
 namespace Async\Network;
 
-use Async\TcpStream;
+use Async\Kernel\Network\TcpStream;
 use Fiber;
 
 class TcpSocket

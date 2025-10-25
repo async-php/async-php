@@ -2,7 +2,7 @@
 
 namespace Async\Database;
 
-use Async\MySqlTransaction;
+use Async\Kernel\DB\MySql\Transaction as MySqlTransaction;
 use Fiber;
 
 class MySQL implements DriverInterface

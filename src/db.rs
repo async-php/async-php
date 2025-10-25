@@ -13,7 +13,7 @@ use std::cell::RefCell;
 // ======================================================================================
 
 #[php_class]
-#[php(name = "Async\\MySql")]
+#[php(name = "Async\\Kernel\\DB\\MySql")]
 pub struct AsyncMySql {
     pool: Rc<MySqlPool>,
 }
@@ -101,7 +101,7 @@ impl AsyncMySql {
 }
 
 #[php_class]
-#[php(name = "Async\\MySqlTransaction")]
+#[php(name = "Async\\Kernel\\DB\\Mysql\\Transaction")]
 pub struct AsyncMySqlTransaction {
     // Option because commit/rollback consumes the transaction
     tx: Rc<RefCell<Option<Transaction<'static, MySql>>>>,
@@ -246,7 +246,7 @@ fn mysql_row_to_zval(row: &MySqlRow) -> Zval {
 // ======================================================================================
 
 #[php_class]
-#[php(name = "Async\\PgSql")]
+#[php(name = "Async\\Kernel\\DB\\PgSql")]
 pub struct AsyncPgSql {
     pool: Rc<PgPool>,
 }
@@ -334,7 +334,7 @@ impl AsyncPgSql {
 }
 
 #[php_class]
-#[php(name = "Async\\PgSqlTransaction")]
+#[php(name = "Async\\Kernel\\DB\\PgSql\\Transaction")]
 pub struct AsyncPgSqlTransaction {
     tx: Rc<RefCell<Option<Transaction<'static, Postgres>>>>,
 }
