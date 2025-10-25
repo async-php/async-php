@@ -140,6 +140,33 @@ impl AsyncFilesystem {
         };
         RustFuture::new(future)
     }
+
+    pub fn scandir(path: String) -> RustFuture {
+        let future = async move {
+            let mut entries = Vec::new();
+            // Emulate PHP scandir behavior: include . and ..
+            entries.push(".".to_string());
+            entries.push("..".to_string());
+
+            match fs::read_dir(path).await {
+                Ok(mut dir) => {
+                    while let Ok(Some(entry)) = dir.next_entry().await {
+                         if let Ok(name) = entry.file_name().into_string() {
+                             entries.push(name);
+                         }
+                    }
+                    
+                    let mut arr = ext_php_rs::types::ZendHashTable::new();
+                    for name in entries {
+                        let _ = arr.push(name);
+                    }
+                    arr.into_zval(false).unwrap_or_else(|_| Zval::new())
+                }
+                Err(_) => Zval::new() // False
+            }
+        };
+        RustFuture::new(future)
+    }
 }
 
 /// Stateful file handle (replacing fopen, fread, fwrite)
