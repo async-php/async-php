@@ -150,7 +150,7 @@ impl AsyncHttpServer {
 
                             // 5. Process Result -> AsyncHttpResponse
                             let mut response_builder = Response::builder();
-                            let mut body_content = String::new();
+                            let body_content;
 
                             match result {
                                 Ok(res_zval) => {

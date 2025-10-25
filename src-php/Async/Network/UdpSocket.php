@@ -2,7 +2,6 @@
 
 namespace Async\Network;
 
-use Async\UdpSocket;
 use Fiber;
 
 class UdpSocket

@@ -3,7 +3,6 @@
 require __DIR__ . '/src-php/bootstrap.php';
 
 use Async\Kernel;
-use Async\Runtime;
 
 // Load extension
 if (!extension_loaded('async-php')) {
@@ -13,7 +12,7 @@ if (!extension_loaded('async-php')) {
 
 Kernel::run(function () {
     echo "[Test] Enabling Coroutine Hooks...\n";
-    Runtime::enableCoroutine(Runtime::HOOK_FILE); 
+    Kernel::enableCoroutine(Kernel::HOOK_FILE);
     // Note: HOOK_TCP via wrapper only affects fopen('tcp://...'), not stream_socket_client.
     
     // --- Test 1: File Hook ---
@@ -47,7 +46,7 @@ Kernel::run(function () {
     }
     
     // Enable TCP hook now
-    Runtime::enableCoroutine(Runtime::HOOK_TCP);
+    Kernel::enableCoroutine(Kernel::HOOK_TCP);
 
     stream_set_blocking($server, false);
     Kernel::spawn(function() use ($server) {

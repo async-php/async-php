@@ -2,7 +2,6 @@
 
 namespace Async\Database;
 
-use Async\MySql;
 use Async\MySqlTransaction;
 use Fiber;
 
