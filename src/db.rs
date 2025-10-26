@@ -101,7 +101,7 @@ impl AsyncMySql {
 }
 
 #[php_class]
-#[php(name = "Async\\Kernel\\DB\\Mysql\\Transaction")]
+#[php(name = "Async\\Kernel\\DB\\MySql\\Transaction")]
 pub struct AsyncMySqlTransaction {
     // Option because commit/rollback consumes the transaction
     tx: Rc<RefCell<Option<Transaction<'static, MySql>>>>,

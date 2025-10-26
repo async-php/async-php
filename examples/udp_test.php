@@ -4,6 +4,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Network\UdpSocket;
+use Async\Time;
 
 Kernel::run(function () {
     Kernel::enableCoroutine(Kernel::HOOK_UDP);
@@ -27,7 +28,7 @@ Kernel::run(function () {
         }
     });
 
-    Kernel::sleep(100);
+    Time::sleep(100);
 
     echo "[Client] Sending UDP packet...\n";
     

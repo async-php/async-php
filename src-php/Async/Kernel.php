@@ -2,7 +2,7 @@
 
 namespace Async;
 
-use Async\Kernel\Time;
+use Async\Time;
 use Async\Stream\TcpStreamWrapper;
 use Async\Stream\UdpStreamWrapper;
 use Async\Stream\UnixStreamWrapper;

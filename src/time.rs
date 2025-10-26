@@ -69,7 +69,7 @@ struct TickerState {
 }
 
 #[php_class]
-#[php(name = "Async\\Kernel\\Time\\Ticker")]
+#[php(name = "Async\\Kernel\\Ticker")]
 pub struct AsyncTicker {
     state: Arc<Mutex<TickerState>>,
 }

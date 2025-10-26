@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 use Async\Network\TcpServer;
 use Async\Network\TcpSocket;
 
@@ -29,7 +30,7 @@ Kernel::run(function () {
 
         } catch (\Exception $e) {
             echo "Accept error: " . $e->getMessage() . "\n";
-            Kernel::sleep(100); // Prevent tight loop on error
+            Time::sleep(100); // Prevent tight loop on error
         }
     }
 });
@@ -49,7 +50,7 @@ function handle_client(TcpSocket $socket) {
             echo "Received: " . trim($data) . "\n";
             
             // Simulate some "heavy" async processing (DB, API, etc.)
-            // Kernel::sleep(10); 
+            // Time::sleep(10);
             
             if (trim($data) === 'bye') {
                 $socket->write("Goodbye!\n");

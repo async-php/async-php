@@ -19,7 +19,7 @@ mod tls;
 use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
-use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse}; // Updated http imports
+use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse, AsyncHttpRequestBody}; // Updated http imports
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
@@ -123,6 +123,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncHttpServer>()
         .class::<AsyncHttpRequest>()
         .class::<AsyncHttpResponse>()
+        .class::<AsyncHttpRequestBody>()
         .class::<AsyncQuicServer>()
         .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()

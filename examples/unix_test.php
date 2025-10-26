@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 use Async\Network\UnixServer;
 
 Kernel::run(function () {
@@ -29,7 +30,7 @@ Kernel::run(function () {
         }
     });
 
-    Kernel::sleep(1000);
+    Time::sleep(1000);
 
     echo "[Client] Connecting...\n";
     // stream_socket_client for Unix might not be hooked. Use fopen.

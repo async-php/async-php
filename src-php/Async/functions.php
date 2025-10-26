@@ -6,19 +6,19 @@
  * Example: disable_functions = sleep,usleep,file_get_contents,file_put_contents
  */
 
-use Async\Kernel;
-use Async\Kernel\Filesystem;
+use Async\Time;
+use Async\Kernel\FileSystem;
 
 if (!function_exists('sleep')) {
     function sleep(int $seconds): int {
-        Kernel::sleep($seconds * 1000);
+        Time::sleep($seconds * 1000);
         return 0;
     }
 }
 
 if (!function_exists('usleep')) {
     function usleep(int $microseconds): void {
-        Kernel::sleep((int)($microseconds / 1000));
+        Time::sleep((int)($microseconds / 1000));
     }
 }
 
@@ -32,7 +32,7 @@ if (!function_exists('file_get_contents')) {
             return false;
         }
         
-        $future = Filesystem::get_contents($filename);
+        $future = FileSystem::get_contents($filename);
         return \Fiber::suspend($future);
     }
 }
@@ -41,7 +41,7 @@ if (!function_exists('file_put_contents')) {
     function file_put_contents(string $filename, mixed $data, int $flags = 0, $context = null): int|false {
         // TODO: Support flags (FILE_APPEND)
         
-        $future = Filesystem::put_contents($filename, (string)$data);
+        $future = FileSystem::put_contents($filename, (string)$data);
         return \Fiber::suspend($future);
     }
 }

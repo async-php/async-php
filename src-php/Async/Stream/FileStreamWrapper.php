@@ -2,8 +2,8 @@
 
 namespace Async\Stream;
 
-use Async\Kernel\Filesystem;
-use Async\Kernel\Filesystem\FileHandle;
+use Async\Kernel\FileSystem as KernelFileSystem;
+use Async\Kernel\FileSystem\FileHandle;
 use Fiber;
 
 class FileStreamWrapper
@@ -81,7 +81,7 @@ class FileStreamWrapper
         if (strpos($path, 'file://') === 0) {
             $path = substr($path, 7);
         }
-        $entries = Fiber::suspend(Filesystem::scandir($path));
+        $entries = Fiber::suspend(KernelFileSystem::scandir($path));
         if (!is_array($entries)) return false;
         
         $this->dirEntries = $entries;
@@ -115,9 +115,9 @@ class FileStreamWrapper
             $path = substr($path, 7);
         }
         
-        $size = Fiber::suspend(Filesystem::size($path));
-        $isDir = Fiber::suspend(Filesystem::isDir($path));
-        $isFile = Fiber::suspend(Filesystem::isFile($path));
+        $size = Fiber::suspend(KernelFileSystem::size($path));
+        $isDir = Fiber::suspend(KernelFileSystem::is_dir($path));
+        $isFile = Fiber::suspend(KernelFileSystem::is_file($path));
         
         if ($size === false && !$isDir && !$isFile) return false;
         
@@ -135,25 +135,25 @@ class FileStreamWrapper
     public function unlink(string $path): bool
     {
         if (strpos($path, 'file://') === 0) $path = substr($path, 7);
-        return Fiber::suspend(Filesystem::unlink($path));
+        return Fiber::suspend(KernelFileSystem::unlink($path));
     }
     
     public function rename(string $path_from, string $path_to): bool
     {
         if (strpos($path_from, 'file://') === 0) $path_from = substr($path_from, 7);
         if (strpos($path_to, 'file://') === 0) $path_to = substr($path_to, 7);
-        return Fiber::suspend(Filesystem::rename($path_from, $path_to));
+        return Fiber::suspend(KernelFileSystem::rename($path_from, $path_to));
     }
     
     public function mkdir(string $path, int $mode, int $options): bool
     {
         if (strpos($path, 'file://') === 0) $path = substr($path, 7);
-        return Fiber::suspend(Filesystem::mkdir($path));
+        return Fiber::suspend(KernelFileSystem::mkdir($path));
     }
     
     public function rmdir(string $path, int $options): bool
     {
         if (strpos($path, 'file://') === 0) $path = substr($path, 7);
-        return Fiber::suspend(Filesystem::rmdir($path));
+        return Fiber::suspend(KernelFileSystem::rmdir($path));
     }
 }

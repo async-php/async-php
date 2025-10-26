@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 use Async\Network\TcpServer;
 
 // This test requires running a server in the background or same process.
@@ -34,7 +35,7 @@ Kernel::run(function () {
         }
     });
 
-    Kernel::sleep(100); // Give server time to start
+    Time::sleep(100); // Give server time to start
 
     echo "[Client] Connecting...\n";
     // stream_socket_client is not hooked by stream_wrapper_register('tcp').

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 
 Kernel::run(function () {
     echo "[Test] Enabling Coroutine Hooks...\n";
@@ -51,7 +52,7 @@ Kernel::run(function () {
                 fclose($conn);
                 break;
             }
-            Kernel::sleep(10);
+            Time::sleep(10);
         }
     });
     

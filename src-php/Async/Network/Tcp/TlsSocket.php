@@ -1,22 +1,22 @@
 <?php
 
-namespace Async\Network;
+namespace Async\Network\Tcp;
 
-use Async\Kernel\Network\UnixStream;
+use Async\Kernel\Network\TlsStream;
 use Fiber;
 
-class UnixSocket
+class TlsSocket
 {
-    private UnixStream $stream;
+    private TlsStream $stream;
 
-    public function __construct(UnixStream $stream)
+    public function __construct(TlsStream $stream)
     {
         $this->stream = $stream;
     }
 
-    public static function connect(string $path): ?self
+    public static function connect(string $host, int $port, ?string $caFile = null): ?self
     {
-        $stream = Fiber::suspend(UnixStream::connect($path));
+        $stream = Fiber::suspend(TlsStream::connect($host, $port, $caFile));
         if (!$stream) return null;
         return new self($stream);
     }
