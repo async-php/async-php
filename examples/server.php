@@ -18,32 +18,6 @@ Kernel::run(function () {
         return;
     }
 
-    // Start Client Fiber
-    Kernel::spawn(function () use ($port) {
-        Time::sleep(100); // Wait for server
-        echo "[Client] Connecting...\n";
-        try {
-            $socket = Socket::connect("127.0.0.1:$port");
-            $welcome = $socket->read(1024);
-            echo "[Client] Server said: " . trim($welcome) . "\n";
-            
-            $socket->write("Hello World");
-            $echo = $socket->read(1024);
-            echo "[Client] Server Echoed: " . trim($echo) . "\n";
-            
-            $socket->write("bye");
-            $bye = $socket->read(1024);
-            echo "[Client] Server said: " . trim($bye) . "\n";
-            
-            $socket->close();
-            echo "SUCCESS: Server Test Passed.\n";
-            exit(0);
-        } catch (\Exception $e) {
-            echo "Client Failed: " . $e->getMessage() . "\n";
-            exit(1);
-        }
-    });
-
     // Accept loop
     while (true) {
         try {

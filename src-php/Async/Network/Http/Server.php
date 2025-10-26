@@ -19,6 +19,7 @@ class Server
             return $response; // Fallback for simple strings or KernelResponse
         };
 
-        KernelServer::listen($addr, $wrappedHandler, $config);
+        $future = KernelServer::listen($addr, $wrappedHandler, $config);
+        \Fiber::suspend($future);
     }
 }
