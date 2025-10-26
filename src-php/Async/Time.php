@@ -14,10 +14,9 @@ class Time
         Fiber::suspend($future);
     }
     
-    public static function after(int $ms): void
+    public static function after(float $seconds, callable $callback): void
     {
-        $future = KernelTime::after($ms);
-        Fiber::suspend($future);
+        KernelTime::timer($seconds, $callback);
     }
     
     public static function now(): int

@@ -27,6 +27,19 @@ impl AsyncTime {
         Self::sleep(ms)
     }
 
+    /// Schedules a callback to be executed after seconds.
+    pub fn timer(seconds: f64, callback: &Zval) {
+        let callback = callback.shallow_clone();
+        let ms = (seconds * 1000.0) as u64;
+
+        tokio::task::spawn_local(async move {
+            tokio_sleep(Duration::from_millis(ms)).await;
+            if let Err(e) = callback.try_call(vec![]) {
+                eprintln!("Timer callback failed: {}", e);
+            }
+        });
+    }
+
     /// Returns the current time as a Unix timestamp in milliseconds.
     pub fn now() -> i64 {
         let start = SystemTime::now();
