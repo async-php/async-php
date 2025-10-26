@@ -4,7 +4,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Time;
-use Async\Network\UnixServer;
+use Async\Network\Unix\Server;
 
 Kernel::run(function () {
     Kernel::enableCoroutine(Kernel::HOOK_UNIX);
@@ -14,7 +14,7 @@ Kernel::run(function () {
 
     // Server
     Kernel::spawn(function () use ($sockPath) {
-        $server = new UnixServer($sockPath);
+        $server = Server::bind($sockPath);
         echo "[Server] Listening on $sockPath...\n";
         while (true) {
             try {
@@ -56,4 +56,3 @@ Kernel::run(function () {
     
     exit(0);
 });
-

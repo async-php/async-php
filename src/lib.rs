@@ -95,6 +95,7 @@ pub fn go(callable: &Zval) -> PhpResult<Zval> {
 
 #[php_function]
 pub fn run(fiber: &mut Zval) -> PhpResult<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

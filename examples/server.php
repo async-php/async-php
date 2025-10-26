@@ -4,18 +4,45 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Time;
-use Async\Network\TcpServer;
-use Async\Network\TcpSocket;
+use Async\Network\Tcp\Server;
+use Async\Network\Tcp\Socket;
 
 Kernel::run(function () {
-    echo "Starting TCP Echo Server on 127.0.0.1:8080...\n";
+    $port = 8080;
+    echo "Starting TCP Echo Server on 127.0.0.1:$port...\n";
     
     try {
-        $server = new TcpServer('127.0.0.1', 8080);
+        $server = Server::bind("127.0.0.1:$port");
     } catch (\Exception $e) {
         echo "Failed to bind: " . $e->getMessage() . "\n";
         return;
     }
+
+    // Start Client Fiber
+    Kernel::spawn(function () use ($port) {
+        Time::sleep(100); // Wait for server
+        echo "[Client] Connecting...\n";
+        try {
+            $socket = Socket::connect("127.0.0.1:$port");
+            $welcome = $socket->read(1024);
+            echo "[Client] Server said: " . trim($welcome) . "\n";
+            
+            $socket->write("Hello World");
+            $echo = $socket->read(1024);
+            echo "[Client] Server Echoed: " . trim($echo) . "\n";
+            
+            $socket->write("bye");
+            $bye = $socket->read(1024);
+            echo "[Client] Server said: " . trim($bye) . "\n";
+            
+            $socket->close();
+            echo "SUCCESS: Server Test Passed.\n";
+            exit(0);
+        } catch (\Exception $e) {
+            echo "Client Failed: " . $e->getMessage() . "\n";
+            exit(1);
+        }
+    });
 
     // Accept loop
     while (true) {
@@ -35,22 +62,19 @@ Kernel::run(function () {
     }
 });
 
-function handle_client(TcpSocket $socket) {
+function handle_client(Socket $socket) {
     try {
         $socket->write("Welcome to Async PHP Echo Server!\n");
         
         while (true) {
             $data = $socket->read(1024);
             
-            if ($data === '') {
+            if ($data === '' || $data === false) {
                 echo "Client disconnected.\n";
                 break;
             }
             
             echo "Received: " . trim($data) . "\n";
-            
-            // Simulate some "heavy" async processing (DB, API, etc.)
-            // Time::sleep(10);
             
             if (trim($data) === 'bye') {
                 $socket->write("Goodbye!\n");

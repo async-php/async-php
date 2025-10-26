@@ -42,7 +42,7 @@ class Kernel
 
     public static function setupLog(array $config): void
     {
-        \Async\Logger::init($config);
+        \Async\Kernel\Logger::init($config);
     }
 
     public static function enableCoroutine(int $flags = self::HOOK_ALL): void

@@ -4,7 +4,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Time;
-use Async\Network\TcpServer;
+use Async\Network\Tcp\Server;
 
 // This test requires running a server in the background or same process.
 // We'll run a simple server in a fiber and connect to it.
@@ -16,7 +16,7 @@ Kernel::run(function () {
     
     // Start Server
     Kernel::spawn(function () use ($port) {
-        $server = new TcpServer('127.0.0.1', $port);
+        $server = Server::bind("127.0.0.1:$port");
         echo "[Server] Listening on $port...\n";
         while (true) {
             try {

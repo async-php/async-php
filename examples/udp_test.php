@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
-use Async\Network\UdpSocket;
+use Async\Network\Udp\Socket;
 use Async\Time;
 
 Kernel::run(function () {
@@ -13,17 +13,15 @@ Kernel::run(function () {
     
     // Start UDP Echo Server (Rust Native for reliability in test, wrapped in PHP)
     Kernel::spawn(function () use ($port) {
-        $socket = UdpSocket::bind("127.0.0.1", $port);
+        $socket = Socket::bind("127.0.0.1:$port");
         echo "[Server] UDP Listening on $port...\n";
         while (true) {
-            $peer = null;
-            // Use native wrapper method for server side for now, or raw socket
-            // Since we are testing the Client wrapper primarily.
-            $data = $socket->recvFrom(1024, $peer);
-            if ($data) {
+            // Use native wrapper method for server side
+            $res = $socket->recvFrom(1024);
+            if ($res) {
+                [$data, $peer] = $res;
                 echo "[Server] Received from $peer: $data\n";
-                $parts = explode(':', $peer);
-                $socket->sendTo("Echo: " . $data, $parts[0], (int)$parts[1]);
+                $socket->sendTo("Echo: " . $data, $peer);
             }
         }
     });

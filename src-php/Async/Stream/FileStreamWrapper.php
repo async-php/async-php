@@ -116,8 +116,8 @@ class FileStreamWrapper
         }
         
         $size = Fiber::suspend(KernelFileSystem::size($path));
-        $isDir = Fiber::suspend(KernelFileSystem::is_dir($path));
-        $isFile = Fiber::suspend(KernelFileSystem::is_file($path));
+        $isDir = Fiber::suspend(KernelFileSystem::isDir($path));
+        $isFile = Fiber::suspend(KernelFileSystem::isFile($path));
         
         if ($size === false && !$isDir && !$isFile) return false;
         

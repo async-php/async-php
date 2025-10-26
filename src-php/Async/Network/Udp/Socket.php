@@ -27,13 +27,13 @@ class Socket
     public function recvFrom(int $length = 65535): array|false
     {
         // Rust returns [data, addr]
-        $future = $this->inner->recv_from($length);
+        $future = $this->inner->recvFrom($length);
         return Fiber::suspend($future);
     }
 
     public function sendTo(string $data, string $addr): int|false
     {
-        $future = $this->inner->send_to($data, $addr);
+        $future = $this->inner->sendTo($data, $addr);
         return Fiber::suspend($future);
     }
 }

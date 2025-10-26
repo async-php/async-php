@@ -9,13 +9,13 @@ class FileSystem
 {
     public static function getContents(string $path): string|false
     {
-        $future = KernelFileSystem::get_contents($path);
+        $future = KernelFileSystem::getContents($path);
         return Fiber::suspend($future);
     }
 
     public static function putContents(string $path, string $contents): bool
     {
-        $future = KernelFileSystem::put_contents($path, $contents);
+        $future = KernelFileSystem::putContents($path, $contents);
         return Fiber::suspend($future);
     }
 
@@ -27,13 +27,13 @@ class FileSystem
     
     public static function isFile(string $path): bool
     {
-        $future = KernelFileSystem::is_file($path);
+        $future = KernelFileSystem::isFile($path);
         return Fiber::suspend($future);
     }
 
     public static function isDir(string $path): bool
     {
-        $future = KernelFileSystem::is_dir($path);
+        $future = KernelFileSystem::isDir($path);
         return Fiber::suspend($future);
     }
 
