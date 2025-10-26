@@ -2,7 +2,8 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::zend::ClassEntry;
-use ext_php_rs::convert::IntoZval; // Added import
+use ext_php_rs::convert::IntoZval; 
+use futures::FutureExt;
 
 mod future;
 mod net;
@@ -12,19 +13,19 @@ mod channel;
 mod db;
 mod time;
 mod util;
-mod quic; // Add quic module
-mod logger; // Add logger mod
+mod quic; 
+mod logger; 
 mod tls;
 
 use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
-use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse, AsyncHttpRequestBody}; // Updated http imports
+use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse, AsyncHttpRequestBody}; 
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
-use quic::{AsyncQuicServer, AsyncQuicConnection}; // Import quic structs
-use logger::AsyncLogger; // Import AsyncLogger
+use quic::{AsyncQuicServer, AsyncQuicConnection}; 
+use logger::AsyncLogger; 
 use tls::AsyncTlsStream;
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
@@ -53,11 +54,50 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
 
         if let Some(rust_fut) = <&mut RustFuture as ext_php_rs::convert::FromZvalMut>::from_zval_mut(&mut current_val) {
             if let Some(fut) = rust_fut.take_inner() {
-                let result = fut.await;
-                let args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = vec![&result];
-                current_val = fiber
-                    .try_call_method("resume", args)
-                    .map_err(|e| PhpException::default(format!("Fiber resume error: {}", e)))?;
+                let catch_res = std::panic::AssertUnwindSafe(fut).catch_unwind().await;
+
+                match catch_res {
+                    Ok(exec_res) => {
+                        match exec_res {
+                            Ok(val) => {
+                                let args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = vec![&val];
+                                current_val = fiber
+                                    .try_call_method("resume", args)
+                                    .map_err(|e| PhpException::default(format!("Fiber resume error: {}", e)))?;
+                            }
+                            Err(err_msg) => {
+                                let ex_ce = ClassEntry::try_find("Exception").ok_or_else(|| PhpException::default("Exception class not found".into()))?;
+                                let ex_obj = ex_ce.new();
+                                let ex_zval = ex_obj.into_zval(false).map_err(|e| PhpException::default(format!("Failed to convert exception to zval: {:?}", e)))?;
+                                ex_zval.try_call_method("__construct", vec![&err_msg]).map_err(|e| PhpException::default(format!("Failed to construct exception: {:?}", e)))?;
+                                
+                                current_val = fiber
+                                    .try_call_method("throw", vec![&ex_zval])
+                                    .map_err(|e| PhpException::default(format!("Fiber throw error: {}", e)))?;
+                            }
+                        }
+                    }
+                    Err(payload) => {
+                         let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                             format!("Rust Panic: {}", s)
+                         } else if let Some(s) = payload.downcast_ref::<String>() {
+                             format!("Rust Panic: {}", s)
+                         } else {
+                             "Rust Panic: Unknown payload".to_string()
+                         };
+                         
+                         tracing::error!("{}", msg);
+                         
+                         let ex_ce = ClassEntry::try_find("Exception").ok_or_else(|| PhpException::default("Exception class not found".into()))?;
+                         let ex_obj = ex_ce.new();
+                         let ex_zval = ex_obj.into_zval(false).map_err(|e| PhpException::default(format!("Failed to convert exception to zval: {:?}", e)))?;
+                         ex_zval.try_call_method("__construct", vec![&msg]).map_err(|e| PhpException::default(format!("Failed to construct exception: {:?}", e)))?;
+
+                         current_val = fiber
+                             .try_call_method("throw", vec![&ex_zval])
+                             .map_err(|e| PhpException::default(format!("Fiber throw (panic) error: {}", e)))?;
+                    }
+                }
             } else {
                 return Err(PhpException::default("RustFuture was already awaited!".into()));
             }

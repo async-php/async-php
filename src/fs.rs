@@ -19,14 +19,7 @@ impl AsyncFilesystem {
 
     pub fn get_contents(path: String) -> RustFuture {
         let future = async move {
-            match fs::read_to_string(PathBuf::from(path)).await {
-                Ok(content) => {
-                     let mut z = Zval::new();
-                     z.set_string(&content, false).unwrap();
-                     z
-                }
-                Err(_) => Zval::new(), // False/Null
-            }
+            fs::read_to_string(PathBuf::from(path)).await
         };
         RustFuture::new(future)
     }
