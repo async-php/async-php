@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
 use tracing::{info, error};
 use tokio::sync::mpsc;
-use futures::StreamExt; 
 
 // ======================================================================================
 // HTTP Body Streams
@@ -315,6 +314,7 @@ impl AsyncHttpServer {
                     if let Err(_) = http1::Builder::new().serve_connection(io, service).await {}
                 });
             }
+            #[allow(unreachable_code)]
             Zval::new()
         };
 
