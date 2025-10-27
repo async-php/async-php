@@ -9,6 +9,7 @@ mod future;
 mod net;
 mod fs;
 mod http;
+mod http_client;
 mod channel;
 mod db;
 mod time;
@@ -21,6 +22,7 @@ use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse, AsyncHttpRequestBody}; 
+use http_client::AsyncHttpClient;
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
@@ -165,6 +167,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncHttpRequest>()
         .class::<AsyncHttpResponse>()
         .class::<AsyncHttpRequestBody>()
+        .class::<AsyncHttpClient>()
         .class::<AsyncQuicServer>()
         .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()

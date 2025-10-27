@@ -175,7 +175,6 @@ impl AsyncHttpResponse {
         *self.stream_sender.borrow_mut() = Some(tx);
         *self.body_stream.borrow_mut() = Some(rx);
     }
-
     pub fn write(&self, data: String) -> RustFuture {
         if let Some(tx) = self.stream_sender.borrow().as_ref() {
             let tx = tx.clone();

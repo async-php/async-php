@@ -18,6 +18,7 @@ httparse = "1.8"
 sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "mysql", "postgres", "macros" ] }
 hyper = { version = "1.8.1", features = ["full"] }
 hyper-util = { version = "0.1.19", features = ["full"] }
+hyper-rustls = { version = "0.27", features = ["http1", "rustls-native-certs"] }
 http-body-util = "0.1.3"
 bytes = "1.11.0"
 http = "1.4.0"
