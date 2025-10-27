@@ -12,10 +12,10 @@ use bytes::{Bytes, BytesMut};
 use tokio::net::TcpListener;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::cell::RefCell;
 use tracing::{info, error};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 // ======================================================================================
 // HTTP Body Streams
@@ -36,31 +36,40 @@ impl AsyncHttpRequestBody {
         let buffer_mutex = self.buffer.clone();
         
         let future = async move {
-            let mut buffer = buffer_mutex.lock().unwrap();
-            
-            if buffer.len() >= length {
-                let chunk = buffer.split_to(length);
-                let s = String::from_utf8_lossy(&chunk).to_string();
-                let mut z = Zval::new();
-                z.set_string(&s, false).unwrap();
-                return z;
+            {
+                let mut buffer = buffer_mutex.lock().await;
+                if buffer.len() >= length {
+                    let chunk = buffer.split_to(length);
+                    let s = String::from_utf8_lossy(&chunk).to_string();
+                    let mut z = Zval::new();
+                    z.set_string(&s, false).unwrap();
+                    return z;
+                }
             }
 
-            let mut inner_opt = inner_mutex.lock().unwrap();
-            if let Some(body) = inner_opt.as_mut() {
-                while buffer.len() < length {
-                    match body.frame().await {
-                        Some(Ok(frame)) => {
-                            if let Ok(data) = frame.into_data() {
-                                buffer.extend_from_slice(&data);
-                            }
+            {
+                let mut inner_opt = inner_mutex.lock().await;
+                if let Some(body) = inner_opt.as_mut() {
+                    loop {
+                        let current_len = { buffer_mutex.lock().await.len() };
+                        if current_len >= length {
+                            break;
                         }
-                        Some(Err(_)) => break, 
-                        None => break, 
+
+                        match body.frame().await {
+                            Some(Ok(frame)) => {
+                                if let Ok(data) = frame.into_data() {
+                                    buffer_mutex.lock().await.extend_from_slice(&data);
+                                }
+                            }
+                            Some(Err(_)) => break,
+                            None => break,
+                        }
                     }
                 }
             }
             
+            let mut buffer = buffer_mutex.lock().await;
             let read_len = std::cmp::min(length, buffer.len());
             let chunk = buffer.split_to(read_len);
             let s = String::from_utf8_lossy(&chunk).to_string();
@@ -133,7 +142,7 @@ pub struct AsyncHttpResponse {
 
     pub request_zval: Option<Zval>,
     
-    pub stream_sender: Option<mpsc::Sender<String>>,
+    pub stream_sender: RefCell<Option<mpsc::Sender<String>>>,
 }
 
 #[php_impl]
@@ -145,7 +154,7 @@ impl AsyncHttpResponse {
             body_stream: RefCell::new(None),
             body_string: String::new(),
             request_zval: None,
-            stream_sender: None,
+            stream_sender: RefCell::new(None),
         }
     }
 
@@ -163,12 +172,12 @@ impl AsyncHttpResponse {
     
     pub fn init_stream(&mut self) {
         let (tx, rx) = mpsc::channel(16);
-        self.stream_sender = Some(tx);
+        *self.stream_sender.borrow_mut() = Some(tx);
         *self.body_stream.borrow_mut() = Some(rx);
     }
 
     pub fn write(&self, data: String) -> RustFuture {
-        if let Some(tx) = &self.stream_sender {
+        if let Some(tx) = self.stream_sender.borrow().as_ref() {
             let tx = tx.clone();
             let future = async move {
                 let _ = tx.send(data).await;
@@ -181,8 +190,11 @@ impl AsyncHttpResponse {
     }
     
     pub fn end(&self) -> RustFuture {
-         
-         RustFuture::new(async { Zval::new() })
+         let sender = self.stream_sender.borrow_mut().take();
+         RustFuture::new(async move {
+             drop(sender);
+             Zval::new()
+         })
     }
 
     pub fn get_request(&self) -> Zval {
@@ -256,18 +268,17 @@ impl AsyncHttpServer {
                                 body_stream: RefCell::new(None),
                                 body_string: String::new(),
                                 request_zval: None,
-                                stream_sender: None,
+                                stream_sender: RefCell::new(None),
                             };
                             
                             let mut req_zval = ext_php_rs::types::ZendClassObject::new(php_req).into_zval(false).unwrap();
                             let mut res_zval = ext_php_rs::types::ZendClassObject::new(php_res).into_zval(false).unwrap();
-                            
-                            // Use FromZvalMut to get mutable access to the object
-                            if let Some(obj) = <&mut ext_php_rs::types::ZendObject>::from_zval_mut(&mut req_zval) {
-                                let _ = obj.set_property("response_zval", res_zval.shallow_clone());
+
+                            if let Some(req_obj) = <&mut AsyncHttpRequest as FromZvalMut>::from_zval_mut(&mut req_zval) {
+                                req_obj.response_zval = Some(res_zval.shallow_clone());
                             }
-                            if let Some(obj) = <&mut ext_php_rs::types::ZendObject>::from_zval_mut(&mut res_zval) {
-                                let _ = obj.set_property("request_zval", req_zval.shallow_clone());
+                            if let Some(res_obj) = <&mut AsyncHttpResponse as FromZvalMut>::from_zval_mut(&mut res_zval) {
+                                res_obj.request_zval = Some(req_zval.shallow_clone());
                             }
 
                             let result = handler_inner.try_call(vec![&req_zval]);

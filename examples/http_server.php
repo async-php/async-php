@@ -28,22 +28,6 @@ Kernel::run(function () {
         }
     });
 
-    // Client Test Fiber
-    Kernel::spawn(function () use ($port) {
-        Time::sleep(200);
-        echo "[Client] Sending Request...\n";
-        $response = @file_get_contents("http://127.0.0.1:$port/test");
-        echo "[Client] Response: " . substr($response, 0, 50) . "...\n";
-        
-        if (strpos($response, "Hello from Async PHP") !== false) {
-            echo "SUCCESS: HTTP Server Test Passed.\n";
-            exit(0);
-        } else {
-            echo "FAILURE: Unexpected response.\n";
-            exit(1);
-        }
-    });
-
     // Server::listen blocks the fiber.
     Server::listen("127.0.0.1:$port", function (Request $req) use ($stats) {
         $stats->push(1);

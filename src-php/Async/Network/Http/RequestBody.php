@@ -3,6 +3,7 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\RequestBody as KernelRequestBody;
+use Fiber;
 
 class RequestBody
 {
@@ -15,6 +16,6 @@ class RequestBody
 
     public function read(int $length = 8192): string
     {
-        return $this->kernel->read($length);
+        return Fiber::suspend($this->kernel->read($length));
     }
 }

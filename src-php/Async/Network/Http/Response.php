@@ -3,14 +3,21 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\Response as KernelResponse;
+use Fiber;
 
 class Response
 {
     protected KernelResponse $kernel;
 
-    public function __construct(?KernelResponse $kernel = null)
+    public function __construct(int|KernelResponse $status = 200, string $body = '')
     {
-        $this->kernel = $kernel ?? new KernelResponse();
+        if ($status instanceof KernelResponse) {
+            $this->kernel = $status;
+        } else {
+            $this->kernel = new KernelResponse();
+            $this->kernel->withStatus($status);
+            $this->kernel->withBody($body);
+        }
     }
 
     public function withStatus(int $status): self
@@ -38,12 +45,12 @@ class Response
 
     public function write(string $data): void
     {
-        $this->kernel->write($data);
+        Fiber::suspend($this->kernel->write($data));
     }
 
     public function end(): void
     {
-        $this->kernel->end();
+        Fiber::suspend($this->kernel->end());
     }
 
     public function getRequest(): Request
