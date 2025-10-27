@@ -8,6 +8,7 @@ use Async\Stream\UdpStreamWrapper;
 use Async\Stream\UnixStreamWrapper;
 use Async\Stream\TlsStreamWrapper;
 use Async\Stream\FileStreamWrapper;
+use Async\Stream\HttpStreamWrapper;
 
 class Kernel
 {
@@ -16,6 +17,7 @@ class Kernel
     const HOOK_UNIX = 4; 
     const HOOK_SSL = 8; 
     const HOOK_FILE = 16;
+    const HOOK_HTTP = 32;
     const HOOK_ALL = 0x7FFFFFFF;
 
     private static int $hookedFlags = 0;
@@ -78,6 +80,12 @@ class Kernel
         if (($flags & self::HOOK_FILE) && !self::isHooked(self::HOOK_FILE)) {
             self::hook('file', FileStreamWrapper::class);
             self::$hookedFlags |= self::HOOK_FILE;
+        }
+
+        if (($flags & self::HOOK_HTTP) && !self::isHooked(self::HOOK_HTTP)) {
+            self::hook('http', HttpStreamWrapper::class);
+            self::hook('https', HttpStreamWrapper::class);
+            self::$hookedFlags |= self::HOOK_HTTP;
         }
     }
 
