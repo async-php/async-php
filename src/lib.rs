@@ -6,23 +6,21 @@ use ext_php_rs::convert::IntoZval;
 use futures::FutureExt;
 
 mod future;
+mod io;
 mod net;
 mod fs;
 mod http;
-mod http_client;
 mod channel;
 mod db;
 mod time;
 mod util;
-mod quic; 
-mod logger; 
+mod quic;
+mod logger;
 mod tls;
 
 use future::RustFuture;
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
-use http::{AsyncHttpServer, AsyncHttpRequest, AsyncHttpResponse, AsyncHttpRequestBody}; 
-use http_client::AsyncHttpClient;
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
@@ -163,11 +161,11 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncTlsStream>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
-        .class::<AsyncHttpServer>()
-        .class::<AsyncHttpRequest>()
-        .class::<AsyncHttpResponse>()
-        .class::<AsyncHttpRequestBody>()
-        .class::<AsyncHttpClient>()
+        .class::<http::HttpServer>()
+        .class::<http::HttpRequest>()
+        .class::<http::HttpResponse>()
+        .class::<http::HttpClient>()
+        .class::<http::HttpsBody>()
         .class::<AsyncQuicServer>()
         .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()
