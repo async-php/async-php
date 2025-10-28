@@ -73,10 +73,6 @@ impl HttpsBody {
         Self::new()
     }
 
-    pub fn from_string(s: String) -> Self {
-        Self::from_string(s)
-    }
-
     pub fn from_array(data: Vec<u8>) -> Self {
         Self {
             inner: HttpBody::from_bytes(data),
@@ -141,12 +137,15 @@ impl HttpsBody {
         { false }
     }
 
-    pub fn stream() -> (Self, HttpsBodyWriteStream) {
-
-        (
-            Self::new(),
-            HttpsBodyWriteStream::new(),
-        )
+    pub fn stream() -> PhpResult<Vec<Zval>> {
+        use ext_php_rs::convert::IntoZval;
+        let body = Self::new();
+        let stream = HttpsBodyWriteStream::new();
+        
+        Ok(vec![
+            body.into_zval(false)?,
+            stream.into_zval(false)?
+        ])
     }
 }
 

@@ -2,6 +2,7 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
+use ext_php_rs::convert::IntoZval;
 use std::collections::HashMap;
 use crate::http::body::HttpsBody;
 
@@ -10,15 +11,15 @@ use crate::http::body::HttpsBody;
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpRequest")]
 pub struct HttpRequest {
     #[php(prop)]
-    method: String,
+    pub method: String,
     #[php(prop)]
-    uri: String,
+    pub uri: String,
     #[php(prop)]
-    version: String,
+    pub version: String,
     #[php(prop)]
-    headers: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
 
-    body: Option<HttpsBody>,
+    pub body: Option<HttpsBody>,
 
     // Response is set after the request is made through client (will be stored separately)
 }
@@ -49,31 +50,31 @@ impl HttpRequest {
         Self::new(method, uri)
     }
 
-    pub fn with_body(&mut self, body: HttpsBody
-    ) -> &mut Self {
-        self.body = Some(body);
-        self
+    pub fn with_body(&mut self, body: &HttpsBody
+    ) -> Self {
+        self.body = Some(body.clone());
+        self.clone()
     }
 
     pub fn set_version(&mut self, version: String
-    ) -> &mut Self {
+    ) -> Self {
         self.version = version;
-        self
+        self.clone()
     }
 
     pub fn with_header(&mut self, name: String, value: String
-    ) -> &mut Self {
+    ) -> Self {
         self.headers.insert(
             name.to_lowercase(),
             value,
         );
-        self
+        self.clone()
     }
 
     pub fn without_header(&mut self, name: &str
-    ) -> &mut Self {
+    ) -> Self {
         self.headers.remove(&name.to_lowercase());
-        self
+        self.clone()
     }
 
     pub fn get_header(&self, name: String
@@ -92,12 +93,12 @@ impl HttpRequest {
     }
 
     pub fn set_content_type(&mut self, content_type: String
-    ) -> &mut Self {
+    ) -> Self {
         self.with_header("content-type".to_string(), content_type)
     }
 
     pub fn set_content_length(&mut self, content_length: i64
-    ) -> &mut Self {
+    ) -> Self {
         self.with_header(
             "content-length".to_string(),
             content_length.to_string(),
@@ -124,8 +125,8 @@ impl HttpRequest {
     }
 
     pub fn get_body(&self
-    ) -> Option<&HttpsBody> {
-        self.body.as_ref()
+    ) -> Option<HttpsBody> {
+        self.body.clone()
     }
 
     pub fn take_body(&mut self
@@ -184,33 +185,43 @@ impl HttpRequest {
         result
     }
 
-    pub fn from_array(data: HashMap<String, Zval>
+    pub fn from_array(data: &Zval
     ) -> PhpResult<Self> {
-        let method = data.get("method")
+        let arr = data.array().ok_or("Expected array")?;
+        
+        let method = arr.get("method")
             .and_then(|z| z.string())
-            .unwrap_or("GET")
+            .unwrap_or("GET".to_string())
             .to_string();
 
-        let uri = data.get("uri")
+        let uri = arr.get("uri")
             .and_then(|z| z.string())
-            .unwrap_or("/")
+            .unwrap_or("/".to_string())
             .to_string();
 
         let mut req = Self::new(method, uri);
 
-        if let Some(headers_zval) = data.get("headers") {
-            if let Ok(headers_ht) = headers_zval.array() {
+        if let Some(headers_zval) = arr.get("headers") {
+            if let Some(headers_ht) = headers_zval.array() {
                 for (k, v) in headers_ht {
-                    if let Some(key) = k.string() {
+                    // Handle ArrayKey manually
+                    use ext_php_rs::types::ArrayKey;
+                    let key_str = match k {
+                        ArrayKey::Long(i) => Some(i.to_string()),
+                        ArrayKey::Str(s) => Some(s.to_string()),
+                        _ => None,
+                    };
+                    
+                    if let Some(key) = key_str {
                         if let Some(value) = v.string() {
-                            req.with_header(key.to_string(), value.to_string());
+                            req.with_header(key, value.to_string());
                         }
                     }
                 }
             }
         }
 
-        if let Some(version_zval) = data.get("version") {
+        if let Some(version_zval) = arr.get("version") {
             if let Some(version) = version_zval.string() {
                 req.set_version(version.to_string());
             }
@@ -227,25 +238,33 @@ impl HttpRequest {
     }
 
     pub fn enable_server_push(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         self.with_header("server-push".to_string(), "true".to_string())
     }
 
     pub fn disable_server_push(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         self.without_header("server-push")
     }
 
     #[cfg(feature = "http3")]
     pub fn enable_http3(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         self.version = "3".to_string();
-        self
+        self.clone()
+    }
+
+    #[cfg(not(feature = "http3"))]
+    #[cfg(feature = "http3")]
+    pub fn enable_http3(&mut self
+    ) -> Self {
+        self.version = "3".to_string();
+        self.clone()
     }
 
     #[cfg(not(feature = "http3"))]
     pub fn enable_http3(&mut self
-    ) -> &mut Self {
-        self
+    ) -> Self {
+        self.clone()
     }
 }

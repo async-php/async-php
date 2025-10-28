@@ -1,6 +1,5 @@
 /// HTTP Client supporting HTTP/1.1, HTTP/2 and HTTP/3
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use bytes::Bytes;
@@ -55,7 +54,7 @@ impl HttpClient {
     }
 
     async fn execute_request(
-        config: Arc<ClientConfig>,
+        _config: Arc<ClientConfig>,
         request: HttpRequest
     ) -> Result<HttpResponse, String> {
         // Simple implementation using hyper-rustls
@@ -69,45 +68,43 @@ impl HttpClient {
 
         // Build request URI
         let uri = request.uri.clone();
+                // Build request body from HttpsBody
+                let body_bytes = if let Some(_body) = request.get_body() {
+                    // Get body content (simplified - would need proper implementation)
+                    vec![]
+                } else {
+                    vec![]
+                };
 
-        // Build request body from HttpsBody
-        let body_bytes = if let Some(body) = request.get_body() {
-            // Get body content (simplified - would need proper implementation)
-            vec![]
-        } else {
-            vec![]
-        };
+                // Create HTTP request
+                let mut builder = Request::builder()
+                    .method(method)
+                    .uri(uri);
+                // Add headers
+                for (k, v) in &request.headers {
+                    builder = builder.header(k, v);
+                }
 
-        // Create HTTP request
-        let mut builder = Request::builder()
-            .method(method)
-            .uri(uri);
+                // Use full body for now
+                let req = builder.body(http_body_util::Full::new(Bytes::from(body_bytes)))
+                    .map_err(|e| format!("Request build error: {}", e))?;
 
-        // Add headers
-        for (k, v) in &request.headers {
-            builder = builder.header(k, v);
-        }
+                // Create HTTPS client
+                let https = HttpsConnectorBuilder::new()
+                    .with_native_roots()
+                    .map_err(|e| e.to_string())?
+                    .https_or_http()
+                    .enable_http1()
+                    .build();
 
-        // Use full body for now
-        let req = builder.body(http_body_util::Full::new(Bytes::from(body_bytes)))
-            .map_err(|e| format!("Request build error: {}", e))?;
+                use hyper_util::client::legacy::Client;
+                let client = Client::builder(hyper_util::rt::TokioExecutor::new())
+                    .build(https);
 
-        // Create HTTPS client
-        let https = HttpsConnectorBuilder::new()
-            .with_native_roots()
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()  // Enable HTTP/2 support
-            .build();
-
-        use hyper_util::client::legacy::Client;
-        let client = Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build(https);
-
-        // Execute request
-        let mut resp = client.request(req)
-            .await
-            .map_err(|e| format!("Request failed: {}", e))?;
+                // Execute request
+                let resp = client.request(req)
+                    .await
+                    .map_err(|e| format!("Request failed: {}", e))?;
 
         // Build response
         let status = resp.status().as_u16() as i32;
@@ -130,7 +127,7 @@ impl HttpClient {
 
         let body_bytes = body_frames.to_bytes();
         let body_string = String::from_utf8_lossy(&body_bytes).to_string();
-        response.set_body(HttpsBody::from_string(body_string));
+        response.set_body(&HttpsBody::from_string(body_string));
 
         Ok(response)
     }
@@ -191,9 +188,10 @@ impl HttpClient {
 
     /// Send the request and get response future
     pub fn send(
-        &self, request: HttpRequest
+        &self, request: &HttpRequest
     ) -> RustFuture {
         let config = self.config.clone();
+        let request = request.clone();
 
         let future = async move {
             match Self::execute_request(config, request).await {

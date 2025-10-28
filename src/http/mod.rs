@@ -11,9 +11,8 @@ pub mod client;
 pub mod server;
 
 // Re-export main types
-pub use types::StatusCodes;
-pub use io::*;
-pub use body::{HttpsBody, HttpsBodyWriteStream};
+
+pub use body::HttpsBody;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
 pub use client::HttpClient;

@@ -3,15 +3,13 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
-use crate::future::RustFuture;
 use crate::io::Reader;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use bytes::{Bytes, BytesMut};
-use std::collections::VecDeque;
+use bytes::BytesMut;
 
 #[php_class]
+#[derive(Clone)]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpBody")]
 pub struct HttpBody {
     inner: Arc<Mutex<HttpBodyInner>>,
@@ -50,16 +48,16 @@ impl Reader for HttpBody {
     fn read(&mut self, length: i64
     ) -> PhpResult<Option<String>> {
         let rt = tokio::runtime::Handle::current();
+        let inner = self.inner.clone();
         let fut = async move {
-            let mut inner = self.inner.lock().await;
+            let mut inner = inner.lock().await;
 
             if inner.data.is_empty() {
                 if inner.eof {
-                    Ok(None)
+                    return Ok(None);
                 } else {
-                    Ok(Some(String::new()))
+                    return Ok(Some(String::new()));
                 }
-                return;
             }
 
             let len = std::cmp::min(length as usize, inner.data.len());
@@ -99,18 +97,20 @@ impl HttpBody {
 
     pub fn write(&mut self, data: String) -> PhpResult<()> {
         let rt = tokio::runtime::Handle::current();
+        let inner = self.inner.clone();
         let result = rt.block_on(async move {
-            let mut inner = self.inner.lock().await;
+            let mut inner = inner.lock().await;
             inner.data.extend_from_slice(data.as_bytes());
-            Ok(()) as PhpResult<()>
+            Ok(())
         });
         result
     }
 
     pub fn close(&mut self) -> PhpResult<bool> {
         let rt = tokio::runtime::Handle::current();
+        let inner = self.inner.clone();
         let result = rt.block_on(async move {
-            let mut inner = self.inner.lock().await;
+            let mut inner = inner.lock().await;
             inner.eof = true;
             Ok(true)
         });
@@ -119,11 +119,11 @@ impl HttpBody {
 
     pub fn length(&mut self) -> PhpResult<i64> {
         let rt = tokio::runtime::Handle::current();
+        let inner = self.inner.clone();
         let result = rt.block_on(async move {
-            let inner = self.inner.lock().await;
+            let inner = inner.lock().await;
             Ok(inner.data.len() as i64)
         });
         result
     }
 }
-

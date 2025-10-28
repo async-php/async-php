@@ -7,6 +7,7 @@ use ext_php_rs::convert::IntoZval;
 use crate::http::body::HttpsBody;
 
 #[php_class]
+#[derive(Clone)]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
     #[php(prop)]
@@ -46,13 +47,13 @@ impl HttpResponse {
 
     pub fn not_found() -> Self {
         let mut resp = Self::new(404);
-        resp.set_body(HttpsBody::from_string("404 Not Found".to_string()));
+        resp.set_body(&HttpsBody::from_string("404 Not Found".to_string()));
         resp
     }
 
     pub fn server_error() -> Self {
         let mut resp = Self::new(500);
-        resp.set_body(HttpsBody::from_string("500 Internal Server Error".to_string()));
+        resp.set_body(&HttpsBody::from_string("500 Internal Server Error".to_string()));
         resp
     }
 }
@@ -64,36 +65,35 @@ impl HttpResponse {
     }
 
     pub fn with_status(&mut self, status: i32
-    ) -> &mut Self {
+    ) -> Self {
         self.status = status;
-        self
+        self.clone()
     }
 
-    pub fn set_status(&mut self, status: i32) -> &mut Self {
+    pub fn set_status(&mut self, status: i32) -> Self {
         self.status = status;
-        self
+        self.clone()
     }
 
     pub fn with_version(&mut self, version: String
-    ) -> &mut Self {
+    ) -> Self {
         self.version = version;
-        self
+        self.clone()
     }
 
     pub fn with_header(&mut self, name: String, value: String
-    ) -> &mut Self {
-        self.set_header(name, value);
-        self
+    ) -> Self {
+        self.set_header(name, value)
     }
 
-    pub fn set_header(&mut self, name: String, value: String) -> &mut Self {
+    pub fn set_header(&mut self, name: String, value: String) -> Self {
         self.headers.insert(name.to_lowercase(), value);
-        self
+        self.clone()
     }
 
-    pub fn remove_header(&mut self, name: &str) -> &mut Self {
+    pub fn remove_header(&mut self, name: &str) -> Self {
         self.headers.remove(&name.to_lowercase());
-        self
+        self.clone()
     }
 
     pub fn get_header(&self, name: String) -> Option<String> {
@@ -108,7 +108,7 @@ impl HttpResponse {
         self.get_header("content-type".to_string())
     }
 
-    pub fn set_content_type(&mut self, content_type: String) -> &mut Self {
+    pub fn set_content_type(&mut self, content_type: String) -> Self {
         self.set_header("content-type".to_string(), content_type)
     }
 
@@ -117,43 +117,38 @@ impl HttpResponse {
             .and_then(|len| len.parse().ok())
     }
 
-    pub fn set_content_length(&mut self, length: i64) -> &mut Self {
+    pub fn set_content_length(&mut self, length: i64) -> Self {
         self.set_header("content-length".to_string(), length.to_string())
     }
 
-    pub fn with_body(&mut self, body: HttpsBody
-    ) -> &mut Self {
-        self.body = Some(body);
-
-        if self.content_length().is_none() {
-            if let Ok(len) = body.length() {
-                self.set_content_length(len);
-            }
-        }
-
-        self
+    pub fn with_body(&mut self, body: &HttpsBody
+    ) -> Self {
+        self.set_body(body)
     }
 
-    pub fn set_body(&mut self, body: HttpsBody) -> &mut Self {
+    pub fn set_body(&mut self, body: &HttpsBody) -> Self {
+        let mut body = body.clone();
+        // Clone body to check length before moving or moving a clone
+        let len_opt = body.length().ok();
+        
         self.body = Some(body);
 
         if self.content_length().is_none() {
-            if let Ok(len) = body.length() {
+            if let Some(len) = len_opt {
                 self.set_content_length(len);
             }
         }
 
-        self
+        self.clone()
     }
 
     pub fn is_redirect(&self) -> bool {
         matches!(self.status, 301..=399)
     }
 
-    pub fn redirect(&mut self, location: String) -> &mut Self {
+    pub fn redirect(&mut self, location: String) -> Self {
         self.status = 302;
-        self.set_header("location".to_string(), location);
-        self
+        self.set_header("location".to_string(), location)
     }
 
     pub fn is_success(&self) -> bool {
@@ -185,8 +180,8 @@ impl HttpResponse {
         }
     }
 
-    pub fn get_body(&self) -> Option<&HttpsBody> {
-        self.body.as_ref()
+    pub fn get_body(&self) -> Option<HttpsBody> {
+        self.body.clone()
     }
 
     pub fn take_body(&mut self) -> Option<HttpsBody> {
@@ -199,9 +194,9 @@ impl HttpResponse {
 
     // Store request info for tracking (simplified)
     pub fn associate_request(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         // Track request association here
-        self
+        self.clone()
     }
 
     pub fn version_string(&self) -> String {
@@ -212,9 +207,9 @@ impl HttpResponse {
         self.server_pushed
     }
 
-    pub fn enable_server_push(&mut self) -> &mut Self {
+    pub fn enable_server_push(&mut self) -> Self {
         self.server_pushed = true;
-        self
+        self.clone()
     }
 
     pub fn to_array(&self) -> HashMap<String, Zval> {
@@ -231,26 +226,34 @@ impl HttpResponse {
         result
     }
 
-    pub fn from_array(data: HashMap<String, Zval>) -> PhpResult<Self> {
-        let status = data.get("status")
+    pub fn from_array(data: &Zval) -> PhpResult<Self> {
+        let arr = data.array().ok_or("Expected array")?;
+        
+        let status = arr.get("status")
             .and_then(|z| z.long())
             .unwrap_or(200) as i32;
 
-        let version = data.get("version")
+        let version = arr.get("version")
             .and_then(|z| z.string())
-            .unwrap_or("1.1")
+            .unwrap_or("1.1".to_string())
             .to_string();
 
         let mut resp = Self::new(status);
         resp.version = version;
 
-        if let Some(headers_zval) = data.get("headers") {
-            if let Ok(headers_ht) = headers_zval.array() {
+        if let Some(headers_zval) = arr.get("headers") {
+            if let Some(headers_ht) = headers_zval.array() {
                 for (k, v) in headers_ht {
-                    if let Some(key) = k.string() {
-                        if let Some(value) = v.string() {
-                            resp.set_header(key.to_string(), value.to_string());
-                        }
+                    // Handle ArrayKey manually
+                    use ext_php_rs::types::ArrayKey;
+                    let key_str = match k {
+                        ArrayKey::Long(i) => Some(i.to_string()),
+                        ArrayKey::Str(s) => Some(s.to_string()),
+                        _ => None,
+                    };
+
+                    if let (Some(key), Some(val)) = (key_str, v.string()) {
+                        resp.set_header(key, val.to_string());
                     }
                 }
             }

@@ -30,3 +30,7 @@ tokio-rustls = "0.26.4"
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "time", "local-time"] }
 tokio-util = { version = "0.7", features = ["io", "codec", "compat"] }
+
+[features]
+http3 = []
+

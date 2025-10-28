@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
+use ext_php_rs::convert::{IntoZval, FromZval, IntoZvalDyn};
 use crate::future::RustFuture;
 use crate::http::request::HttpRequest;
 use crate::http::response::HttpResponse;
@@ -12,10 +12,12 @@ use crate::http::response::HttpResponse;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Request, Response, StatusCode};
+use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tracing::{info, error};
+use http_body_util::Full;
+use bytes::Bytes;
 
 #[php_class]
 #[derive(Clone)]
@@ -66,42 +68,42 @@ impl HttpServer {
     }
 
     pub fn with_host(&mut self, host: String
-    ) -> &mut Self {
+    ) -> Self {
         self.config.host = host;
-        self
+        self.clone()
     }
 
     pub fn with_port(&mut self, port: u16
-    ) -> &mut Self {
+    ) -> Self {
         self.config.port = port;
-        self
+        self.clone()
     }
 
     pub fn with_max_connections(&mut self, max: usize
-    ) -> &mut Self {
+    ) -> Self {
         self.config.max_connections = max;
-        self
+        self.clone()
     }
 
     pub fn with_keep_alive_timeout(&mut self, timeout: u64
-    ) -> &mut Self {
+    ) -> Self {
         self.config.keep_alive_timeout = timeout;
-        self
+        self.clone()
     }
 
     pub fn enable_http2(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         self.config.enable_http2 = true;
-        self
+        self.clone()
     }
 
     pub fn enable_http3(&mut self
-    ) -> &mut Self {
+    ) -> Self {
         self.config.enable_http3 = true;
-        self
+        self.clone()
     }
 
-    pub fn listen(&self, handler: Zval
+    pub fn listen(&self, _handler: &Zval
     ) {
         // This is a synchronous method wrapper - actual async implementation
         // will be handled by the future-based system
@@ -110,9 +112,11 @@ impl HttpServer {
     }
 
     /// Start server with handler
-    pub fn start(&self, handler: Zval
+    pub fn start(&self, handler: &Zval
     ) -> RustFuture {
         let config = self.config.clone();
+        // handler is now owned Zval via unsafe copy
+        let handler: Zval = unsafe { std::ptr::read(handler) };
         let handler = Arc::new(handler);
 
         let future = async move {
@@ -144,11 +148,16 @@ impl HttpServer {
                             // Convert hyper request to HttpRequest
                             let php_request = convert_hyper_request(req).await;
 
-                            // Create default response
-                            let mut php_response = HttpResponse::new(200);
-
                             // Call PHP handler
-                            let handler_result = handler_inner.call(vec![&php_request.into_zval(false).unwrap()]).unwrap();
+                            let arg = php_request.into_zval(false).unwrap();
+                            let args = vec![&arg as &dyn IntoZvalDyn];
+                            
+                            // handler_inner is Arc<Zval>. Deref gives Zval.
+                            // We need to call methods on Zval.
+                            
+                            let callable = handler_inner.callable().ok_or("Handler is not callable").unwrap();
+                            
+                            let handler_result = callable.try_call(args).unwrap();
 
                             // Convert PHP response to hyper response
                             let hyper_response = convert_php_response(&handler_result);
@@ -201,7 +210,7 @@ impl HttpServer {
 async fn convert_hyper_request(
     req: Request<Incoming>
 ) -> HttpRequest {
-    let (parts, body) = req.into_parts();
+    let (parts, _body) = req.into_parts();
 
     // Create method string
     let method = parts.method.to_string();
@@ -212,16 +221,67 @@ async fn convert_hyper_request(
     php_request.set_version("1.1".to_string()); // Default to 1.1
 
     // Copy headers
-    for (name, value) in parts.headers {
-        if let Ok(value_str) = value.to_str() {
-            php_request.with_header(name.to_string(), value_str.to_string());
+    for (name_opt, value) in parts.headers {
+        if let Some(name) = name_opt {
+             if let Ok(value_str) = value.to_str() {
+                 php_request.with_header(name.to_string(), value_str.to_string());
+             }
         }
     }
 
-    // TODO: Handle body
+    // TODO: Handle body - skipping for now as it requires async reading and converting to HttpsBody
+    // In a real implementation we would read the body stream.
 
     php_request
 }
 
+fn convert_php_response(zval: &Zval) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    let mut response_builder = Response::builder();
+    let mut body_bytes = Bytes::new();
 
-use http_body_util;
+    // Use <&HttpResponse as FromZval>::from_zval(zval) to get a reference if possible, 
+    // or if FromZval is implemented for &HttpResponse (returning Option<&HttpResponse>), this works.
+    
+    if let Some(php_resp) = <&HttpResponse as FromZval>::from_zval(zval) {
+        // It's an HttpResponse object
+        let arr = php_resp.to_array();
+        
+        // Status
+        if let Some(s) = arr.get("status").and_then(|z| z.long()) {
+            response_builder = response_builder.status(s as u16);
+        }
+        
+        // Headers
+        if let Some(headers) = arr.get("headers").and_then(|z| z.array()) {
+            for (k, v) in headers {
+                // Fixed key extraction with ArrayKey
+                use ext_php_rs::types::ArrayKey;
+                let key_str = match k {
+                    ArrayKey::Long(i) => Some(i.to_string()),
+                    ArrayKey::Str(s) => Some(s.to_string()),
+                    _ => None,
+                };
+
+                if let (Some(key), Some(val)) = (key_str, v.string()) {
+                    response_builder = response_builder.header(key, val);
+                }
+            }
+        }
+        
+        if let Some(_body) = php_resp.get_body() {
+             let s = php_resp.body_string();
+             body_bytes = Bytes::from(s);
+        }
+        
+    } else if let Some(s) = zval.string() {
+        // It's a string
+        response_builder = response_builder.status(200);
+        body_bytes = Bytes::from(s.to_string());
+    } else {
+        // Unknown response
+        response_builder = response_builder.status(500);
+        body_bytes = Bytes::from("Internal Server Error: Invalid response from handler");
+    }
+
+    Ok(response_builder.body(Full::new(body_bytes)).unwrap())
+}
