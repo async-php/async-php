@@ -13,8 +13,18 @@ pub fn get_reader_ce() -> &'static ClassEntry {
 }
 
 #[no_mangle]
+pub fn get_read_closer_ce() -> &'static ClassEntry {
+    PhpInterfaceReadCloser::get_metadata().ce()
+}
+
+#[no_mangle]
 pub fn get_writer_ce() -> &'static ClassEntry {
     PhpInterfaceWriter::get_metadata().ce()
+}
+
+#[no_mangle]
+pub fn get_write_closer_ce() -> &'static ClassEntry {
+    PhpInterfaceWriteCloser::get_metadata().ce()
 }
 
 #[no_mangle]

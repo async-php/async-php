@@ -1,9 +1,7 @@
-/// HTTP Request implementation
-
+use std::collections::HashMap;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-
-use crate::http::HttpBody;
+use crate::io::get_read_closer_ce;
 
 /// HTTP Request structure - rust侧仅提供最简内核实现
 /// 应用层负责在PHP中实现具体的body逻辑
@@ -17,9 +15,9 @@ pub struct HttpRequest {
     /// HTTP version (1.0, 1.1, 2.0, etc.)
     version: String,
     /// Request headers as key-value pairs
-    headers: Vec<(String, String)>,
+    headers: HashMap<String, String>,
     /// Request body as an IO ReadCloser (allows streaming)
-    body: Option<HttpBody>,
+    body: Zval,
 }
 
 #[php_impl]
@@ -31,8 +29,8 @@ impl HttpRequest {
             method,
             uri,
             version: "1.1".to_string(),
-            headers: Vec::new(),
-            body: None,
+            headers: HashMap::new(),
+            body: Zval::null(),
         }
     }
 
@@ -67,7 +65,7 @@ impl HttpRequest {
     }
 
     /// Get all headers as an associative array
-    pub fn get_headers(&self) -> Vec<(String, String)> {
+    pub fn get_headers(&self) -> HashMap<String, String> {
         self.headers.clone()
     }
 
@@ -80,30 +78,29 @@ impl HttpRequest {
 
     /// Set a header (replaces if exists)
     pub fn set_header(&mut self, name: String, value: String) {
-        // Remove existing header with same name (case-insensitive)
-        self.headers.retain(|(key, _)| key.to_lowercase() != name.to_lowercase());
-        self.headers.push((name, value));
-    }
-
-    /// Add a header (allows multiple headers with same name)
-    pub fn add_header(&mut self, name: String, value: String) {
-        self.headers.push((name, value));
+        self.headers.insert(name, value);
     }
 
     /// Remove a header
     pub fn remove_header(&mut self, name: String) {
-        self.headers.retain(|(key, _)| key.to_lowercase() != name.to_lowercase());
+        self.headers.remove(&name);
     }
 
     /// Get the request body as an IO reader
-    pub fn get_body(&self) -> Option<HttpBody> {
-        self.body.clone()
+    pub fn get_body(&self) -> Zval {
+        self.body.shallow_clone()
     }
 
     /// Set the request body using an IO ReadCloser
     /// body参数应该是实现了Reader和Closer接口的对象
-    pub fn set_body(&mut self, body: Option<Zval>) -> PhpResult<()> {
-        self.body = HttpBody::from_optional(body)?;
+    pub fn set_body(&mut self, body: &Zval) -> PhpResult<()> {
+        let interface_ce = get_read_closer_ce();
+        let object = body.object();
+        if object.is_none() || !object.unwrap().instance_of(interface_ce) {
+            return Err(PhpException::default("Body must implement ReadCloser".into()));
+        }
+
+        self.body = body.shallow_clone();
         Ok(())
     }
 
@@ -114,7 +111,7 @@ impl HttpRequest {
             uri: self.uri.clone(),
             version: self.version.clone(),
             headers: self.headers.clone(),
-            body: self.body.clone(),
+            body: Zval::null(),
         }
     }
 
@@ -126,8 +123,8 @@ impl HttpRequest {
             method: "GET".to_string(),
             uri: "/".to_string(),
             version: "1.1".to_string(),
-            headers: Vec::new(),
-            body: None,
+            body: Zval::null(),
+            headers: HashMap::new(),
         })
     }
 }

@@ -67,4 +67,49 @@ impl StatusCodes {
     pub fn is_error(status: i32) -> bool {
         status >= 400
     }
+
+    /// Get default reason phrase for status code
+    pub fn get_default_reason_phrase(status_code: i32) -> String {
+        match status_code {
+            100 => "Continue".to_string(),
+            101 => "Switching Protocols".to_string(),
+
+            200 => "OK".to_string(),
+            201 => "Created".to_string(),
+            202 => "Accepted".to_string(),
+            204 => "No Content".to_string(),
+
+            301 => "Moved Permanently".to_string(),
+            302 => "Found".to_string(),
+            303 => "See Other".to_string(),
+            304 => "Not Modified".to_string(),
+            307 => "Temporary Redirect".to_string(),
+            308 => "Permanent Redirect".to_string(),
+
+            400 => "Bad Request".to_string(),
+            401 => "Unauthorized".to_string(),
+            403 => "Forbidden".to_string(),
+            404 => "Not Found".to_string(),
+            405 => "Method Not Allowed".to_string(),
+            406 => "Not Acceptable".to_string(),
+            408 => "Request Timeout".to_string(),
+            409 => "Conflict".to_string(),
+            410 => "Gone".to_string(),
+            411 => "Length Required".to_string(),
+            413 => "Payload Too Large".to_string(),
+            414 => "URI Too Long".to_string(),
+            415 => "Unsupported Media Type".to_string(),
+            416 => "Range Not Satisfiable".to_string(),
+            422 => "Unprocessable Entity".to_string(),
+            429 => "Too Many Requests".to_string(),
+
+            500 => "Internal Server Error".to_string(),
+            501 => "Not Implemented".to_string(),
+            502 => "Bad Gateway".to_string(),
+            503 => "Service Unavailable".to_string(),
+            504 => "Gateway Timeout".to_string(),
+
+            _ => "Unknown".to_string(),
+        }
+    }
 }
