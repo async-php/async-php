@@ -27,6 +27,13 @@ use time::AsyncTime;
 use quic::{AsyncQuicServer, AsyncQuicConnection}; 
 use logger::AsyncLogger; 
 use tls::AsyncTlsStream;
+use io::{
+    PhpInterfaceReader, PhpInterfaceWriter, PhpInterfaceCloser, PhpInterfaceReadCloser,
+    PhpInterfaceWriteCloser, PhpInterfaceReaderAt, PhpInterfaceWriterAt, PhpInterfaceSeeker,
+    PhpInterfaceReadSeeker, PhpInterfaceWriteSeeker, PhpInterfaceReadWriter,
+    PhpInterfaceReadWriteSeeker, PhpInterfaceReaderFrom, PhpInterfaceWriterTo,
+    PhpInterfaceByteReader, PhpInterfaceByteScanner, PhpInterfaceStringReader
+};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -175,6 +182,23 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPgSqlTransaction>()
         .class::<AsyncTime>()
         .class::<AsyncLogger>() // Register AsyncLogger
+        .interface::<PhpInterfaceReader>()
+        .interface::<PhpInterfaceWriter>()
+        .interface::<PhpInterfaceCloser>()
+        .interface::<PhpInterfaceReadCloser>()
+        .interface::<PhpInterfaceWriteCloser>()
+        .interface::<PhpInterfaceReaderAt>()
+        .interface::<PhpInterfaceWriterAt>()
+        .interface::<PhpInterfaceSeeker>()
+        .interface::<PhpInterfaceReadSeeker>()
+        .interface::<PhpInterfaceWriteSeeker>()
+        .interface::<PhpInterfaceReadWriter>()
+        .interface::<PhpInterfaceReadWriteSeeker>()
+        .interface::<PhpInterfaceReaderFrom>()
+        .interface::<PhpInterfaceWriterTo>()
+        .interface::<PhpInterfaceByteReader>()
+        .interface::<PhpInterfaceByteScanner>()
+        .interface::<PhpInterfaceStringReader>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }
