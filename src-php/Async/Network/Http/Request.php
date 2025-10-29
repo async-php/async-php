@@ -2,7 +2,8 @@
 
 namespace Async\Network\Http;
 
-use Async\Kernel\Network\Http\Request as KernelRequest;
+use Async\Kernel\Network\Http\HttpBody as KernelHttpBody;
+use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
 
 class Request
 {
@@ -15,31 +16,45 @@ class Request
 
     public function getMethod(): string
     {
-        return $this->kernel->getMethod();
+        return $this->kernel->get_method();
     }
 
     public function getUri(): string
     {
-        return $this->kernel->getUri();
+        return $this->kernel->get_uri();
     }
 
     public function getHeader(string $name): ?string
     {
-        return $this->kernel->getHeader($name);
+        return $this->kernel->get_header($name);
     }
 
-    public function getBodyStream(): ?RequestBody
+    public function getBody(): ?Body
     {
-        $stream = $this->kernel->getBody();
+        $stream = $this->kernel->get_body();
         if ($stream) {
-            return new RequestBody($stream);
+            return new Body($stream);
         }
         return null;
     }
 
-    public function getResponse(): Response
+    public function setBody(Body|object|null $body): void
     {
-        $kernelResponse = $this->kernel->getResponse();
-        return new Response($kernelResponse);
+        if ($body instanceof Body) {
+            $this->kernel->set_body($body->getKernel());
+            return;
+        }
+
+        if (is_object($body)) {
+            $this->kernel->set_body(new KernelHttpBody($body));
+            return;
+        }
+
+        $this->kernel->set_body(null);
+    }
+
+    public function getKernel(): KernelRequest
+    {
+        return $this->kernel;
     }
 }

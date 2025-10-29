@@ -1,162 +1,200 @@
-/// HTTP Body implementation that implements IO interfaces
+/// Shared HTTP body type built on top of the Async PHP IO ReadCloser
+/// The body can be backed by a user-provided ReadCloser (for streaming)
+/// or an internal in-memory buffer (for simple string bodies).
 
+use ext_php_rs::exception::PhpException;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use crate::http::io::HttpBody;
-use crate::io::{Reader, Writer, Closer, ReadCloser, WriteCloser};
 
+use crate::io::PhpInterfaceReadCloser;
+
+/// Internal representation of the body
+#[derive(Debug)]
+enum BodyInner {
+    /// External PHP object implementing Async\Kernel\IO\ReadCloser
+    External(Zval),
+    /// Simple in-memory buffer for small/static bodies
+    Buffer {
+        data: Vec<u8>,
+        cursor: usize,
+        closed: bool,
+    },
+}
+
+impl Clone for BodyInner {
+    fn clone(&self) -> Self {
+        match self {
+            BodyInner::External(zv) => BodyInner::External(zv.shallow_clone()),
+            BodyInner::Buffer {
+                data,
+                cursor,
+                closed,
+            } => BodyInner::Buffer {
+                data: data.clone(),
+                cursor: *cursor,
+                closed: *closed,
+            },
+        }
+    }
+}
+
+/// HTTP body wrapper exposed to PHP
 #[php_class]
+#[php(name = "Async\\Kernel\\Network\\Http\\HttpBody")]
 #[derive(Clone)]
-#[php(name = "Async\\Kernel\\Network\\Http\\HttpsBody")]
-pub struct HttpsBody {
-    inner: HttpBody,
+pub struct HttpBody {
+    inner: BodyInner,
 }
 
-impl HttpsBody {
-    pub fn new() -> Self {
+impl HttpBody {
+    fn empty_buffer() -> Self {
         Self {
-            inner: HttpBody::new(),
+            inner: BodyInner::Buffer {
+                data: Vec::new(),
+                cursor: 0,
+                closed: false,
+            },
         }
     }
 
-    pub fn from_string(s: String) -> Self {
-        Self {
-            inner: HttpBody::from_string(s),
+    fn from_readcloser_zval(zv: Zval) -> PhpResult<Self> {
+        // Validate that the provided object implements ReadCloser
+        if PhpInterfaceReadCloser::from_zval(&zv).is_none() {
+            return Err(PhpException::default(
+                "Body must implement Async\\Kernel\\IO\\ReadCloser".into(),
+            ));
+        }
+
+        Ok(Self {
+            inner: BodyInner::External(zv),
+        })
+    }
+
+    fn as_readcloser_mut(&mut self) -> PhpResult<PhpInterfaceReadCloser> {
+        match &mut self.inner {
+            BodyInner::External(zv) => {
+                PhpInterfaceReadCloser::from_zval_mut(zv).ok_or_else(|| {
+                    PhpException::default(
+                        "Body must implement Async\\Kernel\\IO\\ReadCloser".into(),
+                    )
+                })
+            }
+            BodyInner::Buffer { .. } => Err(PhpException::default(
+                "Body is backed by in-memory buffer, not an external ReadCloser".into(),
+            )),
         }
     }
 }
-
-// Implementation of Reader interface
-impl Reader for HttpsBody {
-    fn read(&mut self, length: i64
-    ) -> PhpResult<Option<String>> {
-        self.inner.read(length)
-    }
-}
-
-// Implementation of Writer interface
-impl Writer for HttpsBody {
-    fn write(&mut self, data: String
-    ) -> PhpResult<i64> {
-        let len = data.len() as i64;
-        self.inner.write(data)?;
-        Ok(len)
-    }
-
-    fn flush(&mut self
-    ) -> PhpResult<()> {
-        Ok(())
-    }
-}
-
-// Implementation of Closer interface
-impl Closer for HttpsBody {
-    fn close(&mut self
-    ) -> PhpResult<bool> {
-        self.inner.close()
-    }
-}
-
-// Mark that HttpsBody implements Reader+Closer and Writer+Closer compound interfaces
-impl ReadCloser for HttpsBody {}
-impl WriteCloser for HttpsBody {}
 
 #[php_impl]
-impl HttpsBody {
-    pub fn __construct() -> Self {
-        Self::new()
-    }
-
-    pub const DEFAULT_CHUNK_SIZE: u32 = 8192;
-
-    pub fn empty() -> Self {
-        Self::new()
-    }
-
-    pub fn from_array(data: Vec<u8>) -> Self {
-        Self {
-            inner: HttpBody::from_bytes(data),
+impl HttpBody {
+    /// Create a new HTTP body. If an object is provided it must implement
+    /// Async\Kernel\IO\ReadCloser, otherwise an empty in-memory buffer is used.
+    #[php(constructor)]
+    pub fn __construct(inner: Option<Zval>) -> PhpResult<Self> {
+        match inner {
+            Some(zv) => Self::from_readcloser_zval(zv),
+            None => Ok(Self::empty_buffer()),
         }
     }
 
-    pub fn create_reader() -> Zval {
-        // Return a reader object that implements Reader interface
-        Zval::new()
+    /// Create an in-memory body from string data
+    #[php]
+    pub fn from_string(data: String) -> Self {
+        Self {
+            inner: BodyInner::Buffer {
+                data: data.into_bytes(),
+                cursor: 0,
+                closed: false,
+            },
+        }
     }
 
-    pub fn create_writer() -> Zval {
-        // Return a writer object that implements Writer interface
-        Zval::new()
+    /// Read from the body. Returns None on EOF.
+    pub fn read(&mut self, length: i64) -> PhpResult<Option<String>> {
+        if length <= 0 {
+            return Ok(Some(String::new()));
+        }
+
+        match &mut self.inner {
+            BodyInner::Buffer {
+                data,
+                cursor,
+                closed,
+            } => {
+                if *closed && *cursor >= data.len() {
+                    return Ok(None);
+                }
+
+                let end = (*cursor + length as usize).min(data.len());
+                let chunk = data[*cursor..end].to_vec();
+                *cursor = end;
+                if *cursor >= data.len() {
+                    *closed = true;
+                }
+
+                Ok(Some(String::from_utf8_lossy(&chunk).to_string()))
+            }
+            BodyInner::External(_) => {
+                let mut rc = self.as_readcloser_mut()?;
+                rc.read(length)
+            }
+        }
     }
 
-    pub fn append_string(&mut self, data: String
-    ) -> PhpResult<i64> {
-        let bytes_len = data.len() as i64;
-        self.inner.write(data)?;
-        Ok(bytes_len)
+    /// Close the body
+    pub fn close(&mut self) -> PhpResult<bool> {
+        match &mut self.inner {
+            BodyInner::Buffer { closed, .. } => {
+                *closed = true;
+                Ok(true)
+            }
+            BodyInner::External(_) => {
+                let mut rc = self.as_readcloser_mut()?;
+                rc.close()
+            }
+        }
     }
 
-    pub fn append_bytes(&mut self, data: Vec<u8>
-    ) -> PhpResult<i64> {
-        let len = data.len() as i64;
-        let s = String::from_utf8_lossy(&data).to_string();
-        self.inner.write(s)?;
-        Ok(len)
+    /// Append data into the in-memory buffer. This is only available when the
+    /// body is not backed by an external ReadCloser.
+    pub fn append(&mut self, data: String) -> PhpResult<()> {
+        match &mut self.inner {
+            BodyInner::Buffer { data: buf, closed, .. } => {
+                if *closed {
+                    return Err(PhpException::default("Cannot append to a closed body".into()));
+                }
+                buf.extend_from_slice(data.as_bytes());
+                Ok(())
+            }
+            BodyInner::External(_) => Err(PhpException::default(
+                "Body append is only available for in-memory buffers".into(),
+            )),
+        }
     }
 
-    pub fn clear(&mut self
-    ) -> PhpResult<()> {
-        // Clear the body content
-        Ok(())
+    /// Reset cursor for buffered bodies (useful for reusing responses)
+    pub fn rewind(&mut self) {
+        if let BodyInner::Buffer { cursor, closed, .. } = &mut self.inner {
+            *cursor = 0;
+            *closed = false;
+        }
     }
 
-    pub fn is_empty(&self
-    ) -> bool {
-        true
-    }
-
-    pub fn length(&mut self
-    ) -> PhpResult<i64> {
-        self.inner.length()
-    }
-
-    pub fn as_string(&mut self
-    ) -> PhpResult<String> {
-        Ok(String::new())
-    }
-
-    pub fn as_array(&mut self
-    ) -> PhpResult<Vec<u8>> {
-        Ok(Vec::new())
-    }
-
-    pub fn support_quic() -> bool {
-        #[cfg(feature = "http3")]
-        { true }
-        #[cfg(not(feature = "http3"))]
-        { false }
-    }
-
-    pub fn stream() -> PhpResult<Vec<Zval>> {
-        use ext_php_rs::convert::IntoZval;
-        let body = Self::new();
-        let stream = HttpsBodyWriteStream::new();
-        
-        Ok(vec![
-            body.into_zval(false)?,
-            stream.into_zval(false)?
-        ])
+    /// Get the underlying PHP object (when provided)
+    pub fn get_inner(&self) -> Option<Zval> {
+        match &self.inner {
+            BodyInner::External(zv) => Some(zv.shallow_clone()),
+            BodyInner::Buffer { .. } => None,
+        }
     }
 }
 
-/// Write stream for HttpsBody
-#[php_class]
-#[php(name = "Async\\Kernel\\Network\\Http\\HttpsBodyWriteStream")]
-pub struct HttpsBodyWriteStream;
-
-#[php_impl]
-impl HttpsBodyWriteStream {
-    pub fn new() -> Self {
-        Self
+impl HttpBody {
+    /// Helper to build from Option<Zval>
+    pub fn from_optional(inner: Option<Zval>) -> PhpResult<Option<Self>> {
+        inner
+            .map(Self::from_readcloser_zval)
+            .transpose()
     }
 }

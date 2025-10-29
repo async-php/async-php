@@ -172,7 +172,6 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
         .class::<http::HttpClient>()
-        .class::<http::HttpsBody>()
         .class::<AsyncQuicServer>()
         .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()

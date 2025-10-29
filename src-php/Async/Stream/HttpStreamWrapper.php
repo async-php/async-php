@@ -2,7 +2,9 @@
 
 namespace Async\Stream;
 
-use Async\Kernel\Network\Http\Client as HttpClient;
+use Async\Kernel\Network\Http\HttpClient;
+use Async\Kernel\Network\Http\HttpRequest;
+use Async\Network\Http\Body;
 use Fiber;
 
 class HttpStreamWrapper
@@ -30,7 +32,7 @@ class HttpStreamWrapper
         $method = strtoupper($httpOpts['method'] ?? 'GET');
         $content = (string)($httpOpts['content'] ?? '');
         $headersOpt = $this->normalizeHeaders($httpOpts['header'] ?? []);
-        $response = Fiber::suspend(HttpClient::request($method, $path, $headersOpt, $content));
+        $response = $this->performRequest($method, $path, $headersOpt, $content);
         if (!is_array($response)) {
             return false;
         }
@@ -83,7 +85,7 @@ class HttpStreamWrapper
         $httpOpts = $contextOpts['http'] ?? [];
 
         $headersOpt = $this->normalizeHeaders($httpOpts['header'] ?? []);
-        $response = Fiber::suspend(HttpClient::request('HEAD', $path, $headersOpt, ''));
+        $response = $this->performRequest('HEAD', $path, $headersOpt, '');
         if (!is_array($response) || ($response['status'] ?? 0) >= 400) {
             return false;
         }
@@ -116,5 +118,52 @@ class HttpStreamWrapper
         }
 
         return $normalized;
+    }
+
+    private function performRequest(string $method, string $path, array $headers, string $content): ?array
+    {
+        $client = new HttpClient();
+        $request = new HttpRequest($method, $path);
+
+        foreach ($headers as $name => $value) {
+            $request->set_header((string)$name, (string)$value);
+        }
+
+        if ($content !== '') {
+            $body = Body::fromString($content);
+            $request->set_body($body->getKernel());
+        }
+
+        $future = $client->send($request);
+        $kernelResponse = Fiber::suspend($future);
+        if (!$kernelResponse instanceof \Async\Kernel\Network\Http\HttpResponse) {
+            return null;
+        }
+
+        $bodyContent = '';
+        $kernelBody = $kernelResponse->get_body();
+        if ($kernelBody) {
+            $body = new Body($kernelBody);
+            while (true) {
+                $chunk = $body->read(8192);
+                if ($chunk === null || $chunk === '') {
+                    break;
+                }
+                $bodyContent .= $chunk;
+            }
+        }
+
+        $normalizedHeaders = [];
+        foreach ($kernelResponse->get_headers() as $header) {
+            if (is_array($header) && count($header) === 2) {
+                $normalizedHeaders[strtolower((string)$header[0])] = (string)$header[1];
+            }
+        }
+
+        return [
+            'status' => $kernelResponse->get_status_code(),
+            'headers' => $normalizedHeaders,
+            'body' => $bodyContent,
+        ];
     }
 }

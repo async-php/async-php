@@ -7,23 +7,28 @@ use ext_php_rs::types::Zval;
 use ext_php_rs::zend::ClassEntry;
 use ext_php_rs::class::RegisteredClass;
 
-fn get_reader_ce() -> &'static ClassEntry {
+#[no_mangle]
+pub fn get_reader_ce() -> &'static ClassEntry {
     PhpInterfaceReader::get_metadata().ce()
 }
 
-fn get_writer_ce() -> &'static ClassEntry {
+#[no_mangle]
+pub fn get_writer_ce() -> &'static ClassEntry {
     PhpInterfaceWriter::get_metadata().ce()
 }
 
-fn get_closer_ce() -> &'static ClassEntry {
+#[no_mangle]
+pub fn get_closer_ce() -> &'static ClassEntry {
     PhpInterfaceCloser::get_metadata().ce()
 }
 
-fn get_seeker_ce() -> &'static ClassEntry {
+#[no_mangle]
+pub fn get_seeker_ce() -> &'static ClassEntry {
     PhpInterfaceSeeker::get_metadata().ce()
 }
 
-fn get_byte_reader_ce() -> &'static ClassEntry {
+#[no_mangle]
+pub fn get_byte_reader_ce() -> &'static ClassEntry {
     PhpInterfaceByteReader::get_metadata().ce()
 }
 

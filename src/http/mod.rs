@@ -3,17 +3,16 @@
 /// HTTP/1.1, HTTP/2 and HTTP/3 protocols
 
 pub mod types;
-pub mod io;
-pub mod body;
 pub mod request;
 pub mod response;
 pub mod client;
 pub mod server;
+pub mod body;
 
 // Re-export main types
 
-pub use body::HttpsBody;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
 pub use client::HttpClient;
 pub use server::HttpServer;
+pub use body::HttpBody;

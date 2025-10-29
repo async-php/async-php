@@ -1,306 +1,237 @@
-/// HTTP Response implementation with IO support
+/// HTTP Response implementation
 
-use std::collections::HashMap;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
-use crate::http::body::HttpsBody;
+use crate::http::types::StatusCodes;
+use crate::http::HttpBody;
 
+/// HTTP Response structure
 #[php_class]
-#[derive(Clone)]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
-    #[php(prop)]
-    status: i32,
-
-    #[php(prop)]
+    /// HTTP status code
+    status_code: i32,
+    /// Reason phrase (e.g., "OK" for status 200)
+    reason_phrase: String,
+    /// HTTP version
     version: String,
-
-    #[php(prop)]
-    headers: HashMap<String, String>,
-
-    body: Option<HttpsBody>,
-
-    // Related request ID for tracking (removed to avoid circular dependency)
-
-    // Whether response is from HTTP/2 server push
-    server_pushed: bool,
-}
-
-impl HttpResponse {
-    pub fn new(status: i32) -> Self {
-        let mut headers = HashMap::new();
-        headers.insert("server".to_string(), "async-php/1.0".to_string());
-
-        Self {
-            status,
-            version: "1.1".to_string(),
-            headers,
-            body: None,
-            server_pushed: false,
-        }
-    }
-
-    pub fn ok() -> Self {
-        Self::new(200)
-    }
-
-    pub fn not_found() -> Self {
-        let mut resp = Self::new(404);
-        resp.set_body(&HttpsBody::from_string("404 Not Found".to_string()));
-        resp
-    }
-
-    pub fn server_error() -> Self {
-        let mut resp = Self::new(500);
-        resp.set_body(&HttpsBody::from_string("500 Internal Server Error".to_string()));
-        resp
-    }
+    /// Response headers
+    headers: Vec<(String, String)>,
+    /// Response body as an IO ReadCloser (allows streaming)
+    body: Option<HttpBody>,
 }
 
 #[php_impl]
 impl HttpResponse {
-    pub fn __construct(status: i32) -> Self {
-        Self::new(status)
+    /// Create a new HTTP response
+    #[php(constructor)]
+    pub fn __construct(status_code: i32) -> Self {
+        let reason = Self::get_default_reason_phrase(status_code);
+        Self {
+            status_code,
+            reason_phrase: reason,
+            version: "1.1".to_string(),
+            headers: Vec::new(),
+            body: None,
+        }
     }
 
-    pub fn with_status(&mut self, status: i32
-    ) -> Self {
-        self.status = status;
-        self.clone()
+    /// Create a new response with a body
+    pub fn create(status_code: i32, body: Option<Zval>) -> PhpResult<Self> {
+        let reason = Self::get_default_reason_phrase(status_code);
+        Ok(Self {
+            status_code,
+            reason_phrase: reason,
+            version: "1.1".to_string(),
+            headers: Vec::new(),
+            body: HttpBody::from_optional(body)?,
+        })
     }
 
-    pub fn set_status(&mut self, status: i32) -> Self {
-        self.status = status;
-        self.clone()
+    /// Get the status code
+    pub fn get_status_code(&self) -> i32 {
+        self.status_code
     }
 
-    pub fn with_version(&mut self, version: String
-    ) -> Self {
+    /// Set the status code
+    pub fn set_status_code(&mut self, status_code: i32) {
+        self.status_code = status_code;
+        self.reason_phrase = Self::get_default_reason_phrase(status_code);
+    }
+
+    /// Get the reason phrase
+    pub fn get_reason_phrase(&self) -> String {
+        self.reason_phrase.clone()
+    }
+
+    /// Set a custom reason phrase
+    pub fn set_reason_phrase(&mut self, reason_phrase: String) {
+        self.reason_phrase = reason_phrase;
+    }
+
+    /// Get the HTTP version
+    pub fn get_version(&self) -> String {
+        self.version.clone()
+    }
+
+    /// Set the HTTP version
+    pub fn set_version(&mut self, version: String) {
         self.version = version;
-        self.clone()
     }
 
-    pub fn with_header(&mut self, name: String, value: String
-    ) -> Self {
-        self.set_header(name, value)
+    /// Get all headers
+    pub fn get_headers(&self) -> Vec<(String, String)> {
+        self.headers.clone()
     }
 
-    pub fn set_header(&mut self, name: String, value: String) -> Self {
-        self.headers.insert(name.to_lowercase(), value);
-        self.clone()
-    }
-
-    pub fn remove_header(&mut self, name: &str) -> Self {
-        self.headers.remove(&name.to_lowercase());
-        self.clone()
-    }
-
+    /// Get a specific header
     pub fn get_header(&self, name: String) -> Option<String> {
-        self.headers.get(&name.to_lowercase()).cloned()
+        self.headers.iter()
+            .find(|(key, _)| key.to_lowercase() == name.to_lowercase())
+            .map(|(_, value)| value.clone())
     }
 
-    pub fn has_header(&self, name: String) -> bool {
-        self.headers.contains_key(&name.to_lowercase())
+    /// Set a header (replaces if exists)
+    pub fn set_header(&mut self, name: String, value: String) {
+        self.headers.retain(|(key, _)| key.to_lowercase() != name.to_lowercase());
+        self.headers.push((name, value));
     }
 
-    pub fn content_type(&self) -> Option<String> {
-        self.get_header("content-type".to_string())
+    /// Add a header (allows multiple headers with same name)
+    pub fn add_header(&mut self, name: String, value: String) {
+        self.headers.push((name, value));
     }
 
-    pub fn set_content_type(&mut self, content_type: String) -> Self {
-        self.set_header("content-type".to_string(), content_type)
+    /// Remove a header
+    pub fn remove_header(&mut self, name: String) {
+        self.headers.retain(|(key, _)| key.to_lowercase() != name.to_lowercase());
     }
 
-    pub fn content_length(&self) -> Option<i64> {
-        self.get_header("content-length".to_string())
-            .and_then(|len| len.parse().ok())
-    }
-
-    pub fn set_content_length(&mut self, length: i64) -> Self {
-        self.set_header("content-length".to_string(), length.to_string())
-    }
-
-    pub fn with_body(&mut self, body: &HttpsBody
-    ) -> Self {
-        self.set_body(body)
-    }
-
-    pub fn set_body(&mut self, body: &HttpsBody) -> Self {
-        let mut body = body.clone();
-        // Clone body to check length before moving or moving a clone
-        let len_opt = body.length().ok();
-        
-        self.body = Some(body);
-
-        if self.content_length().is_none() {
-            if let Some(len) = len_opt {
-                self.set_content_length(len);
-            }
-        }
-
-        self.clone()
-    }
-
-    pub fn is_redirect(&self) -> bool {
-        matches!(self.status, 301..=399)
-    }
-
-    pub fn redirect(&mut self, location: String) -> Self {
-        self.status = 302;
-        self.set_header("location".to_string(), location)
-    }
-
-    pub fn is_success(&self) -> bool {
-        matches!(self.status, 200..=299)
-    }
-
-    pub fn is_client_error(&self) -> bool {
-        matches!(self.status, 400..=499)
-    }
-
-    pub fn is_server_error(&self) -> bool {
-        matches!(self.status, 500..=599)
-    }
-
-    pub fn is_error(&self) -> bool {
-        self.status >= 400
-    }
-
-    pub fn error_message(&self) -> Option<String> {
-        match self.status {
-            400 => Some("Bad Request".to_string()),
-            401 => Some("Unauthorized".to_string()),
-            403 => Some("Forbidden".to_string()),
-            404 => Some("Not Found".to_string()),
-            500 => Some("Internal Server Error".to_string()),
-            502 => Some("Bad Gateway".to_string()),
-            503 => Some("Service Unavailable".to_string()),
-            _ => None,
-        }
-    }
-
-    pub fn get_body(&self) -> Option<HttpsBody> {
+    /// Get the response body
+    pub fn get_body(&self) -> Option<HttpBody> {
         self.body.clone()
     }
 
-    pub fn take_body(&mut self) -> Option<HttpsBody> {
-        self.body.take()
+    /// Set the response body using an IO ReadCloser
+    pub fn set_body(&mut self, body: Option<Zval>) -> PhpResult<()> {
+        self.body = HttpBody::from_optional(body)?;
+        Ok(())
     }
 
-    pub fn body_string(&self) -> String {
-        String::new()
+    /// Set the response body from a static string buffer
+    pub fn set_body_string(&mut self, body: String) {
+        self.body = Some(HttpBody::from_string(body));
     }
 
-    // Store request info for tracking (simplified)
-    pub fn associate_request(&mut self
-    ) -> Self {
-        // Track request association here
-        self.clone()
+    /// Initialize an empty streaming body (buffer backed)
+    pub fn init_stream(&mut self) {
+        if self.body.is_none() {
+            self.body = Some(HttpBody::from_string(String::new()));
+        } else if let Some(ref mut body) = self.body {
+            body.rewind();
+        }
     }
 
-    pub fn version_string(&self) -> String {
-        format!("HTTP/{}", self.version)
-    }
-
-    pub fn is_server_push_enabled(&self) -> bool {
-        self.server_pushed
-    }
-
-    pub fn enable_server_push(&mut self) -> Self {
-        self.server_pushed = true;
-        self.clone()
-    }
-
-    pub fn to_array(&self) -> HashMap<String, Zval> {
-        let mut result = HashMap::new();
-
-        result.insert("status".to_string(), (self.status as i64).into_zval(false).unwrap());
-        result.insert("version".to_string(), self.version.clone().into_zval(false).unwrap());
-        result.insert("headers".to_string(), self.headers.clone().into_zval(false).unwrap());
-
-        if self.server_pushed {
-            result.insert("server_pushed".to_string(), true.into_zval(false).unwrap());
+    /// Write data to the buffered response body (not available for external streams)
+    pub fn write(&mut self, data: String) -> PhpResult<i64> {
+        if self.body.is_none() {
+            self.body = Some(HttpBody::from_string(String::new()));
         }
 
-        result
-    }
-
-    pub fn from_array(data: &Zval) -> PhpResult<Self> {
-        let arr = data.array().ok_or("Expected array")?;
-        
-        let status = arr.get("status")
-            .and_then(|z| z.long())
-            .unwrap_or(200) as i32;
-
-        let version = arr.get("version")
-            .and_then(|z| z.string())
-            .unwrap_or("1.1".to_string())
-            .to_string();
-
-        let mut resp = Self::new(status);
-        resp.version = version;
-
-        if let Some(headers_zval) = arr.get("headers") {
-            if let Some(headers_ht) = headers_zval.array() {
-                for (k, v) in headers_ht {
-                    // Handle ArrayKey manually
-                    use ext_php_rs::types::ArrayKey;
-                    let key_str = match k {
-                        ArrayKey::Long(i) => Some(i.to_string()),
-                        ArrayKey::Str(s) => Some(s.to_string()),
-                        _ => None,
-                    };
-
-                    if let (Some(key), Some(val)) = (key_str, v.string()) {
-                        resp.set_header(key, val.to_string());
-                    }
-                }
-            }
+        if let Some(ref mut body) = self.body {
+            body.append(data.clone())?;
+            Ok(data.len() as i64)
+        } else {
+            Ok(0)
         }
-
-        Ok(resp)
     }
-}
 
-/// Standard HTTP status codes
-#[allow(non_snake_case, dead_code)]
-impl HttpResponse {
-    pub fn Continue() -> Self { Self::new(100) }
-    pub fn SwitchingProtocols() -> Self { Self::new(101) }
+    /// Close/finish the response body
+    pub fn end(&mut self) -> PhpResult<()> {
+        if let Some(ref mut body) = self.body {
+            body.close()?;
+        }
+        Ok(())
+    }
 
-    pub fn OK() -> Self { Self::new(200) }
-    pub fn Created() -> Self { Self::new(201) }
-    pub fn Accepted() -> Self { Self::new(202) }
+    /// Clone the response
+    pub fn clone(&self) -> Self {
+        Self {
+            status_code: self.status_code,
+            reason_phrase: self.reason_phrase.clone(),
+            version: self.version.clone(),
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+        }
+    }
 
-    pub fn MultipleChoices() -> Self { Self::new(300) }
-    pub fn MovedPermanently() -> Self { Self::new(301) }
-    pub fn Found() -> Self { Self::new(302) }
-    pub fn SeeOther() -> Self { Self::new(303) }
-    pub fn NotModified() -> Self { Self::new(304) }
-    pub fn TemporaryRedirect() -> Self { Self::new(307) }
-    pub fn PermanentRedirect() -> Self { Self::new(308) }
+    /// Check if the response is successful (2xx)
+    pub fn is_success(&self) -> bool {
+        StatusCodes::is_success(self.status_code)
+    }
 
-    pub fn BadRequest() -> Self { Self::new(400) }
-    pub fn Unauthorized() -> Self { Self::new(401) }
-    pub fn Forbidden() -> Self { Self::new(403) }
-    pub fn NotFound() -> Self { Self::new(404) }
-    pub fn MethodNotAllowed() -> Self { Self::new(405) }
-    pub fn RequestTimeout() -> Self { Self::new(408) }
-    pub fn Conflict() -> Self { Self::new(409) }
-    pub fn Gone() -> Self { Self::new(410) }
-    pub fn LengthRequired() -> Self { Self::new(411) }
-    pub fn PayloadTooLarge() -> Self { Self::new(413) }
-    pub fn URITooLong() -> Self { Self::new(414) }
-    pub fn UnsupportedMediaType() -> Self { Self::new(415) }
-    pub fn RangeNotSatisfiable() -> Self { Self::new(416) }
-    pub fn UnprocessableEntity() -> Self { Self::new(422) }
-    pub fn TooManyRequests() -> Self { Self::new(429) }
+    /// Check if the response is a redirect (3xx)
+    pub fn is_redirect(&self) -> bool {
+        StatusCodes::is_redirect(self.status_code)
+    }
 
-    pub fn InternalServerError() -> Self { Self::new(500) }
-    pub fn NotImplemented() -> Self { Self::new(501) }
-    pub fn BadGateway() -> Self { Self::new(502) }
-    pub fn ServiceUnavailable() -> Self { Self::new(503) }
-    pub fn GatewayTimeout() -> Self { Self::new(504) }
-    pub fn HTTPVersionNotSupported() -> Self { Self::new(505) }
+    /// Check if the response is a client error (4xx)
+    pub fn is_client_error(&self) -> bool {
+        StatusCodes::is_client_error(self.status_code)
+    }
+
+    /// Check if the response is a server error (5xx)
+    pub fn is_server_error(&self) -> bool {
+        StatusCodes::is_server_error(self.status_code)
+    }
+
+    /// Check if the response is an error (4xx or 5xx)
+    pub fn is_error(&self) -> bool {
+        StatusCodes::is_error(self.status_code)
+    }
+
+    /// Get default reason phrase for status code
+    fn get_default_reason_phrase(status_code: i32) -> String {
+        match status_code {
+            100 => "Continue".to_string(),
+            101 => "Switching Protocols".to_string(),
+
+            200 => "OK".to_string(),
+            201 => "Created".to_string(),
+            202 => "Accepted".to_string(),
+            204 => "No Content".to_string(),
+
+            301 => "Moved Permanently".to_string(),
+            302 => "Found".to_string(),
+            303 => "See Other".to_string(),
+            304 => "Not Modified".to_string(),
+            307 => "Temporary Redirect".to_string(),
+            308 => "Permanent Redirect".to_string(),
+
+            400 => "Bad Request".to_string(),
+            401 => "Unauthorized".to_string(),
+            403 => "Forbidden".to_string(),
+            404 => "Not Found".to_string(),
+            405 => "Method Not Allowed".to_string(),
+            406 => "Not Acceptable".to_string(),
+            408 => "Request Timeout".to_string(),
+            409 => "Conflict".to_string(),
+            410 => "Gone".to_string(),
+            411 => "Length Required".to_string(),
+            413 => "Payload Too Large".to_string(),
+            414 => "URI Too Long".to_string(),
+            415 => "Unsupported Media Type".to_string(),
+            416 => "Range Not Satisfiable".to_string(),
+            422 => "Unprocessable Entity".to_string(),
+            429 => "Too Many Requests".to_string(),
+
+            500 => "Internal Server Error".to_string(),
+            501 => "Not Implemented".to_string(),
+            502 => "Bad Gateway".to_string(),
+            503 => "Service Unavailable".to_string(),
+            504 => "Gateway Timeout".to_string(),
+
+            _ => "Unknown".to_string(),
+        }
+    }
 }

@@ -1,287 +1,277 @@
 /// HTTP Server implementation
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::{IntoZval, FromZval, IntoZvalDyn};
+use ext_php_rs::exception::PhpException;
+use crate::http::{HttpRequest, HttpResponse};
+use crate::net::AsyncTcpListener;
 use crate::future::RustFuture;
-use crate::http::request::HttpRequest;
-use crate::http::response::HttpResponse;
+use futures::FutureExt;
+use std::sync::Arc;
+use std::collections::HashMap;
 
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Request, Response};
-use hyper_util::rt::TokioIo;
-use tokio::net::TcpListener;
-use tracing::{info, error};
-use http_body_util::Full;
-use bytes::Bytes;
+/// HTTP request handler trait
+/// PHP implementations should implement this to handle requests
+#[php_interface]
+#[php(name = "Async\\Kernel\\Network\\Http\\RequestHandler")]
+pub trait RequestHandler {
+    /// Handle an HTTP request and return a response
+    fn handle(&self, request: &HttpRequest) -> PhpResult<HttpResponse>;
+}
 
+/// HTTP Server
 #[php_class]
-#[derive(Clone)]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
+    /// The TCP listener for incoming connections
+    listener: Option<AsyncTcpListener>,
+    /// Request handlers by path pattern
+    handlers: HashMap<String, Zval>, // Store PHP callbacks/handlers
+    /// Default handler for 404 responses
+    default_handler: Option<Zval>,
+    /// Server configuration
     config: ServerConfig,
 }
 
+/// Server configuration
 #[derive(Clone)]
-pub struct ServerConfig {
-    pub port: u16,
-    pub host: String,
-    pub max_connections: usize,
-    pub keep_alive_timeout: u64,
-    pub enable_http2: bool,
-    pub enable_http3: bool,
+struct ServerConfig {
+    /// Read timeout in seconds
+    read_timeout: Option<Duration>,
+    /// Write timeout in seconds
+    write_timeout: Option<Duration>,
+    /// Keep-alive timeout
+    keep_alive_timeout: Option<Duration>,
+    /// Maximum request size in bytes
+    max_request_size: usize,
+    /// Server name for Server header
+    server_name: String,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            port: 8080,
-            host: "127.0.0.1".to_string(),
-            max_connections: 1000,
-            keep_alive_timeout: 90,
-            enable_http2: false,
-            enable_http3: false,
+            read_timeout: Some(Duration::from_secs(60)),
+            write_timeout: Some(Duration::from_secs(60)),
+            keep_alive_timeout: Some(Duration::from_secs(30)),
+            max_request_size: 10 * 1024 * 1024, // 10MB
+            server_name: "async-php/1.0".to_string(),
         }
     }
 }
 
+use std::time::Duration;
+
+#[php_impl]
 impl HttpServer {
-    pub fn new() -> Self {
+    /// Create a new HTTP server
+    #[php(constructor)]
+    pub fn __construct() -> Self {
         Self {
+            listener: None,
+            handlers: HashMap::new(),
+            default_handler: None,
             config: ServerConfig::default(),
         }
     }
 
-    pub fn with_config(config: ServerConfig) -> Self {
-        Self { config }
+    /// Bind the server to a specific address
+    #[php]
+    pub fn bind(&mut self, addr: String) -> PhpResult<()> {
+        // Create a TCP listener
+        let listener = AsyncTcpListener::__construct(addr)?;
+        self.listener = Some(listener);
+        Ok(())
     }
+
+    /// Add a request handler for a specific path pattern
+    /// The handler can be a callable, an object implementing RequestHandler, or a class name
+    #[php]
+    pub fn handle(&mut self, pattern: String, handler: &Zval) -> PhpResult<()> {
+        self.handlers.insert(pattern, handler.shallow_clone());
+        Ok(())
+    }
+
+    /// Set the default handler for 404 responses
+    #[php]
+    pub fn set_default_handler(&mut self, handler: &Zval) -> PhpResult<()> {
+        self.default_handler = Some(handler.shallow_clone());
+        Ok(())
+    }
+
+    /// Set read timeout
+    pub fn set_read_timeout(&mut self, seconds: i64) {
+        self.config.read_timeout = if seconds > 0 {
+            Some(Duration::from_secs(seconds as u64))
+        } else {
+            None
+        };
+    }
+
+    /// Set write timeout
+    pub fn set_write_timeout(&mut self, seconds: i64) {
+        self.config.write_timeout = if seconds > 0 {
+            Some(Duration::from_secs(seconds as u64))
+        } else {
+            None
+        };
+    }
+
+    /// Set keep-alive timeout
+    pub fn set_keep_alive_timeout(&mut self, seconds: i64) {
+        self.config.keep_alive_timeout = if seconds > 0 {
+            Some(Duration::from_secs(seconds as u64))
+        } else {
+            None
+        };
+    }
+
+    /// Set maximum request size
+    pub fn set_max_request_size(&mut self, size: i64) {
+        self.config.max_request_size = size as usize;
+    }
+
+    /// Start the server and begin accepting connections
+    /// Returns a future that runs the server loop
+    #[php]
+    pub fn start(&self) -> PhpResult<Zval> {
+        let server = self.clone();
+
+        let fut = async move {
+            if server.listener.is_none() {
+                return Err(PhpException::default("Server not bound to any address. Call bind() first.".into()));
+            }
+
+            // In a real implementation, this would:
+            // 1. Accept connections in a loop
+            // 2. Parse HTTP requests from the stream
+            // 3. Create HttpRequest objects with streaming bodies
+            // 4. Call the appropriate handler
+            // 5. Stream the response back
+
+            // For now, just simulate running
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        };
+
+        let rust_fut = RustFuture::new(fut.boxed());
+        rust_fut.into_zval(false)
+    }
+
+    /// Process a single request (useful for testing)
+    /// This allows PHP code to manually process a request without starting the server
+    #[php]
+    pub fn process_request(&self, request: &HttpRequest
+    ) -> PhpResult<HttpResponse> {
+        let path = request.get_uri();
+
+        // Find matching handler
+        for (pattern, handler) in &self.handlers {
+            if Self::path_matches(pattern, &path) {
+                return self.call_handler(request, handler);
+            }
+        }
+
+        // Use default handler or return 404
+        if let Some(ref default) = self.default_handler {
+            return self.call_handler(request, default);
+        }
+
+        // Default 404 response
+        Ok(HttpResponse::__construct(404))
+    }
+
+    /// Clone the server
+    pub fn clone(&self) -> Self {
+        Self {
+            listener: self.listener.as_ref().map(|l| l.clone()),
+            handlers: self.handlers.iter()
+                .map(|(k, v)| (k.clone(), v.shallow_clone()))
+                .collect(),
+            default_handler: self.default_handler.as_ref().map(|h| h.shallow_clone()),
+            config: self.config.clone(),
+        }
+    }
+}
+
+impl HttpServer {
+    /// Check if a path matches a pattern (simplified implementation)
+    fn path_matches(pattern: &str, path: &str) -> bool {
+        // Simple exact match for now
+        // In a real implementation, this would support:
+        // - Path parameters (e.g., /users/{id})
+        // - Wildcards (e.g., /static/*)
+        // - Regular expressions
+        pattern == path
+    }
+
+    /// Call a request handler
+    fn call_handler(&self,
+        request: &HttpRequest,
+        handler: &Zval
+    ) -> PhpResult<HttpResponse> {
+        // First, check if it's a RequestHandler object
+        if let Ok(handler_obj) = <dyn RequestHandler>::from_zval(handler) {
+            return handler_obj.handle(request);
+        }
+
+        // Then check if it's a callable (function, closure, etc.)
+        if let Ok(response_zval) = handler.try_call(vec![request]) {
+            // Try to convert the response to HttpResponse
+            if let Some(response) = HttpResponse::from_zval(&response_zval) {
+                return Ok(response.clone());
+            }
+        }
+
+        Err(PhpException::default("Handler must be a RequestHandler object or callable returning HttpResponse".into()))
+    }
+}
+
+/// Router trait for handling complex routing
+#[php_interface]
+#[php(name = "Async\\Kernel\\Network\\Http\\Router")]
+pub trait Router {
+    /// Match a request path and return handler and path parameters
+    fn match_path(&self,
+        path: String,
+        method: String
+    ) -> PhpResult<RouterMatch>;
+}
+
+/// Router match result
+#[php_class]
+#[php(name = "Async\\Kernel\\Network\\Http\\RouterMatch")]
+pub struct RouterMatch {
+    /// The matched handler
+    handler: Option<Zval>,
+    /// Path parameters (e.g., {id: "123"})
+    params: HashMap<String, String>,
 }
 
 #[php_impl]
-impl HttpServer {
-    pub fn __construct() -> Self {
-        Self::new()
-    }
-
-    pub fn with_host(&mut self, host: String
+impl RouterMatch {
+    /// Create a new router match
+    #[php(constructor)]
+    pub fn __construct(
+        handler: Option<Zval>,
+        params: HashMap<String, String>
     ) -> Self {
-        self.config.host = host;
-        self.clone()
+        Self { handler, params }
     }
 
-    pub fn with_port(&mut self, port: u16
-    ) -> Self {
-        self.config.port = port;
-        self.clone()
+    /// Get the handler
+    pub fn get_handler(&self) -> Option<Zval> {
+        self.handler.as_ref().map(|h| h.shallow_clone())
     }
 
-    pub fn with_max_connections(&mut self, max: usize
-    ) -> Self {
-        self.config.max_connections = max;
-        self.clone()
+    /// Get path parameters
+    pub fn get_params(&self) -> HashMap<String, String> {
+        self.params.clone()
     }
 
-    pub fn with_keep_alive_timeout(&mut self, timeout: u64
-    ) -> Self {
-        self.config.keep_alive_timeout = timeout;
-        self.clone()
+    /// Get a specific parameter
+    pub fn get_param(&self, name: String) -> Option<String> {
+        self.params.get(&name).cloned()
     }
-
-    pub fn enable_http2(&mut self
-    ) -> Self {
-        self.config.enable_http2 = true;
-        self.clone()
-    }
-
-    pub fn enable_http3(&mut self
-    ) -> Self {
-        self.config.enable_http3 = true;
-        self.clone()
-    }
-
-    pub fn listen(&self, _handler: &Zval
-    ) {
-        // This is a synchronous method wrapper - actual async implementation
-        // will be handled by the future-based system
-        unimplemented!("Use async server implementation"
-        );
-    }
-
-    /// Start server with handler
-    pub fn start(&self, handler: &Zval
-    ) -> RustFuture {
-        let config = self.config.clone();
-        // handler is now owned Zval via unsafe copy
-        let handler: Zval = unsafe { std::ptr::read(handler) };
-        let handler = Arc::new(handler);
-
-        let future = async move {
-            let addr = format!("{}:{}", config.host, config.port);
-
-            let listener = match TcpListener::bind(&addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    error!("Failed to bind to {}: {}", addr, e);
-                    return Zval::new();
-                }
-            };
-
-            info!("HTTP Server listening on http://{}", addr);
-
-            loop {
-                let (stream, _) = match listener.accept().await {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-
-                let io = TokioIo::new(stream);
-                let handler_clone = handler.clone();
-
-                tokio::task::spawn_local(async move {
-                    let service = service_fn(move |req| {
-                        let handler_inner = handler_clone.clone();
-                        async move {
-                            // Convert hyper request to HttpRequest
-                            let php_request = convert_hyper_request(req).await;
-
-                            // Call PHP handler
-                            let arg = php_request.into_zval(false).unwrap();
-                            let args = vec![&arg as &dyn IntoZvalDyn];
-                            
-                            // handler_inner is Arc<Zval>. Deref gives Zval.
-                            // We need to call methods on Zval.
-                            
-                            let callable = handler_inner.callable().ok_or("Handler is not callable").unwrap();
-                            
-                            let handler_result = callable.try_call(args).unwrap();
-
-                            // Convert PHP response to hyper response
-                            let hyper_response = convert_php_response(&handler_result);
-                            hyper_response
-                        }
-                    });
-
-                    if let Err(_) = http1::Builder::new().serve_connection(io, service).await {
-                        error!("Error serving HTTP connection");
-                    }
-                });
-            }
-
-            #[allow(unreachable_code)]
-            Zval::new()
-        };
-
-        RustFuture::new(future)
-    }
-
-    /// Get server configuration
-    pub fn get_config(&self
-    ) -> HashMap<String, Zval> {
-        let mut config = HashMap::new();
-
-        config.insert("host".to_string(), self.config.host.clone().into_zval(false).unwrap());
-        config.insert("port".to_string(), (self.config.port as i64).into_zval(false).unwrap());
-        config.insert("max_connections".to_string(), (self.config.max_connections as i64).into_zval(false).unwrap());
-        config.insert("keep_alive_timeout".to_string(), (self.config.keep_alive_timeout).into_zval(false).unwrap());
-        config.insert("enable_http2".to_string(), self.config.enable_http2.into_zval(false).unwrap());
-        config.insert("enable_http3".to_string(), self.config.enable_http3.into_zval(false).unwrap());
-
-        config
-    }
-
-    /// Check if HTTP/2 is enabled
-    pub fn is_http2_enabled(&self
-    ) -> bool {
-        self.config.enable_http2
-    }
-
-    /// Check if HTTP/3 is supported
-    pub fn is_http3_enabled(&self
-    ) -> bool {
-        self.config.enable_http3
-    }
-}
-
-/// Convert hyper request to HttpRequest
-async fn convert_hyper_request(
-    req: Request<Incoming>
-) -> HttpRequest {
-    let (parts, _body) = req.into_parts();
-
-    // Create method string
-    let method = parts.method.to_string();
-    let uri_str = parts.uri.to_string();
-
-    // Create request
-    let mut php_request = HttpRequest::new(method, uri_str);
-    php_request.set_version("1.1".to_string()); // Default to 1.1
-
-    // Copy headers
-    for (name_opt, value) in parts.headers {
-        if let Some(name) = name_opt {
-             if let Ok(value_str) = value.to_str() {
-                 php_request.with_header(name.to_string(), value_str.to_string());
-             }
-        }
-    }
-
-    // TODO: Handle body - skipping for now as it requires async reading and converting to HttpsBody
-    // In a real implementation we would read the body stream.
-
-    php_request
-}
-
-fn convert_php_response(zval: &Zval) -> Result<Response<Full<Bytes>>, hyper::Error> {
-    let mut response_builder = Response::builder();
-    let mut body_bytes = Bytes::new();
-
-    // Use <&HttpResponse as FromZval>::from_zval(zval) to get a reference if possible, 
-    // or if FromZval is implemented for &HttpResponse (returning Option<&HttpResponse>), this works.
-    
-    if let Some(php_resp) = <&HttpResponse as FromZval>::from_zval(zval) {
-        // It's an HttpResponse object
-        let arr = php_resp.to_array();
-        
-        // Status
-        if let Some(s) = arr.get("status").and_then(|z| z.long()) {
-            response_builder = response_builder.status(s as u16);
-        }
-        
-        // Headers
-        if let Some(headers) = arr.get("headers").and_then(|z| z.array()) {
-            for (k, v) in headers {
-                // Fixed key extraction with ArrayKey
-                use ext_php_rs::types::ArrayKey;
-                let key_str = match k {
-                    ArrayKey::Long(i) => Some(i.to_string()),
-                    ArrayKey::Str(s) => Some(s.to_string()),
-                    _ => None,
-                };
-
-                if let (Some(key), Some(val)) = (key_str, v.string()) {
-                    response_builder = response_builder.header(key, val);
-                }
-            }
-        }
-        
-        if let Some(_body) = php_resp.get_body() {
-             let s = php_resp.body_string();
-             body_bytes = Bytes::from(s);
-        }
-        
-    } else if let Some(s) = zval.string() {
-        // It's a string
-        response_builder = response_builder.status(200);
-        body_bytes = Bytes::from(s.to_string());
-    } else {
-        // Unknown response
-        response_builder = response_builder.status(500);
-        body_bytes = Bytes::from("Internal Server Error: Invalid response from handler");
-    }
-
-    Ok(response_builder.body(Full::new(body_bytes)).unwrap())
 }

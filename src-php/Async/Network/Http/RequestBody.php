@@ -2,20 +2,12 @@
 
 namespace Async\Network\Http;
 
-use Async\Kernel\Network\Http\RequestBody as KernelRequestBody;
-use Fiber;
+use Async\Kernel\Network\Http\HttpBody as KernelHttpBody;
 
-class RequestBody
+class RequestBody extends Body
 {
-    protected KernelRequestBody $kernel;
-
-    public function __construct(KernelRequestBody $kernel)
+    public function __construct(KernelHttpBody $kernel)
     {
-        $this->kernel = $kernel;
-    }
-
-    public function read(int $length = 8192): string
-    {
-        return Fiber::suspend($this->kernel->read($length));
+        parent::__construct($kernel);
     }
 }

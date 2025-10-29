@@ -2,45 +2,55 @@
 
 namespace Async\Network\Http;
 
-use Async\Kernel\Network\Http\Response as KernelResponse;
+use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
 use Fiber;
 
 class Response
 {
     protected KernelResponse $kernel;
 
-    public function __construct(int|KernelResponse $status = 200, string $body = '')
+    public function __construct(int|KernelResponse $status = 200, Body|string|null $body = null)
     {
         if ($status instanceof KernelResponse) {
             $this->kernel = $status;
         } else {
-            $this->kernel = new KernelResponse();
-            $this->kernel->withStatus($status);
-            $this->kernel->withBody($body);
+            $this->kernel = new KernelResponse($status);
+        }
+
+        if ($body instanceof Body) {
+            $this->kernel->set_body($body->getKernel());
+        } elseif (is_string($body)) {
+            $this->kernel->set_body_string($body);
         }
     }
 
     public function withStatus(int $status): self
     {
-        $this->kernel->withStatus($status);
+        $this->kernel->set_status_code($status);
         return $this;
     }
 
     public function withHeader(string $name, string $value): self
     {
-        $this->kernel->withHeader($name, $value);
+        $this->kernel->set_header($name, $value);
         return $this;
     }
 
-    public function withBody(string $body): self
+    public function withBody(Body|string|null $body): self
     {
-        $this->kernel->withBody($body);
+        if ($body instanceof Body) {
+            $this->kernel->set_body($body->getKernel());
+        } elseif (is_string($body)) {
+            $this->kernel->set_body_string($body);
+        } else {
+            $this->kernel->set_body(null);
+        }
         return $this;
     }
 
     public function initStream(): void
     {
-        $this->kernel->initStream();
+        $this->kernel->init_stream();
     }
 
     public function write(string $data): void
@@ -51,12 +61,6 @@ class Response
     public function end(): void
     {
         Fiber::suspend($this->kernel->end());
-    }
-
-    public function getRequest(): Request
-    {
-        $kernelRequest = $this->kernel->getRequest();
-        return new Request($kernelRequest);
     }
 
     public function getKernel(): KernelResponse
