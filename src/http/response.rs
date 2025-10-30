@@ -115,6 +115,12 @@ impl HttpResponse {
         self.body.shallow_clone()
     }
 
+    /// Set the response body
+    pub fn set_body(&mut self, body: &Zval) -> PhpResult<()> {
+        self.body = body.shallow_clone();
+        Ok(())
+    }
+
     /// Clone the response
     pub fn clone(&self) -> Self {
         Self {

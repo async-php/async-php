@@ -5,6 +5,7 @@
 pub mod types;
 pub mod request;
 pub mod response;
+pub mod body;
 pub mod client;
 pub mod server;
 
@@ -12,5 +13,7 @@ pub mod server;
 
 pub use request::HttpRequest;
 pub use response::HttpResponse;
+pub use body::HttpResponseBody;
 pub use client::HttpClient;
 pub use server::HttpServer;
+pub(crate) use body::PhpReaderAdapter;
