@@ -172,8 +172,6 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
         .class::<http::HttpClient>()
-        .class::<AsyncQuicServer>()
-        .class::<AsyncQuicConnection>()
         .class::<AsyncChannel>()
         .class::<AsyncMySql>()
         .class::<AsyncMySqlTransaction>()

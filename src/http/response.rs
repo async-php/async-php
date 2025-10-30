@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use ext_php_rs::class::ConstructorResult::ArgError;
-/// HTTP Response implementation
-
 use ext_php_rs::prelude::*;
-use ext_php_rs::types::{ZendObject, Zval};
+use ext_php_rs::types::Zval;
 use crate::http::types::StatusCodes;
-use crate::io::{get_read_closer_ce, PhpInterfaceReadCloser};
+use crate::io::get_read_closer_ce;
 
 /// HTTP Response structure
 #[php_class]

@@ -9,7 +9,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use hyper_rustls::HttpsConnectorBuilder;
 use bytes::Bytes;
-use hyper::body::{Frame, Incoming};
+use hyper::body::Frame;
 use http_body_util::StreamBody;
 use futures::StreamExt;
 

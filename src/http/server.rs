@@ -2,18 +2,16 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::exception::PhpException;
 use crate::http::{HttpRequest, HttpResponse};
 use crate::net::AsyncTcpListener;
-use crate::future::RustFuture;
-use futures::FutureExt;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// HTTP request handler trait
 /// PHP implementations should implement this to handle requests
 #[php_interface]
 #[php(name = "Async\\Kernel\\Network\\Http\\RequestHandler")]
+#[allow(dead_code)]
 pub trait RequestHandler {
     /// Handle an HTTP request and return a response
     fn handle(&self, request: &HttpRequest) -> PhpResult<HttpResponse>;
@@ -24,17 +22,22 @@ pub trait RequestHandler {
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
     /// The TCP listener for incoming connections
+    #[allow(dead_code)]
     listener: Option<AsyncTcpListener>,
     /// Request handlers by path pattern
+    #[allow(dead_code)]
     handlers: HashMap<String, Zval>, // Store PHP callbacks/handlers
     /// Default handler for 404 responses
+    #[allow(dead_code)]
     default_handler: Option<Zval>,
     /// Server configuration
+    #[allow(dead_code)]
     config: ServerConfig,
 }
 
 /// Server configuration
 #[derive(Clone)]
+#[allow(dead_code)]
 struct ServerConfig {
     /// Read timeout in seconds
     read_timeout: Option<Duration>,
@@ -59,8 +62,6 @@ impl Default for ServerConfig {
         }
     }
 }
-
-use std::time::Duration;
 
 #[php_impl]
 impl HttpServer {
