@@ -14,7 +14,6 @@ mod channel;
 mod db;
 mod time;
 mod util;
-mod quic;
 mod logger;
 mod tls;
 
@@ -24,8 +23,7 @@ use fs::{AsyncFilesystem, AsyncFileHandle};
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
-use quic::{AsyncQuicServer, AsyncQuicConnection}; 
-use logger::AsyncLogger; 
+use logger::AsyncLogger;
 use tls::AsyncTlsStream;
 use io::{
     PhpInterfaceReader, PhpInterfaceWriter, PhpInterfaceCloser, PhpInterfaceReadCloser,
