@@ -1,67 +1,28 @@
-/// HTTP Server implementation
+/// HTTP Server implementation supporting HTTP/1.1, HTTP/2, and HTTP/3
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use crate::http::{HttpRequest, HttpResponse};
-use crate::net::AsyncTcpListener;
-use std::collections::HashMap;
-use std::time::Duration;
+use ext_php_rs::convert::IntoZval;
+use crate::http::{HttpRequest, HttpResponseBody};
+use crate::future::RustFuture;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use bytes::Bytes;
+use http_body_util::Full;
 
-/// HTTP request handler trait
-/// PHP implementations should implement this to handle requests
-#[php_interface]
-#[php(name = "Async\\Kernel\\Network\\Http\\RequestHandler")]
-#[allow(dead_code)]
-pub trait RequestHandler {
-    /// Handle an HTTP request and return a response
-    fn handle(&self, request: &HttpRequest) -> PhpResult<HttpResponse>;
-}
-
-/// HTTP Server
+/// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
-    /// The TCP listener for incoming connections
-    #[allow(dead_code)]
-    listener: Option<AsyncTcpListener>,
-    /// Request handlers by path pattern
-    #[allow(dead_code)]
-    handlers: HashMap<String, Zval>, // Store PHP callbacks/handlers
-    /// Default handler for 404 responses
-    #[allow(dead_code)]
-    default_handler: Option<Zval>,
-    /// Server configuration
-    #[allow(dead_code)]
-    config: ServerConfig,
+    protocol: String,
 }
 
-/// Server configuration
-#[derive(Clone)]
-#[allow(dead_code)]
-struct ServerConfig {
-    /// Read timeout in seconds
-    read_timeout: Option<Duration>,
-    /// Write timeout in seconds
-    write_timeout: Option<Duration>,
-    /// Keep-alive timeout
-    keep_alive_timeout: Option<Duration>,
-    /// Maximum request size in bytes
-    max_request_size: usize,
-    /// Server name for Server header
-    server_name: String,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            read_timeout: Some(Duration::from_secs(60)),
-            write_timeout: Some(Duration::from_secs(60)),
-            keep_alive_timeout: Some(Duration::from_secs(30)),
-            max_request_size: 10 * 1024 * 1024, // 10MB
-            server_name: "async-php/1.0".to_string(),
-        }
-    }
-}
+// SAFETY: Safe because runtime is single-threaded
+unsafe impl Send for HttpServer {}
+unsafe impl Sync for HttpServer {}
 
 #[php_impl]
 impl HttpServer {
@@ -69,49 +30,167 @@ impl HttpServer {
     #[php(constructor)]
     pub fn __construct() -> Self {
         Self {
-            listener: None,
-            handlers: HashMap::new(),
-            default_handler: None,
-            config: ServerConfig::default(),
+            protocol: "http1".to_string(),
         }
     }
 
-    /// Set the default handler for 404 responses
+    /// Set protocol (http1, http2, http3)
     #[php]
-    pub fn set_default_handler(&mut self, handler: &Zval) -> PhpResult<()> {
-        self.default_handler = Some(handler.shallow_clone());
-        Ok(())
+    pub fn set_protocol(&mut self, protocol: String) {
+        self.protocol = protocol;
     }
 
-    /// Set read timeout
-    pub fn set_read_timeout(&mut self, seconds: i64) {
-        self.config.read_timeout = if seconds > 0 {
-            Some(Duration::from_secs(seconds as u64))
-        } else {
-            None
+    /// Start listening on the given address with a request handler callback
+    /// The callback receives HttpRequest and should return HttpResponse
+    #[php]
+    pub fn listen(&self, addr: String, handler: &mut Zval) -> RustFuture {
+        let protocol = self.protocol.clone();
+        let handler_clone = handler.shallow_clone();
+
+        RustFuture::new(async move {
+            let socket_addr: SocketAddr = addr.parse()
+                .map_err(|e| format!("Invalid address: {}", e))?;
+
+            match protocol.as_str() {
+                "http1" => Self::serve_http1(socket_addr, handler_clone).await,
+                "http2" => Self::serve_http2(socket_addr, handler_clone).await,
+                "http3" => Self::serve_http3(socket_addr, handler_clone).await,
+                _ => Err(format!("Unsupported protocol: {}", protocol)),
+            }
+        })
+    }
+}
+
+impl HttpServer {
+    /// Serve HTTP/1.1
+    async fn serve_http1(addr: SocketAddr, handler: Zval) -> Result<Zval, String> {
+        let listener = TcpListener::bind(addr).await
+            .map_err(|e| format!("Failed to bind: {}", e))?;
+
+        loop {
+            let (stream, _) = listener.accept().await
+                .map_err(|e| format!("Failed to accept: {}", e))?;
+
+            let io = TokioIo::new(stream);
+            let handler_clone = handler.shallow_clone();
+
+            tokio::task::spawn_local(async move {
+                let service = service_fn(move |req| {
+                    let handler = handler_clone.shallow_clone();
+                    async move {
+                        Self::handle_request(req, handler).await
+                    }
+                });
+
+                if let Err(e) = http1::Builder::new()
+                    .serve_connection(io, service)
+                    .await
+                {
+                    eprintln!("Error serving connection: {:?}", e);
+                }
+            });
+        }
+    }
+
+    /// Serve HTTP/2
+    /// TODO: HTTP/2 support requires Send-safe executor which conflicts with single-threaded PHP runtime
+    async fn serve_http2(_addr: SocketAddr, _handler: Zval) -> Result<Zval, String> {
+        Err("HTTP/2 support is not yet implemented due to executor constraints. Use http1 instead.".to_string())
+    }
+
+    /// Serve HTTP/3
+    /// TODO: HTTP/3 support requires compatible versions of quinn and h3
+    async fn serve_http3(_addr: SocketAddr, _handler: Zval) -> Result<Zval, String> {
+        Err("HTTP/3 support is not yet implemented. Use http1 or http2 instead.".to_string())
+    }
+
+    /// Handle incoming HTTP request and call PHP handler
+    async fn handle_request(
+        req: hyper::Request<hyper::body::Incoming>,
+        handler: Zval,
+    ) -> Result<hyper::Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
+        // Extract request parts
+        let (parts, body) = req.into_parts();
+
+        // Create HttpRequest
+        let mut http_request = HttpRequest::__construct(
+            parts.method.to_string(),
+            parts.uri.to_string(),
+        );
+
+        // Set version
+        let version = match parts.version {
+            hyper::Version::HTTP_09 => "0.9",
+            hyper::Version::HTTP_10 => "1.0",
+            hyper::Version::HTTP_11 => "1.1",
+            hyper::Version::HTTP_2 => "2.0",
+            hyper::Version::HTTP_3 => "3.0",
+            _ => "1.1",
         };
-    }
+        http_request.set_version(version.to_string());
 
-    /// Set write timeout
-    pub fn set_write_timeout(&mut self, seconds: i64) {
-        self.config.write_timeout = if seconds > 0 {
-            Some(Duration::from_secs(seconds as u64))
-        } else {
-            None
-        };
-    }
+        // Set headers
+        for (key, value) in parts.headers.iter() {
+            if let Ok(value_str) = value.to_str() {
+                http_request.set_header(key.to_string(), value_str.to_string());
+            }
+        }
 
-    /// Set keep-alive timeout
-    pub fn set_keep_alive_timeout(&mut self, seconds: i64) {
-        self.config.keep_alive_timeout = if seconds > 0 {
-            Some(Duration::from_secs(seconds as u64))
-        } else {
-            None
-        };
-    }
+        // Wrap request body
+        let request_body = HttpResponseBody::new_internal(body);
+        let body_zval = ext_php_rs::types::ZendClassObject::new(request_body)
+            .into_zval(false)
+            .map_err(|e| format!("Failed to create request body: {:?}", e))?;
 
-    /// Set maximum request size
-    pub fn set_max_request_size(&mut self, size: i64) {
-        self.config.max_request_size = size as usize;
+        http_request.set_body(&body_zval)
+            .map_err(|e| format!("Failed to set request body: {:?}", e))?;
+
+        // Convert HttpRequest to Zval
+        let request_zval = ext_php_rs::types::ZendClassObject::new(http_request)
+            .into_zval(false)
+            .map_err(|e| format!("Failed to convert request: {:?}", e))?;
+
+        // Call PHP handler
+        let response_zval = handler
+            .try_call_method("handle", vec![&request_zval])
+            .map_err(|e| format!("Handler error: {:?}", e))?;
+
+        // Extract HttpResponse
+        let response_obj = response_zval.object()
+            .ok_or("Handler did not return an object")?;
+
+        // Get response data using methods
+        let status_code = response_obj
+            .try_call_method("get_status_code", vec![])
+            .ok()
+            .and_then(|v| v.long())
+            .unwrap_or(500) as u16;
+
+        // Build hyper response
+        let mut response_builder = hyper::Response::builder()
+            .status(status_code);
+
+        // Get headers
+        if let Ok(headers_zval) = response_obj.try_call_method("get_headers", vec![]) {
+            if let Some(headers_array) = headers_zval.array() {
+                for (key, value) in headers_array.iter() {
+                    let key_str = match key {
+                        ext_php_rs::types::ArrayKey::Long(i) => i.to_string(),
+                        ext_php_rs::types::ArrayKey::String(s) => s.to_string(),
+                        ext_php_rs::types::ArrayKey::Str(s) => s.to_string(),
+                    };
+
+                    if let Some(v) = value.string() {
+                        response_builder = response_builder.header(&key_str, v.as_str());
+                    }
+                }
+            }
+        }
+
+        // For now, return empty body (TODO: read from response body)
+        let response = response_builder
+            .body(Full::new(Bytes::new()))?;
+
+        Ok(response)
     }
 }

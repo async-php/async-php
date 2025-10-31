@@ -182,7 +182,7 @@ impl AsyncRead for PhpReaderAdapter {
         // Call PHP's read method (safe because we're on the same thread)
         let data_zval = this.reader
             .try_call_method("read", vec![&to_read.into_zval(false).unwrap()])
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("PHP read failed: {:?}", e)))?;
+            .map_err(|e| io::Error::other(format!("PHP read failed: {:?}", e)))?;
 
         // EOF check
         if data_zval.is_null() {
