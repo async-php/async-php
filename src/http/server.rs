@@ -187,9 +187,49 @@ impl HttpServer {
             }
         }
 
-        // For now, return empty body (TODO: read from response body)
+        // Get response body
+        let body_bytes = if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
+            if body_zval.is_null() {
+                Bytes::new()
+            } else if let Some(body_str) = body_zval.string() {
+                // Body is already a string
+                Bytes::from(body_str.to_string())
+            } else {
+                // Body is an object - try to read all content
+                match body_zval.try_call_method("read_all", vec![]) {
+                    Ok(read_future) => {
+                        // Check if it's a RustFuture that we need to extract
+                        if let Some(rust_future) = <&mut RustFuture as ext_php_rs::convert::FromZvalMut>::from_zval_mut(&mut read_future.shallow_clone()) {
+                            if let Some(fut) = rust_future.take_inner() {
+                                match fut.await {
+                                    Ok(content_zval) => {
+                                        if let Some(content_str) = content_zval.string() {
+                                            Bytes::from(content_str.to_string())
+                                        } else {
+                                            Bytes::new()
+                                        }
+                                    }
+                                    Err(_) => Bytes::new(),
+                                }
+                            } else {
+                                Bytes::new()
+                            }
+                        } else if let Some(content_str) = read_future.string() {
+                            // Direct string result
+                            Bytes::from(content_str.to_string())
+                        } else {
+                            Bytes::new()
+                        }
+                    }
+                    Err(_) => Bytes::new(),
+                }
+            }
+        } else {
+            Bytes::new()
+        };
+
         let response = response_builder
-            .body(Full::new(Bytes::new()))?;
+            .body(Full::new(body_bytes))?;
 
         Ok(response)
     }
