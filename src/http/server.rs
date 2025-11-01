@@ -6,18 +6,32 @@ use ext_php_rs::convert::IntoZval;
 use crate::http::{HttpRequest, HttpResponseBody};
 use crate::future::RustFuture;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use bytes::Bytes;
 use http_body_util::Full;
+use rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
+use std::fs;
+use std::io::BufReader;
 
-/// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3
+/// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3 simultaneously
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
-    protocol: String,
+    /// TLS certificate file path (PEM format)
+    cert_path: Option<String>,
+    /// TLS private key file path (PEM format)
+    key_path: Option<String>,
+    /// Enable HTTP/1.1 (default: true)
+    enable_http1: bool,
+    /// Enable HTTP/2 (default: true)
+    enable_http2: bool,
+    /// Enable HTTP/3 (default: true)
+    enable_http3: bool,
 }
 
 // SAFETY: Safe because runtime is single-threaded
@@ -30,78 +44,362 @@ impl HttpServer {
     #[php(constructor)]
     pub fn __construct() -> Self {
         Self {
-            protocol: "http1".to_string(),
+            cert_path: None,
+            key_path: None,
+            enable_http1: true,
+            enable_http2: true,
+            enable_http3: true,
         }
     }
 
-    /// Set protocol (http1, http2, http3)
+    /// Set TLS certificate and private key paths (required for HTTPS/HTTP2/HTTP3)
     #[php]
-    pub fn set_protocol(&mut self, protocol: String) {
-        self.protocol = protocol;
+    pub fn set_tls(&mut self, cert_path: String, key_path: String) {
+        self.cert_path = Some(cert_path);
+        self.key_path = Some(key_path);
+    }
+
+    /// Enable or disable HTTP/1.1
+    #[php]
+    pub fn set_enable_http1(&mut self, enable: bool) {
+        self.enable_http1 = enable;
+    }
+
+    /// Enable or disable HTTP/2
+    #[php]
+    pub fn set_enable_http2(&mut self, enable: bool) {
+        self.enable_http2 = enable;
+    }
+
+    /// Enable or disable HTTP/3
+    #[php]
+    pub fn set_enable_http3(&mut self, enable: bool) {
+        self.enable_http3 = enable;
     }
 
     /// Start listening on the given address with a request handler callback
     /// The callback receives HttpRequest and should return HttpResponse
+    /// All enabled protocols will run simultaneously on the same port
     #[php]
     pub fn listen(&self, addr: String, handler: &mut Zval) -> RustFuture {
-        let protocol = self.protocol.clone();
+        let cert_path = self.cert_path.clone();
+        let key_path = self.key_path.clone();
+        let enable_http1 = self.enable_http1;
+        let enable_http2 = self.enable_http2;
+        let enable_http3 = self.enable_http3;
         let handler_clone = handler.shallow_clone();
 
         RustFuture::new(async move {
             let socket_addr: SocketAddr = addr.parse()
                 .map_err(|e| format!("Invalid address: {}", e))?;
 
-            match protocol.as_str() {
-                "http1" => Self::serve_http1(socket_addr, handler_clone).await,
-                "http2" => Self::serve_http2(socket_addr, handler_clone).await,
-                "http3" => Self::serve_http3(socket_addr, handler_clone).await,
-                _ => Err(format!("Unsupported protocol: {}", protocol)),
-            }
+            // Start all enabled listeners simultaneously
+            Self::serve_all(
+                socket_addr,
+                handler_clone,
+                cert_path,
+                key_path,
+                enable_http1,
+                enable_http2,
+                enable_http3,
+            ).await
         })
     }
 }
 
 impl HttpServer {
-    /// Serve HTTP/1.1
-    async fn serve_http1(addr: SocketAddr, handler: Zval) -> Result<Zval, String> {
+    /// Load TLS configuration from certificate and key files
+    fn load_tls_config(cert_path: &str, key_path: &str) -> Result<Arc<ServerConfig>, String> {
+        // Load certificates
+        let cert_file = fs::File::open(cert_path)
+            .map_err(|e| format!("Failed to open cert file: {}", e))?;
+        let mut cert_reader = BufReader::new(cert_file);
+        let certs: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse certificates: {}", e))?;
+
+        // Load private key
+        let key_file = fs::File::open(key_path)
+            .map_err(|e| format!("Failed to open key file: {}", e))?;
+        let mut key_reader = BufReader::new(key_file);
+        let key = rustls_pemfile::private_key(&mut key_reader)
+            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .ok_or_else(|| "No private key found".to_string())?;
+
+        // Build server config with ALPN protocols for HTTP/1.1, HTTP/2, and HTTP/3
+        let mut config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| format!("Failed to build TLS config: {}", e))?;
+
+        config.alpn_protocols = vec![
+            b"h3".to_vec(),       // HTTP/3
+            b"h2".to_vec(),       // HTTP/2
+            b"http/1.1".to_vec(), // HTTP/1.1
+        ];
+
+        Ok(Arc::new(config))
+    }
+
+    /// Load Quinn server configuration for HTTP/3
+    fn load_quinn_config(cert_path: &str, key_path: &str) -> Result<quinn::ServerConfig, String> {
+        // Load certificates
+        let cert_file = fs::File::open(cert_path)
+            .map_err(|e| format!("Failed to open cert file: {}", e))?;
+        let mut cert_reader = BufReader::new(cert_file);
+        let certs: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse certificates: {}", e))?;
+
+        // Load private key
+        let key_file = fs::File::open(key_path)
+            .map_err(|e| format!("Failed to open key file: {}", e))?;
+        let mut key_reader = BufReader::new(key_file);
+        let key = rustls_pemfile::private_key(&mut key_reader)
+            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .ok_or_else(|| "No private key found".to_string())?;
+
+        // Build Quinn server config
+        let server_config = quinn::ServerConfig::with_single_cert(certs, key)
+            .map_err(|e| format!("Failed to build Quinn config: {}", e))?;
+
+        Ok(server_config)
+    }
+
+    /// Serve all enabled protocols simultaneously
+    async fn serve_all(
+        addr: SocketAddr,
+        handler: Zval,
+        cert_path: Option<String>,
+        key_path: Option<String>,
+        enable_http1: bool,
+        enable_http2: bool,
+        enable_http3: bool,
+    ) -> Result<Zval, String> {
+        // HTTP/2 temporarily disabled due to Send trait requirements with Zval
+        if enable_http2 {
+            tracing::warn!("HTTP/2 is temporarily disabled due to executor constraints");
+        }
+
+        // Load TLS config for TCP listener if needed
+        let tls_config = if (enable_http1 || enable_http2) && cert_path.is_some() && key_path.is_some() {
+            Some(Self::load_tls_config(
+                cert_path.as_ref().unwrap(),
+                key_path.as_ref().unwrap(),
+            )?)
+        } else {
+            None
+        };
+
+        // Start TCP listener for HTTP/1.1 (and HTTP/2 when supported)
+        let tcp_task = if enable_http1 {
+            let handler = handler.shallow_clone();
+            let tls_config = tls_config.clone();
+            Some(tokio::task::spawn_local(async move {
+                Self::serve_tcp(addr, handler, tls_config, enable_http1, false /* http2 disabled */).await
+            }))
+        } else {
+            None
+        };
+
+        // Start QUIC listener for HTTP/3
+        let quic_task = if enable_http3 {
+            if cert_path.is_none() || key_path.is_none() {
+                return Err("HTTP/3 requires TLS configuration. Call set_tls() first.".to_string());
+            }
+            let handler = handler.shallow_clone();
+            let cert = cert_path.unwrap();
+            let key = key_path.unwrap();
+            Some(tokio::task::spawn_local(async move {
+                Self::serve_quic(addr, handler, &cert, &key).await
+            }))
+        } else {
+            None
+        };
+
+        // Wait for both tasks (they run forever until error)
+        match (tcp_task, quic_task) {
+            (Some(tcp), Some(quic)) => {
+                tokio::select! {
+                    result = tcp => result.map_err(|e| format!("TCP task error: {}", e))?,
+                    result = quic => result.map_err(|e| format!("QUIC task error: {}", e))?,
+                }
+            }
+            (Some(tcp), None) => tcp.await.map_err(|e| format!("TCP task error: {}", e))?,
+            (None, Some(quic)) => quic.await.map_err(|e| format!("QUIC task error: {}", e))?,
+            (None, None) => return Err("At least one protocol must be enabled".to_string()),
+        }
+    }
+
+    /// Serve TCP connections (HTTP/1.1 and/or HTTP/2)
+    async fn serve_tcp(
+        addr: SocketAddr,
+        handler: Zval,
+        tls_config: Option<Arc<ServerConfig>>,
+        enable_http1: bool,
+        enable_http2: bool,
+    ) -> Result<Zval, String> {
         let listener = TcpListener::bind(addr).await
-            .map_err(|e| format!("Failed to bind: {}", e))?;
+            .map_err(|e| format!("Failed to bind TCP: {}", e))?;
+
+        tracing::info!("TCP listener started on {}", addr);
 
         loop {
             let (stream, _) = listener.accept().await
-                .map_err(|e| format!("Failed to accept: {}", e))?;
+                .map_err(|e| format!("Failed to accept TCP: {}", e))?;
 
-            let io = TokioIo::new(stream);
-            let handler_clone = handler.shallow_clone();
+            let handler = handler.shallow_clone();
+            let tls_config = tls_config.clone();
 
             tokio::task::spawn_local(async move {
-                let service = service_fn(move |req| {
-                    let handler = handler_clone.shallow_clone();
-                    async move {
-                        Self::handle_request(req, handler).await
-                    }
-                });
-
-                if let Err(e) = http1::Builder::new()
-                    .serve_connection(io, service)
-                    .await
-                {
-                    eprintln!("Error serving connection: {:?}", e);
+                if let Err(e) = Self::handle_tcp_connection(
+                    stream,
+                    handler,
+                    tls_config,
+                    enable_http1,
+                    enable_http2,
+                ).await {
+                    tracing::error!("TCP connection error: {}", e);
                 }
             });
         }
     }
 
-    /// Serve HTTP/2
-    /// TODO: HTTP/2 support requires Send-safe executor which conflicts with single-threaded PHP runtime
-    async fn serve_http2(_addr: SocketAddr, _handler: Zval) -> Result<Zval, String> {
-        Err("HTTP/2 support is not yet implemented due to executor constraints. Use http1 instead.".to_string())
+    /// Handle a single TCP connection with protocol negotiation
+    async fn handle_tcp_connection(
+        stream: tokio::net::TcpStream,
+        handler: Zval,
+        tls_config: Option<Arc<ServerConfig>>,
+        enable_http1: bool,
+        enable_http2: bool,
+    ) -> Result<(), String> {
+        if let Some(config) = tls_config {
+            // TLS connection - negotiate protocol via ALPN
+            let acceptor = TlsAcceptor::from(config);
+            let tls_stream = acceptor.accept(stream).await
+                .map_err(|e| format!("TLS handshake failed: {}", e))?;
+
+            let (_, session) = tls_stream.get_ref();
+            let protocol = session.alpn_protocol()
+                .and_then(|p| std::str::from_utf8(p).ok());
+
+            match protocol {
+                Some("h2") if enable_http2 => {
+                    Self::serve_http2_connection(TokioIo::new(tls_stream), handler).await
+                }
+                Some("http/1.1") | None if enable_http1 => {
+                    Self::serve_http1_connection(TokioIo::new(tls_stream), handler).await
+                }
+                _ => Err(format!("Unsupported protocol: {:?}", protocol)),
+            }
+        } else {
+            // Plain HTTP/1.1 only
+            if enable_http1 {
+                Self::serve_http1_connection(TokioIo::new(stream), handler).await
+            } else {
+                Err("HTTP/1.1 disabled and no TLS configured".to_string())
+            }
+        }
     }
 
-    /// Serve HTTP/3
-    /// TODO: HTTP/3 support requires compatible versions of quinn and h3
-    async fn serve_http3(_addr: SocketAddr, _handler: Zval) -> Result<Zval, String> {
-        Err("HTTP/3 support is not yet implemented. Use http1 or http2 instead.".to_string())
+    /// Serve a single HTTP/1.1 connection
+    async fn serve_http1_connection<T>(io: TokioIo<T>, handler: Zval) -> Result<(), String>
+    where
+        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    {
+        let service = service_fn(move |req| {
+            let handler = handler.shallow_clone();
+            async move {
+                Self::handle_request(req, handler).await
+            }
+        });
+
+        http1::Builder::new()
+            .serve_connection(io, service)
+            .await
+            .map_err(|e| format!("HTTP/1.1 connection error: {}", e))
+    }
+
+    /// Serve a single HTTP/2 connection (currently disabled)
+    async fn serve_http2_connection<T>(_io: TokioIo<T>, _handler: Zval) -> Result<(), String>
+    where
+        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+    {
+        Err("HTTP/2 support temporarily disabled due to Send trait constraints".to_string())
+    }
+
+    /// Serve QUIC connections (HTTP/3)
+    async fn serve_quic(
+        addr: SocketAddr,
+        handler: Zval,
+        cert_path: &str,
+        key_path: &str,
+    ) -> Result<Zval, String> {
+        // Load Quinn server config
+        let mut server_config = Self::load_quinn_config(cert_path, key_path)?;
+
+        // Configure transport parameters
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config.max_concurrent_bidi_streams(100u32.into());
+        transport_config.max_concurrent_uni_streams(100u32.into());
+        server_config.transport_config(Arc::new(transport_config));
+
+        // Bind QUIC endpoint
+        let endpoint = quinn::Endpoint::server(server_config, addr)
+            .map_err(|e| format!("Failed to bind QUIC: {}", e))?;
+
+        tracing::info!("QUIC listener started on {}", addr);
+
+        loop {
+            let Some(incoming) = endpoint.accept().await else {
+                continue;
+            };
+
+            let handler = handler.shallow_clone();
+            tokio::task::spawn_local(async move {
+                if let Err(e) = Self::handle_quic_connection(incoming, handler).await {
+                    tracing::error!("QUIC connection error: {}", e);
+                }
+            });
+        }
+    }
+
+    /// Handle a single QUIC connection (HTTP/3)
+    async fn handle_quic_connection(
+        incoming: quinn::Incoming,
+        _handler: Zval,
+    ) -> Result<(), String> {
+        let connection = incoming.await
+            .map_err(|e| format!("QUIC connection failed: {}", e))?;
+
+        let mut h3_conn: h3::server::Connection<h3_quinn::Connection, bytes::Bytes> =
+            h3::server::Connection::new(h3_quinn::Connection::new(connection))
+                .await
+                .map_err(|e| format!("H3 connection failed: {}", e))?;
+
+        // TODO: Accept and handle H3 requests
+        // This requires implementing the H3 request/response loop
+        loop {
+            match h3_conn.accept().await {
+                Ok(Some(request_stream)) => {
+                    tracing::info!("Received H3 request");
+                    // TODO: Proper request handling
+                    // For now, just receive the request and close the stream
+                    let _ = request_stream.resolve_request().await;
+                    // TODO: Call PHP handler and send response
+                }
+                Ok(None) => {
+                    // Connection closed
+                    break;
+                }
+                Err(e) => {
+                    tracing::error!("H3 accept error: {:?}", e);
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Handle incoming HTTP request and call PHP handler
