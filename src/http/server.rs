@@ -4,6 +4,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 use crate::http::{HttpRequest, HttpResponseBody};
+use crate::http::body::PhpReaderBody;
 use crate::future::RustFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::{Full, BodyExt};
 use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use std::fs;
@@ -421,7 +422,7 @@ impl HttpServer {
     async fn handle_request(
         req: hyper::Request<hyper::body::Incoming>,
         handler: Zval,
-    ) -> Result<hyper::Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<hyper::Response<http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>>, Box<dyn std::error::Error + Send + Sync>> {
         // Extract request parts
         let (parts, body) = req.into_parts();
 
@@ -500,49 +501,40 @@ impl HttpServer {
             }
         }
 
-        // Get response body
-        let body_bytes = if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
+        // Get response body and determine if it's a string or a Reader
+        let body = if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
             if body_zval.is_null() {
-                Bytes::new()
+                // Null body - return empty
+                Full::new(Bytes::new())
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                    .boxed()
             } else if let Some(body_str) = body_zval.string() {
-                // Body is already a string
-                Bytes::from(body_str.to_string())
+                // Body is a string - use it directly
+                Full::new(Bytes::from(body_str.to_string()))
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                    .boxed()
             } else {
-                // Body is an object - try to read all content
-                match body_zval.try_call_method("read_all", vec![]) {
-                    Ok(read_future) => {
-                        // Check if it's a RustFuture that we need to extract
-                        if let Some(rust_future) = <&mut RustFuture as ext_php_rs::convert::FromZvalMut>::from_zval_mut(&mut read_future.shallow_clone()) {
-                            if let Some(fut) = rust_future.take_inner() {
-                                match fut.await {
-                                    Ok(content_zval) => {
-                                        if let Some(content_str) = content_zval.string() {
-                                            Bytes::from(content_str.to_string())
-                                        } else {
-                                            Bytes::new()
-                                        }
-                                    }
-                                    Err(_) => Bytes::new(),
-                                }
-                            } else {
-                                Bytes::new()
-                            }
-                        } else if let Some(content_str) = read_future.string() {
-                            // Direct string result
-                            Bytes::from(content_str.to_string())
-                        } else {
-                            Bytes::new()
-                        }
-                    }
-                    Err(_) => Bytes::new(),
+                // Body is an object - check if it implements Reader interface
+                // Try to call read method to see if it's a Reader
+                if body_zval.try_call_method("read", vec![]).is_ok() {
+                    // It's a Reader - use streaming body
+                    PhpReaderBody::new(body_zval).boxed()
+                } else {
+                    // Not a Reader - return empty body
+                    Full::new(Bytes::new())
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                        .boxed()
                 }
             }
         } else {
-            Bytes::new()
+            // No body method - return empty
+            Full::new(Bytes::new())
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                .boxed()
         };
 
         let response = response_builder
-            .body(Full::new(body_bytes))?;
+            .body(body)?;
 
         Ok(response)
     }
@@ -561,3 +553,4 @@ where
         tokio::task::spawn_local(fut);
     }
 }
+

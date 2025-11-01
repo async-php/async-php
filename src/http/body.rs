@@ -197,3 +197,70 @@ impl AsyncRead for PhpReaderAdapter {
         Poll::Ready(Ok(()))
     }
 }
+
+/// Hyper Body adapter for PHP Reader interface
+/// This allows streaming HTTP response data from PHP Reader objects
+pub(crate) struct PhpReaderBody {
+    reader: Zval,
+    chunk_size: usize,
+    eof: bool,
+}
+
+// SAFETY: Safe because the async runtime is single-threaded
+unsafe impl Send for PhpReaderBody {}
+unsafe impl Sync for PhpReaderBody {}
+
+impl PhpReaderBody {
+    pub(crate) fn new(reader: Zval) -> Self {
+        Self {
+            reader,
+            chunk_size: 8192, // 8KB chunks
+            eof: false,
+        }
+    }
+}
+
+impl hyper::body::Body for PhpReaderBody {
+    type Data = bytes::Bytes;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<std::result::Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+        let this = self.get_mut();
+
+        // Already at EOF
+        if this.eof {
+            return Poll::Ready(None);
+        }
+
+        // Call PHP's read method
+        let length_zval = (this.chunk_size as i64).into_zval(false)
+            .map_err(|e| Box::new(std::io::Error::other(format!("Failed to create length zval: {:?}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        let data_zval = this.reader
+            .try_call_method("read", vec![&length_zval])
+            .map_err(|e| Box::new(std::io::Error::other(format!("PHP read failed: {:?}", e))) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        // Check for EOF (null return)
+        if data_zval.is_null() {
+            this.eof = true;
+            return Poll::Ready(None);
+        }
+
+        // Extract string data
+        let data_str = data_zval.string()
+            .ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Read did not return string")) as Box<dyn std::error::Error + Send + Sync>)?;
+
+        // Empty string also signals EOF
+        if data_str.is_empty() {
+            this.eof = true;
+            return Poll::Ready(None);
+        }
+
+        // Convert to Bytes and wrap in Frame
+        let bytes = bytes::Bytes::copy_from_slice(data_str.as_bytes());
+        Poll::Ready(Some(Ok(hyper::body::Frame::data(bytes))))
+    }
+}
