@@ -2,8 +2,8 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::{IntoZval, FromZval};
-use crate::http::{HttpRequest, HttpResponse, HttpResponseBody};
+use ext_php_rs::convert::IntoZval;
+use crate::http::{HttpRequest, HttpResponseBody};
 use crate::future::RustFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -17,8 +17,7 @@ use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use std::fs;
 use std::io::BufReader;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
+
 
 /// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3 simultaneously
 #[php_class]
@@ -92,7 +91,7 @@ impl HttpServer {
         let handler_clone = handler.shallow_clone();
 
         RustFuture::new(async move {
-            let socket_addr: SocketAddr = addr.parse()
+            let socket_addr: SocketAddr = addr.parse() 
                 .map_err(|e| format!("Invalid address: {}", e))?;
 
             // Start all enabled listeners simultaneously
@@ -125,7 +124,7 @@ impl HttpServer {
             .map_err(|e| format!("Failed to open key file: {}", e))?;
         let mut key_reader = BufReader::new(key_file);
         let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .map_err(|e| format!("Failed to parse private key: {}", e))? 
             .ok_or_else(|| "No private key found".to_string())?;
 
         // Build server config with ALPN protocols for HTTP/1.1, HTTP/2, and HTTP/3
@@ -158,7 +157,7 @@ impl HttpServer {
             .map_err(|e| format!("Failed to open key file: {}", e))?;
         let mut key_reader = BufReader::new(key_file);
         let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .map_err(|e| format!("Failed to parse private key: {}", e))? 
             .ok_or_else(|| "No private key found".to_string())?;
 
         // Build Quinn server config
@@ -178,28 +177,6 @@ impl HttpServer {
         enable_http2: bool,
         enable_http3: bool,
     ) -> Result<Zval, String> {
-        // Create channel for HTTP/2 request handling
-        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<(HttpRequest, oneshot::Sender<HttpResponse>)>();
-
-        // Spawn local task to handle requests with Zval (non-Send)
-        let handler_clone = handler.shallow_clone();
-        tokio::task::spawn_local(async move {
-            while let Some((http_request, response_tx)) = req_rx.recv().await {
-                let handler = handler_clone.shallow_clone();
-
-                // Process request in local task
-                let http_response = match Self::call_php_handler(http_request, handler).await {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        tracing::error!("Request processing error: {}", e);
-                        HttpResponse::__construct(500)
-                    }
-                };
-
-                let _ = response_tx.send(http_response);
-            }
-        });
-
         // Load TLS config for TCP listener if needed
         let tls_config = if (enable_http1 || enable_http2) && cert_path.is_some() && key_path.is_some() {
             Some(Self::load_tls_config(
@@ -214,9 +191,8 @@ impl HttpServer {
         let tcp_task = if enable_http1 || enable_http2 {
             let handler = handler.shallow_clone();
             let tls_config = tls_config.clone();
-            let req_tx = req_tx.clone();
             Some(tokio::task::spawn_local(async move {
-                Self::serve_tcp(addr, handler, tls_config, req_tx, enable_http1, enable_http2).await
+                Self::serve_tcp(addr, handler, tls_config, enable_http1, enable_http2).await
             }))
         } else {
             None
@@ -251,35 +227,12 @@ impl HttpServer {
         }
     }
 
-    /// Call PHP handler with HttpRequest and get HttpResponse
-    async fn call_php_handler(
-        http_request: HttpRequest,
-        handler: Zval,
-    ) -> Result<HttpResponse, String> {
-        // Convert HttpRequest to Zval
-        let request_zval = ext_php_rs::types::ZendClassObject::new(http_request)
-            .into_zval(false)
-            .map_err(|e| format!("Failed to convert request: {:?}", e))?;
-
-        // Call PHP handler
-        let response_zval = handler
-            .try_call_method("handle", vec![&request_zval])
-            .map_err(|e| format!("Handler error: {:?}", e))?;
-
-        // Extract HttpResponse from returned object
-        let response_ref = <&HttpResponse>::from_zval(&response_zval)
-            .ok_or("Handler did not return HttpResponse")?;
-
-        // Clone to get owned value
-        Ok(response_ref.clone())
-    }
 
     /// Serve TCP connections (HTTP/1.1 and/or HTTP/2)
     async fn serve_tcp(
         addr: SocketAddr,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
-        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<Zval, String> {
@@ -294,14 +247,12 @@ impl HttpServer {
 
             let handler = handler.shallow_clone();
             let tls_config = tls_config.clone();
-            let req_tx = req_tx.clone();
 
             tokio::task::spawn_local(async move {
                 if let Err(e) = Self::handle_tcp_connection(
                     stream,
                     handler,
                     tls_config,
-                    req_tx,
                     enable_http1,
                     enable_http2,
                 ).await {
@@ -316,7 +267,6 @@ impl HttpServer {
         stream: tokio::net::TcpStream,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
-        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<(), String> {
@@ -332,7 +282,7 @@ impl HttpServer {
 
             match protocol {
                 Some("h2") if enable_http2 => {
-                    Self::serve_http2_connection(TokioIo::new(tls_stream), req_tx).await
+                    Self::serve_http2_connection(TokioIo::new(tls_stream), handler).await
                 }
                 Some("http/1.1") | None if enable_http1 => {
                     Self::serve_http1_connection(TokioIo::new(tls_stream), handler).await
@@ -367,104 +317,27 @@ impl HttpServer {
             .map_err(|e| format!("HTTP/1.1 connection error: {}", e))
     }
 
-    /// Handle request via channel (for HTTP/2 which requires Send)
-    async fn handle_request_via_channel(
-        req: hyper::Request<hyper::body::Incoming>,
-        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
-    ) -> Result<hyper::Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
-        // Extract request parts
-        let (parts, body) = req.into_parts();
 
-        // Create HttpRequest
-        let mut http_request = HttpRequest::__construct(
-            parts.method.to_string(),
-            parts.uri.to_string(),
-        );
 
-        // Set version
-        http_request.set_version(Self::version_to_string(parts.version).to_string());
-
-        // Set headers
-        for (key, value) in parts.headers.iter() {
-            if let Ok(value_str) = value.to_str() {
-                http_request.set_header(key.to_string(), value_str.to_string());
-            }
-        }
-
-        // Wrap request body
-        {
-            let request_body = HttpResponseBody::new_internal(body);
-            let body_zval = ext_php_rs::types::ZendClassObject::new(request_body)
-                .into_zval(false)
-                .map_err(|e| format!("Failed to create request body: {:?}", e))?;
-
-            http_request.set_body(&body_zval)
-                .map_err(|e| format!("Failed to set request body: {:?}", e))?;
-            // body_zval dropped here
-        }
-
-        // Create oneshot channel for response
-        let (resp_tx, resp_rx) = oneshot::channel();
-
-        // Send request to handler task
-        req_tx.send((http_request, resp_tx))
-            .map_err(|_| "Handler channel closed")?;
-
-        // Wait for response
-        let http_response = resp_rx.await
-            .map_err(|_| "Response channel closed")?;
-
-        // Build hyper response from HttpResponse
-        let status_code = http_response.get_status_code() as u16;
-        let mut response_builder = hyper::Response::builder()
-            .status(status_code);
-
-        for (key, value) in http_response.get_headers() {
-            response_builder = response_builder.header(&key, &value);
-        }
-
-        // Get response body
-        let body_bytes = if let Some(body_str) = http_response.get_body().string() {
-            Bytes::from(body_str.to_string())
-        } else {
-            // TODO: Read from body object
-            Bytes::new()
-        };
-
-        let response = response_builder
-            .body(Full::new(body_bytes))?;
-
-        Ok(response)
-    }
-
-    /// Convert hyper version to string
-    fn version_to_string(version: hyper::Version) -> &'static str {
-        match version {
-            hyper::Version::HTTP_09 => "0.9",
-            hyper::Version::HTTP_10 => "1.0",
-            hyper::Version::HTTP_11 => "1.1",
-            hyper::Version::HTTP_2 => "2.0",
-            hyper::Version::HTTP_3 => "3.0",
-            _ => "1.1",
-        }
-    }
-
-    /// Serve a single HTTP/2 connection using channel communication
-    async fn serve_http2_connection<T>(
+    /// Serve a single HTTP/2 connection using LocalExecutor (no channel needed)
+    async fn serve_http2_connection<
+        T,
+    >( 
         io: TokioIo<T>,
-        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
+        handler: Zval,
     ) -> Result<(), String>
     where
         T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     {
         let service = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
-            let req_tx = req_tx.clone();
+            let handler = handler.shallow_clone();
             async move {
-                Self::handle_request_via_channel(req, req_tx).await
+                Self::handle_request(req, handler).await
             }
         });
 
-        http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+        // Use LocalExecutor to allow !Send futures (because of Zval)
+        http2::Builder::new(LocalExecutor)
             .serve_connection(io, service)
             .await
             .map_err(|e| format!("HTTP/2 connection error: {}", e))
@@ -672,5 +545,19 @@ impl HttpServer {
             .body(Full::new(body_bytes))?;
 
         Ok(response)
+    }
+}
+
+/// Local executor for Hyper that uses tokio::task::spawn_local
+/// This allows us to use !Send futures (like those containing Zval)
+#[derive(Clone)]
+struct LocalExecutor;
+
+impl<F> hyper::rt::Executor<F> for LocalExecutor
+where
+    F: std::future::Future + 'static,
+{
+    fn execute(&self, fut: F) {
+        tokio::task::spawn_local(fut);
     }
 }
