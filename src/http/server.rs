@@ -7,8 +7,9 @@ use crate::http::{HttpRequest, HttpResponseBody};
 use crate::future::RustFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::collections::HashMap;
 use tokio::net::TcpListener;
-use hyper::server::conn::http1;
+use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use bytes::Bytes;
@@ -17,6 +18,26 @@ use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use std::fs;
 use std::io::BufReader;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
+
+/// Send-safe request data for channel communication
+#[derive(Debug)]
+struct RequestData {
+    method: String,
+    uri: String,
+    version: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
+
+/// Send-safe response data for channel communication
+#[derive(Debug)]
+struct ResponseData {
+    status_code: u16,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
 
 /// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3 simultaneously
 #[php_class]
@@ -176,10 +197,31 @@ impl HttpServer {
         enable_http2: bool,
         enable_http3: bool,
     ) -> Result<Zval, String> {
-        // HTTP/2 temporarily disabled due to Send trait requirements with Zval
-        if enable_http2 {
-            tracing::warn!("HTTP/2 is temporarily disabled due to executor constraints");
-        }
+        // Create channel for HTTP/2 request handling
+        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<(RequestData, oneshot::Sender<ResponseData>)>();
+
+        // Spawn local task to handle requests with Zval (non-Send)
+        let handler_clone = handler.shallow_clone();
+        tokio::task::spawn_local(async move {
+            while let Some((req_data, response_tx)) = req_rx.recv().await {
+                let handler = handler_clone.shallow_clone();
+
+                // Process request in local task
+                let response_data = match Self::process_request_with_handler(req_data, handler).await {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        tracing::error!("Request processing error: {}", e);
+                        ResponseData {
+                            status_code: 500,
+                            headers: HashMap::new(),
+                            body: format!("Internal Server Error: {}", e).into_bytes(),
+                        }
+                    }
+                };
+
+                let _ = response_tx.send(response_data);
+            }
+        });
 
         // Load TLS config for TCP listener if needed
         let tls_config = if (enable_http1 || enable_http2) && cert_path.is_some() && key_path.is_some() {
@@ -191,12 +233,13 @@ impl HttpServer {
             None
         };
 
-        // Start TCP listener for HTTP/1.1 (and HTTP/2 when supported)
-        let tcp_task = if enable_http1 {
+        // Start TCP listener for HTTP/1.1 and HTTP/2
+        let tcp_task = if enable_http1 || enable_http2 {
             let handler = handler.shallow_clone();
             let tls_config = tls_config.clone();
+            let req_tx = req_tx.clone();
             Some(tokio::task::spawn_local(async move {
-                Self::serve_tcp(addr, handler, tls_config, enable_http1, false /* http2 disabled */).await
+                Self::serve_tcp(addr, handler, tls_config, req_tx, enable_http1, enable_http2).await
             }))
         } else {
             None
@@ -227,8 +270,91 @@ impl HttpServer {
             }
             (Some(tcp), None) => tcp.await.map_err(|e| format!("TCP task error: {}", e))?,
             (None, Some(quic)) => quic.await.map_err(|e| format!("QUIC task error: {}", e))?,
-            (None, None) => return Err("At least one protocol must be enabled".to_string()),
+            (None, None) => Err("At least one protocol must be enabled".to_string()),
         }
+    }
+
+    /// Process request using PHP handler (called from local task)
+    async fn process_request_with_handler(
+        req_data: RequestData,
+        handler: Zval,
+    ) -> Result<ResponseData, String> {
+        // Create HttpRequest from request data
+        let mut http_request = HttpRequest::__construct(
+            req_data.method,
+            req_data.uri,
+        );
+
+        http_request.set_version(req_data.version);
+
+        // Set headers
+        for (key, value) in req_data.headers {
+            http_request.set_header(key, value);
+        }
+
+        // Create body if not empty
+        if !req_data.body.is_empty() {
+            // TODO: Wrap body properly, for now we'll skip it
+        }
+
+        // Convert HttpRequest to Zval
+        let request_zval = ext_php_rs::types::ZendClassObject::new(http_request)
+            .into_zval(false)
+            .map_err(|e| format!("Failed to convert request: {:?}", e))?;
+
+        // Call PHP handler
+        let response_zval = handler
+            .try_call_method("handle", vec![&request_zval])
+            .map_err(|e| format!("Handler error: {:?}", e))?;
+
+        // Extract HttpResponse
+        let response_obj = response_zval.object()
+            .ok_or("Handler did not return an object")?;
+
+        // Get status code
+        let status_code = response_obj
+            .try_call_method("get_status_code", vec![])
+            .ok()
+            .and_then(|v| v.long())
+            .unwrap_or(500) as u16;
+
+        // Get headers
+        let mut headers = HashMap::new();
+        if let Ok(headers_zval) = response_obj.try_call_method("get_headers", vec![]) {
+            if let Some(headers_array) = headers_zval.array() {
+                for (key, value) in headers_array.iter() {
+                    let key_str = match key {
+                        ext_php_rs::types::ArrayKey::Long(i) => i.to_string(),
+                        ext_php_rs::types::ArrayKey::String(s) => s.to_string(),
+                        ext_php_rs::types::ArrayKey::Str(s) => s.to_string(),
+                    };
+
+                    if let Some(v) = value.string() {
+                        headers.insert(key_str, v.to_string());
+                    }
+                }
+            }
+        }
+
+        // Get body
+        let body = if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
+            if body_zval.is_null() {
+                Vec::new()
+            } else if let Some(body_str) = body_zval.string() {
+                body_str.as_bytes().to_vec()
+            } else {
+                // Try to read from body object
+                Vec::new() // TODO: implement body reading
+            }
+        } else {
+            Vec::new()
+        };
+
+        Ok(ResponseData {
+            status_code,
+            headers,
+            body,
+        })
     }
 
     /// Serve TCP connections (HTTP/1.1 and/or HTTP/2)
@@ -236,6 +362,7 @@ impl HttpServer {
         addr: SocketAddr,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
+        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<Zval, String> {
@@ -250,12 +377,14 @@ impl HttpServer {
 
             let handler = handler.shallow_clone();
             let tls_config = tls_config.clone();
+            let req_tx = req_tx.clone();
 
             tokio::task::spawn_local(async move {
                 if let Err(e) = Self::handle_tcp_connection(
                     stream,
                     handler,
                     tls_config,
+                    req_tx,
                     enable_http1,
                     enable_http2,
                 ).await {
@@ -270,6 +399,7 @@ impl HttpServer {
         stream: tokio::net::TcpStream,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
+        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<(), String> {
@@ -285,7 +415,7 @@ impl HttpServer {
 
             match protocol {
                 Some("h2") if enable_http2 => {
-                    Self::serve_http2_connection(TokioIo::new(tls_stream), handler).await
+                    Self::serve_http2_connection(TokioIo::new(tls_stream), req_tx).await
                 }
                 Some("http/1.1") | None if enable_http1 => {
                     Self::serve_http1_connection(TokioIo::new(tls_stream), handler).await
@@ -320,12 +450,94 @@ impl HttpServer {
             .map_err(|e| format!("HTTP/1.1 connection error: {}", e))
     }
 
-    /// Serve a single HTTP/2 connection (currently disabled)
-    async fn serve_http2_connection<T>(_io: TokioIo<T>, _handler: Zval) -> Result<(), String>
+    /// Handle request via channel (for HTTP/2 which requires Send)
+    async fn handle_request_via_channel(
+        req: hyper::Request<hyper::body::Incoming>,
+        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+    ) -> Result<hyper::Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
+        // Extract request parts
+        let (parts, body) = req.into_parts();
+
+        // Read body
+        let body_bytes = {
+            use http_body_util::BodyExt;
+            let collected = body.collect().await?;
+            collected.to_bytes().to_vec()
+        };
+
+        // Extract headers
+        let mut headers = HashMap::new();
+        for (key, value) in parts.headers.iter() {
+            if let Ok(value_str) = value.to_str() {
+                headers.insert(key.to_string(), value_str.to_string());
+            }
+        }
+
+        // Create request data
+        let req_data = RequestData {
+            method: parts.method.to_string(),
+            uri: parts.uri.to_string(),
+            version: Self::version_to_string(parts.version).to_string(),
+            headers,
+            body: body_bytes,
+        };
+
+        // Create oneshot channel for response
+        let (resp_tx, resp_rx) = oneshot::channel();
+
+        // Send request to handler task
+        req_tx.send((req_data, resp_tx))
+            .map_err(|_| "Handler channel closed")?;
+
+        // Wait for response
+        let resp_data = resp_rx.await
+            .map_err(|_| "Response channel closed")?;
+
+        // Build hyper response
+        let mut response_builder = hyper::Response::builder()
+            .status(resp_data.status_code);
+
+        for (key, value) in resp_data.headers {
+            response_builder = response_builder.header(&key, &value);
+        }
+
+        let response = response_builder
+            .body(Full::new(Bytes::from(resp_data.body)))?;
+
+        Ok(response)
+    }
+
+    /// Convert hyper version to string
+    fn version_to_string(version: hyper::Version) -> &'static str {
+        match version {
+            hyper::Version::HTTP_09 => "0.9",
+            hyper::Version::HTTP_10 => "1.0",
+            hyper::Version::HTTP_11 => "1.1",
+            hyper::Version::HTTP_2 => "2.0",
+            hyper::Version::HTTP_3 => "3.0",
+            _ => "1.1",
+        }
+    }
+
+    /// Serve a single HTTP/2 connection using channel communication
+    async fn serve_http2_connection<T>(
+        io: TokioIo<T>,
+        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+    ) -> Result<(), String>
     where
-        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 'static,
+        T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     {
-        Err("HTTP/2 support temporarily disabled due to Send trait constraints".to_string())
+        let service = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+            let req_tx = req_tx.clone();
+            async move {
+                Self::handle_request_via_channel(req, req_tx).await
+            }
+        });
+
+        http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await
+            .map_err(|e| format!("HTTP/2 connection error: {}", e))
     }
 
     /// Serve QUIC connections (HTTP/3)
