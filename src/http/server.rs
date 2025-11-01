@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use bytes::Bytes;
+use bytes::{Bytes, Buf};
 use http_body_util::{Full, BodyExt};
 use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
@@ -383,7 +383,7 @@ impl HttpServer {
     /// Handle a single QUIC connection (HTTP/3)
     async fn handle_quic_connection(
         incoming: quinn::Incoming,
-        _handler: Zval,
+        handler: Zval,
     ) -> Result<(), String> {
         let connection = incoming.await
             .map_err(|e| format!("QUIC connection failed: {}", e))?;
@@ -393,16 +393,18 @@ impl HttpServer {
                 .await
                 .map_err(|e| format!("H3 connection failed: {}", e))?;
 
-        // TODO: Accept and handle H3 requests
-        // This requires implementing the H3 request/response loop
+        // Accept and handle H3 requests
         loop {
             match h3_conn.accept().await {
-                Ok(Some(request_stream)) => {
-                    tracing::info!("Received H3 request");
-                    // TODO: Proper request handling
-                    // For now, just receive the request and close the stream
-                    let _ = request_stream.resolve_request().await;
-                    // TODO: Call PHP handler and send response
+                Ok(Some(request_resolver)) => {
+                    let handler = handler.shallow_clone();
+
+                    // Spawn task to handle this request
+                    tokio::task::spawn_local(async move {
+                        if let Err(e) = Self::handle_h3_request(request_resolver, handler).await {
+                            tracing::error!("H3 request handling error: {}", e);
+                        }
+                    });
                 }
                 Ok(None) => {
                     // Connection closed
@@ -414,6 +416,150 @@ impl HttpServer {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Handle a single HTTP/3 request
+    async fn handle_h3_request(
+        request_resolver: h3::server::RequestResolver<h3_quinn::Connection, Bytes>,
+        handler: Zval,
+    ) -> Result<(), String> {
+        // Resolve the request to get the actual request and stream
+        let (req, mut stream) = request_resolver.resolve_request().await
+            .map_err(|e| format!("Failed to resolve H3 request: {}", e))?;
+
+        // Extract request parts
+        let (parts, _) = req.into_parts();
+
+        // Create HttpRequest
+        let mut http_request = HttpRequest::__construct(
+            parts.method.to_string(),
+            parts.uri.to_string(),
+        );
+
+        // Set version to HTTP/3
+        http_request.set_version("3.0".to_string());
+
+        // Set headers
+        for (key, value) in parts.headers.iter() {
+            if let Ok(value_str) = value.to_str() {
+                http_request.set_header(key.to_string(), value_str.to_string());
+            }
+        }
+
+        // Read request body if present
+        let mut body_data = Vec::new();
+        while let Some(chunk) = stream.recv_data().await
+            .map_err(|e| format!("Failed to read H3 body: {}", e))?
+        {
+            body_data.extend_from_slice(chunk.chunk());
+        }
+
+        // Set body as string if not empty
+        if !body_data.is_empty() {
+            let body_str = String::from_utf8_lossy(&body_data).to_string();
+            let mut body_zval = Zval::new();
+            body_zval.set_string(&body_str, false)
+                .map_err(|e| format!("Failed to create body string: {:?}", e))?;
+            http_request.set_body(&body_zval)
+                .map_err(|e| format!("Failed to set request body: {:?}", e))?;
+        }
+
+        // Convert HttpRequest to Zval
+        let request_zval = ext_php_rs::types::ZendClassObject::new(http_request)
+            .into_zval(false)
+            .map_err(|e| format!("Failed to convert request: {:?}", e))?;
+
+        // Call PHP handler
+        let response_zval = handler
+            .try_call_method("handle", vec![&request_zval])
+            .map_err(|e| format!("Handler error: {:?}", e))?;
+
+        // Extract HttpResponse
+        let response_obj = response_zval.object()
+            .ok_or("Handler did not return an object")?;
+
+        // Get response status code
+        let status_code = response_obj
+            .try_call_method("get_status_code", vec![])
+            .ok()
+            .and_then(|v| v.long())
+            .unwrap_or(500) as u16;
+
+        // Build HTTP response
+        let mut response_builder = http::Response::builder()
+            .status(status_code);
+
+        // Get and set headers
+        if let Ok(headers_zval) = response_obj.try_call_method("get_headers", vec![]) {
+            if let Some(headers_array) = headers_zval.array() {
+                for (key, value) in headers_array.iter() {
+                    let key_str = match key {
+                        ext_php_rs::types::ArrayKey::Long(i) => i.to_string(),
+                        ext_php_rs::types::ArrayKey::String(s) => s.to_string(),
+                        ext_php_rs::types::ArrayKey::Str(s) => s.to_string(),
+                    };
+
+                    if let Some(v) = value.string() {
+                        response_builder = response_builder.header(&key_str, v.as_str());
+                    }
+                }
+            }
+        }
+
+        // Build the response
+        let response = response_builder
+            .body(())
+            .map_err(|e| format!("Failed to build response: {}", e))?;
+
+        // Send response headers
+        stream.send_response(response).await
+            .map_err(|e| format!("Failed to send H3 response: {}", e))?;
+
+        // Get and send response body
+        if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
+            if !body_zval.is_null() {
+                if let Some(body_str) = body_zval.string() {
+                    // Body is a string - send it directly
+                    stream.send_data(Bytes::from(body_str.to_string())).await
+                        .map_err(|e| format!("Failed to send H3 body: {}", e))?;
+                } else {
+                    // Body is an object - check if it implements Reader interface
+                    if body_zval.try_call_method("read", vec![]).is_ok() {
+                        // It's a Reader - stream the data
+                        let chunk_size = 8192i64;
+                        let length_zval = chunk_size.into_zval(false)
+                            .map_err(|e| format!("Failed to create length zval: {:?}", e))?;
+
+                        loop {
+                            let data_zval = body_zval.try_call_method("read", vec![&length_zval])
+                                .map_err(|e| format!("Failed to read body: {:?}", e))?;
+
+                            // Check for EOF
+                            if data_zval.is_null() {
+                                break;
+                            }
+
+                            // Extract and send data
+                            if let Some(data_str) = data_zval.string() {
+                                if data_str.is_empty() {
+                                    break;
+                                }
+                                stream.send_data(Bytes::from(data_str.to_string())).await
+                                    .map_err(|e| format!("Failed to send H3 body chunk: {}", e))?;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Finish the stream
+        stream.finish().await
+            .map_err(|e| format!("Failed to finish H3 stream: {}", e))?;
 
         Ok(())
     }
