@@ -2,12 +2,11 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
-use crate::http::{HttpRequest, HttpResponseBody};
+use ext_php_rs::convert::{IntoZval, FromZval};
+use crate::http::{HttpRequest, HttpResponse, HttpResponseBody};
 use crate::future::RustFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::HashMap;
 use tokio::net::TcpListener;
 use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
@@ -20,24 +19,6 @@ use std::fs;
 use std::io::BufReader;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-
-/// Send-safe request data for channel communication
-#[derive(Debug)]
-struct RequestData {
-    method: String,
-    uri: String,
-    version: String,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
-}
-
-/// Send-safe response data for channel communication
-#[derive(Debug)]
-struct ResponseData {
-    status_code: u16,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
-}
 
 /// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3 simultaneously
 #[php_class]
@@ -198,28 +179,24 @@ impl HttpServer {
         enable_http3: bool,
     ) -> Result<Zval, String> {
         // Create channel for HTTP/2 request handling
-        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<(RequestData, oneshot::Sender<ResponseData>)>();
+        let (req_tx, mut req_rx) = mpsc::unbounded_channel::<(HttpRequest, oneshot::Sender<HttpResponse>)>();
 
         // Spawn local task to handle requests with Zval (non-Send)
         let handler_clone = handler.shallow_clone();
         tokio::task::spawn_local(async move {
-            while let Some((req_data, response_tx)) = req_rx.recv().await {
+            while let Some((http_request, response_tx)) = req_rx.recv().await {
                 let handler = handler_clone.shallow_clone();
 
                 // Process request in local task
-                let response_data = match Self::process_request_with_handler(req_data, handler).await {
+                let http_response = match Self::call_php_handler(http_request, handler).await {
                     Ok(resp) => resp,
                     Err(e) => {
                         tracing::error!("Request processing error: {}", e);
-                        ResponseData {
-                            status_code: 500,
-                            headers: HashMap::new(),
-                            body: format!("Internal Server Error: {}", e).into_bytes(),
-                        }
+                        HttpResponse::__construct(500)
                     }
                 };
 
-                let _ = response_tx.send(response_data);
+                let _ = response_tx.send(http_response);
             }
         });
 
@@ -274,29 +251,11 @@ impl HttpServer {
         }
     }
 
-    /// Process request using PHP handler (called from local task)
-    async fn process_request_with_handler(
-        req_data: RequestData,
+    /// Call PHP handler with HttpRequest and get HttpResponse
+    async fn call_php_handler(
+        http_request: HttpRequest,
         handler: Zval,
-    ) -> Result<ResponseData, String> {
-        // Create HttpRequest from request data
-        let mut http_request = HttpRequest::__construct(
-            req_data.method,
-            req_data.uri,
-        );
-
-        http_request.set_version(req_data.version);
-
-        // Set headers
-        for (key, value) in req_data.headers {
-            http_request.set_header(key, value);
-        }
-
-        // Create body if not empty
-        if !req_data.body.is_empty() {
-            // TODO: Wrap body properly, for now we'll skip it
-        }
-
+    ) -> Result<HttpResponse, String> {
         // Convert HttpRequest to Zval
         let request_zval = ext_php_rs::types::ZendClassObject::new(http_request)
             .into_zval(false)
@@ -307,54 +266,12 @@ impl HttpServer {
             .try_call_method("handle", vec![&request_zval])
             .map_err(|e| format!("Handler error: {:?}", e))?;
 
-        // Extract HttpResponse
-        let response_obj = response_zval.object()
-            .ok_or("Handler did not return an object")?;
+        // Extract HttpResponse from returned object
+        let response_ref = <&HttpResponse>::from_zval(&response_zval)
+            .ok_or("Handler did not return HttpResponse")?;
 
-        // Get status code
-        let status_code = response_obj
-            .try_call_method("get_status_code", vec![])
-            .ok()
-            .and_then(|v| v.long())
-            .unwrap_or(500) as u16;
-
-        // Get headers
-        let mut headers = HashMap::new();
-        if let Ok(headers_zval) = response_obj.try_call_method("get_headers", vec![]) {
-            if let Some(headers_array) = headers_zval.array() {
-                for (key, value) in headers_array.iter() {
-                    let key_str = match key {
-                        ext_php_rs::types::ArrayKey::Long(i) => i.to_string(),
-                        ext_php_rs::types::ArrayKey::String(s) => s.to_string(),
-                        ext_php_rs::types::ArrayKey::Str(s) => s.to_string(),
-                    };
-
-                    if let Some(v) = value.string() {
-                        headers.insert(key_str, v.to_string());
-                    }
-                }
-            }
-        }
-
-        // Get body
-        let body = if let Ok(body_zval) = response_obj.try_call_method("get_body", vec![]) {
-            if body_zval.is_null() {
-                Vec::new()
-            } else if let Some(body_str) = body_zval.string() {
-                body_str.as_bytes().to_vec()
-            } else {
-                // Try to read from body object
-                Vec::new() // TODO: implement body reading
-            }
-        } else {
-            Vec::new()
-        };
-
-        Ok(ResponseData {
-            status_code,
-            headers,
-            body,
-        })
+        // Clone to get owned value
+        Ok(response_ref.clone())
     }
 
     /// Serve TCP connections (HTTP/1.1 and/or HTTP/2)
@@ -362,7 +279,7 @@ impl HttpServer {
         addr: SocketAddr,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
-        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<Zval, String> {
@@ -399,7 +316,7 @@ impl HttpServer {
         stream: tokio::net::TcpStream,
         handler: Zval,
         tls_config: Option<Arc<ServerConfig>>,
-        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
         enable_http1: bool,
         enable_http2: bool,
     ) -> Result<(), String> {
@@ -453,56 +370,69 @@ impl HttpServer {
     /// Handle request via channel (for HTTP/2 which requires Send)
     async fn handle_request_via_channel(
         req: hyper::Request<hyper::body::Incoming>,
-        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
     ) -> Result<hyper::Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
         // Extract request parts
         let (parts, body) = req.into_parts();
 
-        // Read body
-        let body_bytes = {
-            use http_body_util::BodyExt;
-            let collected = body.collect().await?;
-            collected.to_bytes().to_vec()
-        };
+        // Create HttpRequest
+        let mut http_request = HttpRequest::__construct(
+            parts.method.to_string(),
+            parts.uri.to_string(),
+        );
 
-        // Extract headers
-        let mut headers = HashMap::new();
+        // Set version
+        http_request.set_version(Self::version_to_string(parts.version).to_string());
+
+        // Set headers
         for (key, value) in parts.headers.iter() {
             if let Ok(value_str) = value.to_str() {
-                headers.insert(key.to_string(), value_str.to_string());
+                http_request.set_header(key.to_string(), value_str.to_string());
             }
         }
 
-        // Create request data
-        let req_data = RequestData {
-            method: parts.method.to_string(),
-            uri: parts.uri.to_string(),
-            version: Self::version_to_string(parts.version).to_string(),
-            headers,
-            body: body_bytes,
-        };
+        // Wrap request body
+        {
+            let request_body = HttpResponseBody::new_internal(body);
+            let body_zval = ext_php_rs::types::ZendClassObject::new(request_body)
+                .into_zval(false)
+                .map_err(|e| format!("Failed to create request body: {:?}", e))?;
+
+            http_request.set_body(&body_zval)
+                .map_err(|e| format!("Failed to set request body: {:?}", e))?;
+            // body_zval dropped here
+        }
 
         // Create oneshot channel for response
         let (resp_tx, resp_rx) = oneshot::channel();
 
         // Send request to handler task
-        req_tx.send((req_data, resp_tx))
+        req_tx.send((http_request, resp_tx))
             .map_err(|_| "Handler channel closed")?;
 
         // Wait for response
-        let resp_data = resp_rx.await
+        let http_response = resp_rx.await
             .map_err(|_| "Response channel closed")?;
 
-        // Build hyper response
+        // Build hyper response from HttpResponse
+        let status_code = http_response.get_status_code() as u16;
         let mut response_builder = hyper::Response::builder()
-            .status(resp_data.status_code);
+            .status(status_code);
 
-        for (key, value) in resp_data.headers {
+        for (key, value) in http_response.get_headers() {
             response_builder = response_builder.header(&key, &value);
         }
 
+        // Get response body
+        let body_bytes = if let Some(body_str) = http_response.get_body().string() {
+            Bytes::from(body_str.to_string())
+        } else {
+            // TODO: Read from body object
+            Bytes::new()
+        };
+
         let response = response_builder
-            .body(Full::new(Bytes::from(resp_data.body)))?;
+            .body(Full::new(body_bytes))?;
 
         Ok(response)
     }
@@ -522,7 +452,7 @@ impl HttpServer {
     /// Serve a single HTTP/2 connection using channel communication
     async fn serve_http2_connection<T>(
         io: TokioIo<T>,
-        req_tx: mpsc::UnboundedSender<(RequestData, oneshot::Sender<ResponseData>)>,
+        req_tx: mpsc::UnboundedSender<(HttpRequest, oneshot::Sender<HttpResponse>)>,
     ) -> Result<(), String>
     where
         T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,

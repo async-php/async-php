@@ -20,6 +20,10 @@ pub struct HttpRequest {
     body: Zval,
 }
 
+// SAFETY: Safe because runtime is single-threaded
+unsafe impl Send for HttpRequest {}
+unsafe impl Sync for HttpRequest {}
+
 #[php_impl]
 impl HttpRequest {
     /// Create a new HTTP request
