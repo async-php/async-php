@@ -6,7 +6,6 @@ use Async\Kernel;
 use Async\Network\Tcp\Socket as TcpSocket;
 use Async\Network\Tcp\Server as TcpServer;
 use Async\Network\Unix\Socket as UnixSocket;
-use Async\Kernel\Network\TcpStream; // Direct use for verification
 
 function test_net_errors() {
     echo ">> Testing Network Error Handling\n";

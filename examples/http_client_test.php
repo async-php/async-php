@@ -3,15 +3,14 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Kernel;
-use Async\Kernel\Network\Http\HttpClient;
-use Async\Kernel\Network\Http\HttpRequest;
+use Async\Network\Http\Client;
 
 echo "=== HTTP Client Test ===\n";
 echo "Testing HTTP/HTTPS client\n\n";
 
 Kernel::run(function () {
     // Create HTTP client
-    $client = new HttpClient();
+    $client = new Client();
     $client->setTimeout(30);
 
     // Test 1: HTTP request to baidu.com
@@ -19,21 +18,17 @@ Kernel::run(function () {
         echo "Test 1: GET request to http://www.baidu.com\n";
         echo str_repeat('=', 70) . "\n";
 
-        $request = new HttpRequest('GET', 'http://www.baidu.com');
-        $request->setHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)');
-        $request->setHeader('Accept', 'text/html');
-
         echo "Sending request...\n";
-        $response = \Fiber::suspend($client->send($request));
+        $response = $client->get('http://www.baidu.com', [
+            'headers' => [
+                'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
+                'Accept' => 'text/html',
+            ]
+        ]);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
         echo "Version: HTTP/" . $response->getVersion() . "\n";
-
-        $body = $response->getBody();
-        if ($body !== null) {
-            $content = \Fiber::suspend($body->readAll());
-            echo "Body length: " . strlen($content) . " bytes\n";
-        }
+        echo "Body length: " . strlen($response->getBody()) . " bytes\n";
 
         echo "✓ Test 1 passed!\n\n";
     } catch (Exception $e) {
@@ -45,18 +40,18 @@ Kernel::run(function () {
         echo "Test 2: GET request to https://www.baidu.com (HTTPS)\n";
         echo str_repeat('=', 70) . "\n";
 
-        $request = new HttpRequest('GET', 'https://www.baidu.com');
-        $request->setHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)');
-        $request->setHeader('Accept', 'text/html');
-
         echo "Sending HTTPS request...\n";
-        $response = \Fiber::suspend($client->send($request));
+        $response = $client->get('https://www.baidu.com', [
+            'headers' => [
+                'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
+                'Accept' => 'text/html',
+            ]
+        ]);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
         echo "Version: HTTP/" . $response->getVersion() . "\n";
 
         // Check for important headers
-        $headers = $response->getHeaders();
         $contentType = $response->getHeader('content-type');
         $server = $response->getHeader('server');
 
@@ -67,15 +62,12 @@ Kernel::run(function () {
             echo "Server: " . $server . "\n";
         }
 
-        $body = $response->getBody();
-        if ($body !== null) {
-            $content = \Fiber::suspend($body->readAll());
-            echo "Body length: " . strlen($content) . " bytes\n";
+        $content = $response->getBody();
+        echo "Body length: " . strlen($content) . " bytes\n";
 
-            // Check if content looks like HTML
-            if (strpos($content, '<!DOCTYPE') !== false || strpos($content, '<html') !== false) {
-                echo "✓ Received HTML content\n";
-            }
+        // Check if content looks like HTML
+        if (strpos($content, '<!DOCTYPE') !== false || strpos($content, '<html') !== false) {
+            echo "✓ Received HTML content\n";
         }
 
         echo "✓ Test 2 passed!\n\n";
@@ -88,27 +80,24 @@ Kernel::run(function () {
         echo "Test 3: GET request to api.github.com (JSON API)\n";
         echo str_repeat('=', 70) . "\n";
 
-        $request = new HttpRequest('GET', 'https://api.github.com/');
-        $request->setHeader('User-Agent', 'async-php/1.0');
-        $request->setHeader('Accept', 'application/json');
-
         echo "Sending request...\n";
-        $response = \Fiber::suspend($client->send($request));
+        $response = $client->get('https://api.github.com/', [
+            'headers' => [
+                'Accept' => 'application/json',
+            ]
+        ]);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
         echo "Version: HTTP/" . $response->getVersion() . "\n";
 
-        $body = $response->getBody();
-        if ($body !== null) {
-            $content = \Fiber::suspend($body->readAll());
-            echo "Body length: " . strlen($content) . " bytes\n";
+        $content = $response->getBody();
+        echo "Body length: " . strlen($content) . " bytes\n";
 
-            // Try to parse JSON
-            $json = json_decode($content, true);
-            if ($json && is_array($json)) {
-                echo "✓ Valid JSON response\n";
-                echo "API endpoints available: " . count($json) . "\n";
-            }
+        // Try to parse JSON
+        $json = json_decode($content, true);
+        if ($json && is_array($json)) {
+            echo "✓ Valid JSON response\n";
+            echo "API endpoints available: " . count($json) . "\n";
         }
 
         echo "✓ Test 3 passed!\n\n";

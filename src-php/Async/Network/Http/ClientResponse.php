@@ -129,6 +129,82 @@ class ClientResponse
     }
 
     /**
+     * Get the raw body object for streaming reads
+     *
+     * This returns the HttpResponseBody object which supports streaming operations:
+     * - readChunk($size): Read a chunk of data
+     * - readAllChunks(): Read all remaining data
+     * - closeBody(): Close the body stream
+     *
+     * Note: Once you get the raw body, calling getBody() or json() will not work
+     * as the body can only be read once.
+     *
+     * @return HttpResponseBody|null
+     */
+    public function getRawBody(): ?HttpResponseBody
+    {
+        return $this->kernel->getBody();
+    }
+
+    /**
+     * Read a chunk of data from the response body
+     *
+     * @param int $size Number of bytes to read
+     * @return string|null Returns data chunk or null on EOF
+     */
+    public function readChunk(int $size = 8192): ?string
+    {
+        $bodyObject = $this->kernel->getBody();
+
+        if ($bodyObject === null) {
+            return null;
+        }
+
+        if ($bodyObject instanceof HttpResponseBody) {
+            $future = $bodyObject->read($size);
+            $result = Fiber::suspend($future);
+            return $result === null || $result === '' ? null : $result;
+        }
+
+        return null;
+    }
+
+    /**
+     * Read all remaining data from the response body
+     * This is useful for streaming when you want to read everything at once
+     *
+     * @return string
+     */
+    public function readAllChunks(): string
+    {
+        $bodyObject = $this->kernel->getBody();
+
+        if ($bodyObject === null) {
+            return '';
+        }
+
+        if ($bodyObject instanceof HttpResponseBody) {
+            $future = $bodyObject->readAll();
+            $content = Fiber::suspend($future);
+            return $content ?? '';
+        }
+
+        return '';
+    }
+
+    /**
+     * Close the response body stream
+     */
+    public function closeBody(): void
+    {
+        $bodyObject = $this->kernel->getBody();
+
+        if ($bodyObject instanceof HttpResponseBody) {
+            $bodyObject->close();
+        }
+    }
+
+    /**
      * Check if the response is successful (2xx)
      */
     public function isSuccess(): bool

@@ -5,7 +5,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Async\Network\Http\Server;
 use Async\Network\Http\Request;
 use Async\Network\Http\Response;
-use Async\Kernel\IO\Reader;
+use Async\IO\Reader;
 
 /**
  * Example Reader implementation for streaming large files
