@@ -93,6 +93,59 @@ class Client
     }
 
     /**
+     * Set custom CA certificate in PEM format
+     *
+     * This allows you to use custom CA certificates for HTTPS connections.
+     * The certificate should be in PEM format (string).
+     *
+     * @param string $caCertPem CA certificate in PEM format
+     * @return self
+     */
+    public function setCaCert(string $caCertPem): self
+    {
+        $this->kernel->setCaCert($caCertPem);
+        return $this;
+    }
+
+    /**
+     * Set client certificate and private key for mutual TLS
+     *
+     * This allows the client to authenticate itself to the server.
+     * Both certificate and key should be in PEM format (string).
+     *
+     * @param string $certPem Client certificate in PEM format
+     * @param string $keyPem Client private key in PEM format
+     * @return self
+     */
+    public function setClientCert(string $certPem, string $keyPem): self
+    {
+        $this->kernel->setClientCert($certPem, $keyPem);
+        return $this;
+    }
+
+    /**
+     * Clear custom CA certificate and use system defaults
+     *
+     * @return self
+     */
+    public function clearCaCert(): self
+    {
+        $this->kernel->clearCaCert();
+        return $this;
+    }
+
+    /**
+     * Clear client certificate and key
+     *
+     * @return self
+     */
+    public function clearClientCert(): self
+    {
+        $this->kernel->clearClientCert();
+        return $this;
+    }
+
+    /**
      * Send a request and return the response
      *
      * @param string $method HTTP method (GET, POST, PUT, DELETE, etc.)

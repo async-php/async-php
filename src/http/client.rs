@@ -4,10 +4,13 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::convert::IntoZval;
 
 use std::time::Duration;
+use std::sync::Arc;
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use hyper_rustls::HttpsConnectorBuilder;
+use rustls::RootCertStore;
+use rustls_pki_types::CertificateDer;
 use bytes::Bytes;
 use hyper::body::Frame;
 use http_body_util::StreamBody;
@@ -16,16 +19,26 @@ use futures::StreamExt;
 use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter};
 use crate::future::RustFuture;
 
+type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
+
 /// HTTP Client for making HTTP requests
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpClient")]
 pub struct HttpClient {
+    /// Shared hyper client for connection pooling
+    client: Arc<HyperClient>,
     /// Default timeout for requests
     timeout: Option<Duration>,
     /// Follow redirects (3xx responses)
     follow_redirects: bool,
     /// Maximum number of redirects to follow
     max_redirects: u32,
+    /// Custom CA certificates (PEM format)
+    custom_ca_certs: Option<String>,
+    /// Client certificate (PEM format)
+    client_cert: Option<String>,
+    /// Client private key (PEM format)
+    client_key: Option<String>,
 }
 
 #[php_impl]
@@ -33,10 +46,18 @@ impl HttpClient {
     /// Create a new HTTP client
     #[php(constructor)]
     pub fn __construct() -> Self {
+        // Build default HTTPS client with native roots
+        let client = Self::build_client(None, None, None)
+            .expect("Failed to build default HTTP client");
+
         Self {
+            client: Arc::new(client),
             timeout: Some(Duration::from_secs(30)),
             follow_redirects: true,
             max_redirects: 10,
+            custom_ca_certs: None,
+            client_cert: None,
+            client_key: None,
         }
     }
 
@@ -74,6 +95,42 @@ impl HttpClient {
         self.max_redirects
     }
 
+    /// Set custom CA certificates in PEM format
+    /// This will rebuild the HTTP client with the new certificates
+    #[php]
+    pub fn set_ca_cert(&mut self, ca_cert_pem: String) -> PhpResult<()> {
+        self.custom_ca_certs = Some(ca_cert_pem.clone());
+        self.rebuild_client()?;
+        Ok(())
+    }
+
+    /// Set client certificate and key in PEM format for mutual TLS
+    /// This will rebuild the HTTP client with the new credentials
+    #[php]
+    pub fn set_client_cert(&mut self, cert_pem: String, key_pem: String) -> PhpResult<()> {
+        self.client_cert = Some(cert_pem);
+        self.client_key = Some(key_pem);
+        self.rebuild_client()?;
+        Ok(())
+    }
+
+    /// Clear custom CA certificates and use system defaults
+    #[php]
+    pub fn clear_ca_cert(&mut self) -> PhpResult<()> {
+        self.custom_ca_certs = None;
+        self.rebuild_client()?;
+        Ok(())
+    }
+
+    /// Clear client certificate and key
+    #[php]
+    pub fn clear_client_cert(&mut self) -> PhpResult<()> {
+        self.client_cert = None;
+        self.client_key = None;
+        self.rebuild_client()?;
+        Ok(())
+    }
+
     /// Send a request and return a future that resolves to HttpResponse
     #[php]
     pub fn send(&self, request: &HttpRequest) -> RustFuture {
@@ -82,17 +139,9 @@ impl HttpClient {
         let uri = request.get_uri();
         let headers = request.get_headers();
         let body_zval = request.get_body();
+        let client = self.client.clone();
 
         RustFuture::new(async move {
-            // Build HTTPS client
-            let https = HttpsConnectorBuilder::new()
-                .with_native_roots()
-                .map_err(|e| format!("Failed to build HTTPS connector: {}", e))?
-                .https_or_http()
-                .enable_http1()
-                .build();
-
-            let client = Client::builder(TokioExecutor::new()).build(https);
 
             // Parse method and URI
             let http_method = method.parse::<hyper::Method>()
@@ -118,7 +167,7 @@ impl HttpClient {
             } else {
                 let php_reader = PhpReaderAdapter::new(body_zval);
                 let stream = tokio_util::io::ReaderStream::new(php_reader)
-                    .map(|result| result.map(Frame::data));
+                    .map(|result| result.map(Frame::data).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
                 BodyExt::boxed(StreamBody::new(stream))
             };
 
@@ -178,13 +227,87 @@ impl HttpClient {
         }
     }
 
+    /// Build a hyper client with optional custom certificates
+    fn build_client(
+        custom_ca_certs: Option<&str>,
+        client_cert: Option<&str>,
+        client_key: Option<&str>,
+    ) -> Result<HyperClient, String> {
+        let mut root_store = RootCertStore::empty();
+
+        // Add custom CA certificates if provided
+        if let Some(ca_pem) = custom_ca_certs {
+            let mut cursor = std::io::Cursor::new(ca_pem.as_bytes());
+            let certs = rustls_pemfile::certs(&mut cursor)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to parse CA certificates: {}", e))?;
+
+            for cert in certs {
+                root_store.add(cert)
+                    .map_err(|e| format!("Failed to add CA certificate: {}", e))?;
+            }
+        } else {
+            // Use native system certificates
+            root_store = webpki_roots::TLS_SERVER_ROOTS.iter()
+                .map(|ta| ta.to_owned())
+                .collect();
+        }
+
+        let config_builder = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store);
+
+        // Add client certificate if provided
+        let config = if let (Some(cert_pem), Some(key_pem)) = (client_cert, client_key) {
+            // Parse client certificate
+            let mut cert_cursor = std::io::Cursor::new(cert_pem.as_bytes());
+            let certs = rustls_pemfile::certs(&mut cert_cursor)
+                .collect::<Result<Vec<CertificateDer>, _>>()
+                .map_err(|e| format!("Failed to parse client certificate: {}", e))?;
+
+            // Parse private key
+            let mut key_cursor = std::io::Cursor::new(key_pem.as_bytes());
+            let key = rustls_pemfile::private_key(&mut key_cursor)
+                .map_err(|e| format!("Failed to parse private key: {}", e))?
+                .ok_or_else(|| "No private key found in PEM".to_string())?;
+
+            config_builder
+                .with_client_auth_cert(certs, key)
+                .map_err(|e| format!("Failed to configure client certificate: {}", e))?
+        } else {
+            config_builder.with_no_client_auth()
+        };
+
+        let https = HttpsConnectorBuilder::new()
+            .with_tls_config(config)
+            .https_or_http()
+            .enable_http1()
+            .build();
+
+        Ok(Client::builder(TokioExecutor::new()).build(https))
+    }
+
+    /// Rebuild the HTTP client with current certificate configuration
+    fn rebuild_client(&mut self) -> PhpResult<()> {
+        let client = Self::build_client(
+            self.custom_ca_certs.as_deref(),
+            self.client_cert.as_deref(),
+            self.client_key.as_deref(),
+        )?;
+        self.client = Arc::new(client);
+        Ok(())
+    }
+
     /// Create a new client with shared configuration
     /// This allows for connection pooling, cookie persistence, etc.
     pub fn clone(&self) -> Self {
         Self {
+            client: self.client.clone(),
             timeout: self.timeout,
             follow_redirects: self.follow_redirects,
             max_redirects: self.max_redirects,
+            custom_ca_certs: self.custom_ca_certs.clone(),
+            client_cert: self.client_cert.clone(),
+            client_key: self.client_key.clone(),
         }
     }
 }

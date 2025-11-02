@@ -24,6 +24,8 @@ bytes = "1.11.0"
 http = "1.4.0"
 rustls = { version = "0.23.35", features = ["ring"] }
 rustls-pemfile = "2.2.0"
+rustls-pki-types = "1.10"
+webpki-roots = "0.26"
 rcgen = "0.14.5"
 tokio-rustls = "0.26.4"
 tracing = "0.1.43"
