@@ -24,7 +24,7 @@ class Server
     {
         $this->certPem = $certPem;
         $this->keyPem = $keyPem;
-        $this->kernel->set_tls($certPem, $keyPem);
+        $this->kernel->setTls($certPem, $keyPem);
         return $this;
     }
 
@@ -48,7 +48,7 @@ class Server
      */
     public function setEnableHttp1(bool $enable): self
     {
-        $this->kernel->set_enable_http1($enable);
+        $this->kernel->setEnableHttp1($enable);
         return $this;
     }
 
@@ -57,7 +57,7 @@ class Server
      */
     public function setEnableHttp2(bool $enable): self
     {
-        $this->kernel->set_enable_http2($enable);
+        $this->kernel->setEnableHttp2($enable);
         return $this;
     }
 
@@ -66,7 +66,7 @@ class Server
      */
     public function setEnableHttp3(bool $enable): self
     {
-        $this->kernel->set_enable_http3($enable);
+        $this->kernel->setEnableHttp3($enable);
         return $this;
     }
 

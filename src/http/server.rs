@@ -53,26 +53,22 @@ impl HttpServer {
     }
 
     /// Set TLS certificate and private key (PEM format strings, required for HTTPS/HTTP2/HTTP3)
-    #[php]
     pub fn set_tls(&mut self, cert_pem: String, key_pem: String) {
         self.cert_pem = Some(cert_pem);
         self.key_pem = Some(key_pem);
     }
 
     /// Enable or disable HTTP/1.1
-    #[php]
     pub fn set_enable_http1(&mut self, enable: bool) {
         self.enable_http1 = enable;
     }
 
     /// Enable or disable HTTP/2
-    #[php]
     pub fn set_enable_http2(&mut self, enable: bool) {
         self.enable_http2 = enable;
     }
 
     /// Enable or disable HTTP/3
-    #[php]
     pub fn set_enable_http3(&mut self, enable: bool) {
         self.enable_http3 = enable;
     }
@@ -80,7 +76,6 @@ impl HttpServer {
     /// Start listening on the given address with a request handler callback
     /// The callback receives HttpRequest and should return HttpResponse
     /// All enabled protocols will run simultaneously on the same port
-    #[php]
     pub fn listen(&self, addr: String, handler: &mut Zval) -> RustFuture {
         let cert_pem = self.cert_pem.clone();
         let key_pem = self.key_pem.clone();
