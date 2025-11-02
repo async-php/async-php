@@ -16,18 +16,16 @@ use bytes::{Bytes, Buf};
 use http_body_util::{Full, BodyExt};
 use rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
-use std::fs;
-use std::io::BufReader;
 
 
 /// HTTP Server supporting HTTP/1.1, HTTP/2, and HTTP/3 simultaneously
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
-    /// TLS certificate file path (PEM format)
-    cert_path: Option<String>,
-    /// TLS private key file path (PEM format)
-    key_path: Option<String>,
+    /// TLS certificate content (PEM format)
+    cert_pem: Option<String>,
+    /// TLS private key content (PEM format)
+    key_pem: Option<String>,
     /// Enable HTTP/1.1 (default: true)
     enable_http1: bool,
     /// Enable HTTP/2 (default: true)
@@ -46,19 +44,19 @@ impl HttpServer {
     #[php(constructor)]
     pub fn __construct() -> Self {
         Self {
-            cert_path: None,
-            key_path: None,
+            cert_pem: None,
+            key_pem: None,
             enable_http1: true,
             enable_http2: true,
             enable_http3: true,
         }
     }
 
-    /// Set TLS certificate and private key paths (required for HTTPS/HTTP2/HTTP3)
+    /// Set TLS certificate and private key (PEM format strings, required for HTTPS/HTTP2/HTTP3)
     #[php]
-    pub fn set_tls(&mut self, cert_path: String, key_path: String) {
-        self.cert_path = Some(cert_path);
-        self.key_path = Some(key_path);
+    pub fn set_tls(&mut self, cert_pem: String, key_pem: String) {
+        self.cert_pem = Some(cert_pem);
+        self.key_pem = Some(key_pem);
     }
 
     /// Enable or disable HTTP/1.1
@@ -84,23 +82,23 @@ impl HttpServer {
     /// All enabled protocols will run simultaneously on the same port
     #[php]
     pub fn listen(&self, addr: String, handler: &mut Zval) -> RustFuture {
-        let cert_path = self.cert_path.clone();
-        let key_path = self.key_path.clone();
+        let cert_pem = self.cert_pem.clone();
+        let key_pem = self.key_pem.clone();
         let enable_http1 = self.enable_http1;
         let enable_http2 = self.enable_http2;
         let enable_http3 = self.enable_http3;
         let handler_clone = handler.shallow_clone();
 
         RustFuture::new(async move {
-            let socket_addr: SocketAddr = addr.parse() 
+            let socket_addr: SocketAddr = addr.parse()
                 .map_err(|e| format!("Invalid address: {}", e))?;
 
             // Start all enabled listeners simultaneously
             Self::serve_all(
                 socket_addr,
                 handler_clone,
-                cert_path,
-                key_path,
+                cert_pem,
+                key_pem,
                 enable_http1,
                 enable_http2,
                 enable_http3,
@@ -110,23 +108,23 @@ impl HttpServer {
 }
 
 impl HttpServer {
-    /// Load TLS configuration from certificate and key files
-    fn load_tls_config(cert_path: &str, key_path: &str) -> Result<Arc<ServerConfig>, String> {
-        // Load certificates
-        let cert_file = fs::File::open(cert_path)
-            .map_err(|e| format!("Failed to open cert file: {}", e))?;
-        let mut cert_reader = BufReader::new(cert_file);
+    /// Load TLS configuration from certificate and key strings (PEM format)
+    fn load_tls_config(cert_pem: &str, key_pem: &str) -> Result<Arc<ServerConfig>, String> {
+        // Parse certificates from PEM string
+        let mut cert_reader = std::io::Cursor::new(cert_pem.as_bytes());
         let certs: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to parse certificates: {}", e))?;
 
-        // Load private key
-        let key_file = fs::File::open(key_path)
-            .map_err(|e| format!("Failed to open key file: {}", e))?;
-        let mut key_reader = BufReader::new(key_file);
+        if certs.is_empty() {
+            return Err("No certificates found in PEM string".to_string());
+        }
+
+        // Parse private key from PEM string
+        let mut key_reader = std::io::Cursor::new(key_pem.as_bytes());
         let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| format!("Failed to parse private key: {}", e))? 
-            .ok_or_else(|| "No private key found".to_string())?;
+            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .ok_or_else(|| "No private key found in PEM string".to_string())?;
 
         // Build server config with ALPN protocols for HTTP/1.1, HTTP/2, and HTTP/3
         let mut config = ServerConfig::builder()
@@ -143,23 +141,23 @@ impl HttpServer {
         Ok(Arc::new(config))
     }
 
-    /// Load Quinn server configuration for HTTP/3
-    fn load_quinn_config(cert_path: &str, key_path: &str) -> Result<quinn::ServerConfig, String> {
-        // Load certificates
-        let cert_file = fs::File::open(cert_path)
-            .map_err(|e| format!("Failed to open cert file: {}", e))?;
-        let mut cert_reader = BufReader::new(cert_file);
+    /// Load Quinn server configuration for HTTP/3 from PEM strings
+    fn load_quinn_config(cert_pem: &str, key_pem: &str) -> Result<quinn::ServerConfig, String> {
+        // Parse certificates from PEM string
+        let mut cert_reader = std::io::Cursor::new(cert_pem.as_bytes());
         let certs: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to parse certificates: {}", e))?;
 
-        // Load private key
-        let key_file = fs::File::open(key_path)
-            .map_err(|e| format!("Failed to open key file: {}", e))?;
-        let mut key_reader = BufReader::new(key_file);
+        if certs.is_empty() {
+            return Err("No certificates found in PEM string".to_string());
+        }
+
+        // Parse private key from PEM string
+        let mut key_reader = std::io::Cursor::new(key_pem.as_bytes());
         let key = rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| format!("Failed to parse private key: {}", e))? 
-            .ok_or_else(|| "No private key found".to_string())?;
+            .map_err(|e| format!("Failed to parse private key: {}", e))?
+            .ok_or_else(|| "No private key found in PEM string".to_string())?;
 
         // Build Quinn server config
         let server_config = quinn::ServerConfig::with_single_cert(certs, key)
@@ -172,17 +170,17 @@ impl HttpServer {
     async fn serve_all(
         addr: SocketAddr,
         handler: Zval,
-        cert_path: Option<String>,
-        key_path: Option<String>,
+        cert_pem: Option<String>,
+        key_pem: Option<String>,
         enable_http1: bool,
         enable_http2: bool,
         enable_http3: bool,
     ) -> Result<Zval, String> {
         // Load TLS config for TCP listener if needed
-        let tls_config = if (enable_http1 || enable_http2) && cert_path.is_some() && key_path.is_some() {
+        let tls_config = if (enable_http1 || enable_http2) && cert_pem.is_some() && key_pem.is_some() {
             Some(Self::load_tls_config(
-                cert_path.as_ref().unwrap(),
-                key_path.as_ref().unwrap(),
+                cert_pem.as_ref().unwrap(),
+                key_pem.as_ref().unwrap(),
             )?)
         } else {
             None
@@ -201,12 +199,12 @@ impl HttpServer {
 
         // Start QUIC listener for HTTP/3
         let quic_task = if enable_http3 {
-            if cert_path.is_none() || key_path.is_none() {
+            if cert_pem.is_none() || key_pem.is_none() {
                 return Err("HTTP/3 requires TLS configuration. Call set_tls() first.".to_string());
             }
             let handler = handler.shallow_clone();
-            let cert = cert_path.unwrap();
-            let key = key_path.unwrap();
+            let cert = cert_pem.unwrap();
+            let key = key_pem.unwrap();
             Some(tokio::task::spawn_local(async move {
                 Self::serve_quic(addr, handler, &cert, &key).await
             }))
@@ -348,11 +346,11 @@ impl HttpServer {
     async fn serve_quic(
         addr: SocketAddr,
         handler: Zval,
-        cert_path: &str,
-        key_path: &str,
+        cert_pem: &str,
+        key_pem: &str,
     ) -> Result<Zval, String> {
         // Load Quinn server config
-        let mut server_config = Self::load_quinn_config(cert_path, key_path)?;
+        let mut server_config = Self::load_quinn_config(cert_pem, key_pem)?;
 
         // Configure transport parameters
         let mut transport_config = quinn::TransportConfig::default();
