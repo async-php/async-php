@@ -7,7 +7,6 @@ use std::time::Duration;
 use std::sync::Arc;
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
 use hyper_rustls::HttpsConnectorBuilder;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
@@ -20,6 +19,19 @@ use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter}
 use crate::future::RustFuture;
 
 type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
+
+/// Local executor for single-threaded async runtime
+#[derive(Clone, Copy)]
+struct LocalExecutor;
+
+impl<F> hyper::rt::Executor<F> for LocalExecutor
+where
+    F: std::future::Future + 'static,
+{
+    fn execute(&self, fut: F) {
+        tokio::task::spawn_local(fut);
+    }
+}
 
 /// HTTP Client for making HTTP requests
 #[php_class]
@@ -283,7 +295,7 @@ impl HttpClient {
             .enable_http1()
             .build();
 
-        Ok(Client::builder(TokioExecutor::new()).build(https))
+        Ok(Client::builder(LocalExecutor).build(https))
     }
 
     /// Rebuild the HTTP client with current certificate configuration
