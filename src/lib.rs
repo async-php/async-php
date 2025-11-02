@@ -169,6 +169,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpServer>()
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
+        .class::<http::HttpResponseBody>()
         .class::<http::HttpClient>()
         .class::<AsyncChannel>()
         .class::<AsyncMySql>()
