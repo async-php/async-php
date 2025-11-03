@@ -8,6 +8,9 @@ pub mod response;
 pub mod body;
 pub mod client;
 pub mod server;
+pub mod auth;
+pub mod cookies;
+pub mod retry;
 
 // Re-export main types
 

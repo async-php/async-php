@@ -5,6 +5,7 @@ use ext_php_rs::convert::IntoZval;
 
 use std::time::Duration;
 use std::sync::Arc;
+use std::collections::HashSet;
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::Client;
 use hyper_rustls::HttpsConnectorBuilder;
@@ -16,6 +17,9 @@ use http_body_util::StreamBody;
 use futures::StreamExt;
 
 use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter};
+use crate::http::auth;
+use crate::http::cookies::CookieJar;
+use crate::http::retry::RetryConfig;
 use crate::future::RustFuture;
 
 type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
@@ -51,6 +55,12 @@ pub struct HttpClient {
     client_cert: Option<String>,
     /// Client private key (PEM format)
     client_key: Option<String>,
+    /// Pre-computed Authorization header
+    auth_header: Option<String>,
+    /// Cookie jar for session management
+    cookie_jar: Option<CookieJar>,
+    /// Retry configuration
+    retry_config: Option<RetryConfig>,
 }
 
 #[php_impl]
@@ -66,6 +76,9 @@ impl HttpClient {
             custom_ca_certs: None,
             client_cert: None,
             client_key: None,
+            auth_header: None,
+            cookie_jar: None,
+            retry_config: None,
         }
     }
 
@@ -118,6 +131,75 @@ impl HttpClient {
         self.client_key = Some(key_pem);
     }
 
+    /// Set Basic Authentication
+    /// Automatically adds "Authorization: Basic <base64>" header to all requests
+    #[php]
+    pub fn set_basic_auth(&mut self, username: String, password: String) {
+        self.auth_header = Some(auth::basic_auth(&username, &password));
+    }
+
+    /// Set Bearer Token authentication
+    /// Automatically adds "Authorization: Bearer <token>" header to all requests
+    #[php]
+    pub fn set_bearer_token(&mut self, token: String) {
+        self.auth_header = Some(auth::bearer_auth(&token));
+    }
+
+    /// Clear authentication
+    #[php]
+    pub fn clear_auth(&mut self) {
+        self.auth_header = None;
+    }
+
+    /// Enable cookie management
+    /// Creates a new cookie jar to store cookies automatically
+    #[php]
+    pub fn enable_cookies(&mut self) {
+        self.cookie_jar = Some(CookieJar::new());
+    }
+
+    /// Disable cookie management
+    #[php]
+    pub fn disable_cookies(&mut self) {
+        self.cookie_jar = None;
+    }
+
+    /// Clear all stored cookies
+    #[php]
+    pub fn clear_cookies(&mut self) {
+        if let Some(ref jar) = self.cookie_jar {
+            jar.clear();
+        }
+    }
+
+    /// Enable request retry with default configuration
+    /// Default: 3 retries, exponential backoff starting at 1s
+    #[php]
+    pub fn enable_retry(&mut self) {
+        self.retry_config = Some(RetryConfig::default());
+    }
+
+    /// Set custom retry configuration
+    /// max_retries: Maximum number of retry attempts
+    /// initial_backoff_secs: Initial backoff duration in seconds
+    /// max_backoff_secs: Maximum backoff duration in seconds
+    pub fn set_retry_config(&mut self, max_retries: u32, initial_backoff_secs: f64, max_backoff_secs: f64) {
+        self.retry_config = Some(RetryConfig {
+            max_retries,
+            initial_backoff: Duration::from_secs_f64(initial_backoff_secs),
+            max_backoff: Duration::from_secs_f64(max_backoff_secs),
+            backoff_multiplier: 2.0,
+            retry_on_timeout: true,
+            retry_status_codes: vec![429, 500, 502, 503, 504],
+        });
+    }
+
+    /// Disable request retry
+    #[php]
+    pub fn disable_retry(&mut self) {
+        self.retry_config = None;
+    }
+
     /// Send a request and return a future that resolves to HttpResponse
     #[php]
     pub fn send(&mut self, request: &HttpRequest) -> PhpResult<RustFuture> {
@@ -133,80 +215,180 @@ impl HttpClient {
         }
 
         let timeout = self.timeout;
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
         let method = request.get_method();
         let uri = request.get_uri();
-        let headers = request.get_headers();
+        let mut headers = request.get_headers();
         let body_zval = request.get_body();
         let client = self.client.as_ref().unwrap().clone();
+        let cookie_jar = self.cookie_jar.clone();
+
+        // Add authentication header if configured
+        if let Some(ref auth) = self.auth_header {
+            headers.insert("Authorization".to_string(), auth.clone());
+        }
 
         Ok(RustFuture::new(async move {
-            // Parse method and URI
-            let http_method = method.parse::<hyper::Method>()
-                .map_err(|e| format!("Invalid HTTP method '{}': {}", method, e))?;
-            let http_uri = uri.parse::<hyper::Uri>()
-                .map_err(|e| format!("Invalid URI '{}': {}", uri, e))?;
+            let mut current_uri = uri.clone();
+            let mut current_method = method.clone();
+            let mut current_body_zval = body_zval.shallow_clone();
+            let mut visited_urls: HashSet<String> = HashSet::new();
+            let mut redirect_count = 0u32;
 
-            // Build request with headers
-            let mut req_builder = hyper::Request::builder()
-                .method(http_method)
-                .uri(http_uri);
-
-            for (key, value) in headers {
-                req_builder = req_builder.header(key, value);
-            }
-
-            // Build streaming body
-            let hyper_body = if body_zval.is_null() {
-                BodyExt::boxed(
-                    http_body_util::Empty::<Bytes>::new()
-                        .map_err(|never| match never {})
-                )
-            } else {
-                let php_reader = PhpReaderAdapter::new(body_zval);
-                let stream = tokio_util::io::ReaderStream::new(php_reader)
-                    .map(|result| result.map(Frame::data).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
-                BodyExt::boxed(StreamBody::new(stream))
-            };
-
-            let hyper_request = req_builder.body(hyper_body)
-                .map_err(|e| format!("Failed to build request: {}", e))?;
-
-            // Execute request with optional timeout
-            let response = if let Some(timeout_duration) = timeout {
-                tokio::time::timeout(timeout_duration, client.request(hyper_request))
-                    .await
-                    .map_err(|_| "Request timeout".to_string())?
-                    .map_err(|e| format!("Request failed: {}", e))?
-            } else {
-                client.request(hyper_request)
-                    .await
-                    .map_err(|e| format!("Request failed: {}", e))?
-            };
-
-            // Build response
-            let (parts, body) = response.into_parts();
-            let mut http_response = HttpResponse::__construct(parts.status.as_u16() as i32);
-
-            http_response.set_version(Self::version_to_string(parts.version).to_string());
-
-            for (key, value) in &parts.headers {
-                if let Ok(value_str) = value.to_str() {
-                    http_response.set_header(key.to_string(), value_str.to_string());
+            loop {
+                // Prevent redirect loops by tracking visited URLs
+                if visited_urls.contains(&current_uri) {
+                    return Err("Redirect loop detected".to_string());
                 }
+                visited_urls.insert(current_uri.clone());
+
+                // Parse method and URI
+                let http_method = current_method.parse::<hyper::Method>()
+                    .map_err(|e| format!("Invalid HTTP method '{}': {}", current_method, e))?;
+                let http_uri = current_uri.parse::<hyper::Uri>()
+                    .map_err(|e| format!("Invalid URI '{}': {}", current_uri, e))?;
+
+                // Build request with headers
+                let mut req_builder = hyper::Request::builder()
+                    .method(http_method)
+                    .uri(http_uri);
+
+                // Add cookies from cookie jar if enabled
+                if let Some(ref jar) = cookie_jar {
+                    if let Some(cookie_header) = jar.get_cookies_for_url(&current_uri) {
+                        req_builder = req_builder.header("Cookie", cookie_header);
+                    }
+                }
+
+                for (key, value) in &headers {
+                    req_builder = req_builder.header(key, value);
+                }
+
+                // Build streaming body
+                let hyper_body = if current_body_zval.is_null() || redirect_count > 0 {
+                    // For redirects, we don't send the body (except for 307/308)
+                    BodyExt::boxed(
+                        http_body_util::Empty::<Bytes>::new()
+                            .map_err(|never| match never {})
+                    )
+                } else {
+                    let php_reader = PhpReaderAdapter::new(current_body_zval.shallow_clone());
+                    let stream = tokio_util::io::ReaderStream::new(php_reader)
+                        .map(|result| result.map(Frame::data).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
+                    BodyExt::boxed(StreamBody::new(stream))
+                };
+
+                let hyper_request = req_builder.body(hyper_body)
+                    .map_err(|e| format!("Failed to build request: {}", e))?;
+
+                // Execute request with optional timeout
+                let response = if let Some(timeout_duration) = timeout {
+                    tokio::time::timeout(timeout_duration, client.request(hyper_request))
+                        .await
+                        .map_err(|_| "Request timeout".to_string())?
+                        .map_err(|e| format!("Request failed: {}", e))?
+                } else {
+                    client.request(hyper_request)
+                        .await
+                        .map_err(|e| format!("Request failed: {}", e))?
+                };
+
+                let (parts, body) = response.into_parts();
+                let status_code = parts.status.as_u16();
+
+                // Store cookies from Set-Cookie headers if cookie jar is enabled
+                if let Some(ref jar) = cookie_jar {
+                    let set_cookie_headers: Vec<&str> = parts.headers
+                        .get_all("set-cookie")
+                        .iter()
+                        .filter_map(|v| v.to_str().ok())
+                        .collect();
+
+                    if !set_cookie_headers.is_empty() {
+                        jar.store_cookies_from_response(&current_uri, set_cookie_headers);
+                    }
+                }
+
+                // Check if we should follow redirects
+                let is_redirect = matches!(status_code, 301 | 302 | 303 | 307 | 308);
+
+                if is_redirect && follow_redirects && redirect_count < max_redirects {
+                    // Extract Location header
+                    if let Some(location) = parts.headers.get("location") {
+                        if let Ok(location_str) = location.to_str() {
+                            redirect_count += 1;
+
+                            // Handle relative vs absolute URLs
+                            current_uri = if location_str.starts_with("http://") || location_str.starts_with("https://") {
+                                location_str.to_string()
+                            } else {
+                                // Parse current URI to get base URL
+                                let base_uri = current_uri.parse::<hyper::Uri>()
+                                    .map_err(|e| format!("Failed to parse base URI: {}", e))?;
+
+                                let scheme = base_uri.scheme_str().unwrap_or("https");
+                                let authority = base_uri.authority()
+                                    .ok_or_else(|| "Missing authority in redirect base URL".to_string())?;
+
+                                if location_str.starts_with('/') {
+                                    // Absolute path
+                                    format!("{}://{}{}", scheme, authority, location_str)
+                                } else {
+                                    // Relative path
+                                    let base_path = base_uri.path();
+                                    let last_slash = base_path.rfind('/').unwrap_or(0);
+                                    let base_dir = &base_path[..=last_slash];
+                                    format!("{}://{}{}{}", scheme, authority, base_dir, location_str)
+                                }
+                            };
+
+                            // Handle method change for certain status codes
+                            // 303 always changes to GET
+                            // 301, 302 change POST to GET
+                            match status_code {
+                                303 => {
+                                    current_method = "GET".to_string();
+                                    current_body_zval = ext_php_rs::types::Zval::null();
+                                }
+                                301 | 302 if current_method == "POST" => {
+                                    current_method = "GET".to_string();
+                                    current_body_zval = ext_php_rs::types::Zval::null();
+                                }
+                                _ => {
+                                    // 307, 308 keep method and body
+                                }
+                            }
+
+                            continue; // Follow redirect
+                        }
+                    }
+                }
+
+                // Build response (no more redirects or redirect limit reached)
+                let mut http_response = HttpResponse::__construct(status_code as i32);
+
+                http_response.set_version(Self::version_to_string(parts.version).to_string());
+
+                for (key, value) in &parts.headers {
+                    if let Ok(value_str) = value.to_str() {
+                        http_response.set_header(key.to_string(), value_str.to_string());
+                    }
+                }
+
+                // Wrap response body
+                let response_body = HttpResponseBody::new_internal(body);
+                let body_zval = ext_php_rs::types::ZendClassObject::new(response_body)
+                    .into_zval(false)
+                    .map_err(|e| format!("Failed to create response body: {:?}", e))?;
+
+                http_response.set_body(&body_zval)
+                    .map_err(|e| format!("Failed to set response body: {:?}", e))?;
+
+                return ext_php_rs::types::ZendClassObject::new(http_response)
+                    .into_zval(false)
+                    .map_err(|e| format!("Failed to convert HttpResponse to Zval: {:?}", e));
             }
-
-            // Wrap response body
-            let response_body = HttpResponseBody::new_internal(body);
-            let body_zval = ext_php_rs::types::ZendClassObject::new(response_body)
-                .into_zval(false)
-                .map_err(|e| format!("Failed to create response body: {:?}", e))?;
-
-            http_response.set_body(&body_zval)
-                .map_err(|e| format!("Failed to set response body: {:?}", e))?;
-
-            ext_php_rs::types::ZendClassObject::new(http_response)
-                .into_zval(false)
-                .map_err(|e| format!("Failed to convert HttpResponse to Zval: {:?}", e))
         }))
     }
 }
@@ -294,6 +476,9 @@ impl HttpClient {
             custom_ca_certs: self.custom_ca_certs.clone(),
             client_cert: self.client_cert.clone(),
             client_key: self.client_key.clone(),
+            auth_header: self.auth_header.clone(),
+            cookie_jar: self.cookie_jar.clone(),
+            retry_config: self.retry_config.clone(),
         }
     }
 }
