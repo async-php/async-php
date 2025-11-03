@@ -37,8 +37,8 @@ where
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpClient")]
 pub struct HttpClient {
-    /// Shared hyper client for connection pooling
-    client: Arc<HyperClient>,
+    /// Shared hyper client for connection pooling (wrapped in Mutex for lazy rebuild)
+    client: Option<Arc<HyperClient>>,
     /// Default timeout for requests
     timeout: Option<Duration>,
     /// Follow redirects (3xx responses)
@@ -58,12 +58,8 @@ impl HttpClient {
     /// Create a new HTTP client
     #[php(constructor)]
     pub fn __construct() -> Self {
-        // Build default HTTPS client with native roots
-        let client = Self::build_client(None, None, None)
-            .expect("Failed to build default HTTP client");
-
         Self {
-            client: Arc::new(client),
+            client: None,
             timeout: Some(Duration::from_secs(30)),
             follow_redirects: true,
             max_redirects: 10,
@@ -108,53 +104,42 @@ impl HttpClient {
     }
 
     /// Set custom CA certificates in PEM format
-    /// This will rebuild the HTTP client with the new certificates
+    /// Client will be rebuilt on next request
     #[php]
-    pub fn set_ca_cert(&mut self, ca_cert_pem: String) -> PhpResult<()> {
-        self.custom_ca_certs = Some(ca_cert_pem.clone());
-        self.rebuild_client()?;
-        Ok(())
+    pub fn set_ca_cert(&mut self, ca_cert_pem: String) {
+        self.custom_ca_certs = Some(ca_cert_pem);
     }
 
     /// Set client certificate and key in PEM format for mutual TLS
-    /// This will rebuild the HTTP client with the new credentials
+    /// Client will be rebuilt on next request
     #[php]
-    pub fn set_client_cert(&mut self, cert_pem: String, key_pem: String) -> PhpResult<()> {
+    pub fn set_client_cert(&mut self, cert_pem: String, key_pem: String) {
         self.client_cert = Some(cert_pem);
         self.client_key = Some(key_pem);
-        self.rebuild_client()?;
-        Ok(())
-    }
-
-    /// Clear custom CA certificates and use system defaults
-    #[php]
-    pub fn clear_ca_cert(&mut self) -> PhpResult<()> {
-        self.custom_ca_certs = None;
-        self.rebuild_client()?;
-        Ok(())
-    }
-
-    /// Clear client certificate and key
-    #[php]
-    pub fn clear_client_cert(&mut self) -> PhpResult<()> {
-        self.client_cert = None;
-        self.client_key = None;
-        self.rebuild_client()?;
-        Ok(())
     }
 
     /// Send a request and return a future that resolves to HttpResponse
     #[php]
-    pub fn send(&self, request: &HttpRequest) -> RustFuture {
+    pub fn send(&mut self, request: &HttpRequest) -> PhpResult<RustFuture> {
+        // Check if client needs to be rebuilt
+        if self.client.is_none() {
+            let client = Self::build_client(
+                self.custom_ca_certs.as_deref(),
+                self.client_cert.as_deref(),
+                self.client_key.as_deref(),
+            )?;
+
+            self.client = Some(Arc::new(client));
+        }
+
         let timeout = self.timeout;
         let method = request.get_method();
         let uri = request.get_uri();
         let headers = request.get_headers();
         let body_zval = request.get_body();
-        let client = self.client.clone();
+        let client = self.client.as_ref().unwrap().clone();
 
-        RustFuture::new(async move {
-
+        Ok(RustFuture::new(async move {
             // Parse method and URI
             let http_method = method.parse::<hyper::Method>()
                 .map_err(|e| format!("Invalid HTTP method '{}': {}", method, e))?;
@@ -222,7 +207,7 @@ impl HttpClient {
             ext_php_rs::types::ZendClassObject::new(http_response)
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert HttpResponse to Zval: {:?}", e))
-        })
+        }))
     }
 }
 
@@ -296,17 +281,6 @@ impl HttpClient {
             .build();
 
         Ok(Client::builder(LocalExecutor).build(https))
-    }
-
-    /// Rebuild the HTTP client with current certificate configuration
-    fn rebuild_client(&mut self) -> PhpResult<()> {
-        let client = Self::build_client(
-            self.custom_ca_certs.as_deref(),
-            self.client_cert.as_deref(),
-            self.client_key.as_deref(),
-        )?;
-        self.client = Arc::new(client);
-        Ok(())
     }
 
     /// Create a new client with shared configuration
