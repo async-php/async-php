@@ -124,24 +124,168 @@ class Client
     }
 
     /**
-     * Clear custom CA certificate and use system defaults
+     * Set Basic Authentication
      *
+     * @param string $username Username
+     * @param string $password Password
      * @return self
      */
-    public function clearCaCert(): self
+    public function setBasicAuth(string $username, string $password): self
     {
-        $this->kernel->clearCaCert();
+        $this->kernel->setBasicAuth($username, $password);
         return $this;
     }
 
     /**
-     * Clear client certificate and key
+     * Set Bearer Token authentication
+     *
+     * @param string $token Bearer token
+     * @return self
+     */
+    public function setBearerToken(string $token): self
+    {
+        $this->kernel->setBearerToken($token);
+        return $this;
+    }
+
+    /**
+     * Clear authentication
      *
      * @return self
      */
-    public function clearClientCert(): self
+    public function clearAuth(): self
     {
-        $this->kernel->clearClientCert();
+        $this->kernel->clearAuth();
+        return $this;
+    }
+
+    /**
+     * Enable cookie management
+     * Creates a cookie jar to automatically store and send cookies
+     *
+     * @return self
+     */
+    public function enableCookies(): self
+    {
+        $this->kernel->enableCookies();
+        return $this;
+    }
+
+    /**
+     * Disable cookie management
+     *
+     * @return self
+     */
+    public function disableCookies(): self
+    {
+        $this->kernel->disableCookies();
+        return $this;
+    }
+
+    /**
+     * Clear all stored cookies
+     *
+     * @return self
+     */
+    public function clearCookies(): self
+    {
+        $this->kernel->clearCookies();
+        return $this;
+    }
+
+    /**
+     * Enable request retry with default configuration
+     * Default: 3 retries, exponential backoff starting at 1s
+     *
+     * @return self
+     */
+    public function enableRetry(): self
+    {
+        $this->kernel->enableRetry();
+        return $this;
+    }
+
+    /**
+     * Set custom retry configuration
+     *
+     * @param int $maxRetries Maximum number of retry attempts
+     * @param float $initialBackoffSecs Initial backoff duration in seconds
+     * @param float $maxBackoffSecs Maximum backoff duration in seconds
+     * @return self
+     */
+    public function setRetryConfig(int $maxRetries, float $initialBackoffSecs, float $maxBackoffSecs): self
+    {
+        $this->kernel->setRetryConfig($maxRetries, $initialBackoffSecs, $maxBackoffSecs);
+        return $this;
+    }
+
+    /**
+     * Disable request retry
+     *
+     * @return self
+     */
+    public function disableRetry(): self
+    {
+        $this->kernel->disableRetry();
+        return $this;
+    }
+
+    /**
+     * Enable or disable automatic response decompression
+     * Enabled by default
+     *
+     * @param bool $enabled
+     * @return self
+     */
+    public function setAutoDecompress(bool $enabled): self
+    {
+        $this->kernel->setAutoDecompress($enabled);
+        return $this;
+    }
+
+    /**
+     * Check if automatic decompression is enabled
+     *
+     * @return bool
+     */
+    public function getAutoDecompress(): bool
+    {
+        return $this->kernel->getAutoDecompress();
+    }
+
+    /**
+     * Enable or disable performance metrics collection
+     * Disabled by default for better performance
+     *
+     * @param bool $enabled
+     * @return self
+     */
+    public function setCollectMetrics(bool $enabled): self
+    {
+        $this->kernel->setCollectMetrics($enabled);
+        return $this;
+    }
+
+    /**
+     * Check if metrics collection is enabled
+     *
+     * @return bool
+     */
+    public function getCollectMetrics(): bool
+    {
+        return $this->kernel->getCollectMetrics();
+    }
+
+    /**
+     * Set maximum concurrent requests
+     * Setting to 0 or less disables the limit
+     *
+     * @param int $max Maximum concurrent requests
+     * @return self
+     */
+    public function setMaxConcurrentRequests(int $max): self
+    {
+        $this->kernel->setMaxConcurrentRequests($max);
         return $this;
     }
 
