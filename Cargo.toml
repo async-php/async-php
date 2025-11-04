@@ -26,6 +26,7 @@ base64 = "0.22"
 cookie_store = "0.21"
 cookie = "0.18"
 url = "2.5"
+async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
 rustls = { version = "0.23.35", features = ["ring"] }
 rustls-pemfile = "2.2.0"
 rustls-pki-types = "1.10"

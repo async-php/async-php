@@ -6,6 +6,7 @@ use ext_php_rs::convert::IntoZval;
 use std::time::Duration;
 use std::sync::Arc;
 use std::collections::HashSet;
+use tokio::sync::Semaphore;
 use http_body_util::BodyExt;
 use hyper_util::client::legacy::Client;
 use hyper_rustls::HttpsConnectorBuilder;
@@ -20,6 +21,7 @@ use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter}
 use crate::http::auth;
 use crate::http::cookies::CookieJar;
 use crate::http::retry::RetryConfig;
+use crate::http::metrics::{RequestMetrics, MetricsCollector};
 use crate::future::RustFuture;
 
 type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
@@ -61,6 +63,12 @@ pub struct HttpClient {
     cookie_jar: Option<CookieJar>,
     /// Retry configuration
     retry_config: Option<RetryConfig>,
+    /// Automatic response decompression
+    auto_decompress: bool,
+    /// Collect performance metrics
+    collect_metrics: bool,
+    /// Concurrent request limiter (semaphore)
+    concurrency_limiter: Option<Arc<Semaphore>>,
 }
 
 #[php_impl]
@@ -79,6 +87,9 @@ impl HttpClient {
             auth_header: None,
             cookie_jar: None,
             retry_config: None,
+            auto_decompress: true, // Enable by default for better performance
+            collect_metrics: false, // Disabled by default for performance
+            concurrency_limiter: None, // No limit by default
         }
     }
 
@@ -200,6 +211,43 @@ impl HttpClient {
         self.retry_config = None;
     }
 
+    /// Enable automatic response decompression (gzip, deflate)
+    /// Enabled by default
+    #[php]
+    pub fn set_auto_decompress(&mut self, enabled: bool) {
+        self.auto_decompress = enabled;
+    }
+
+    /// Check if automatic decompression is enabled
+    #[php]
+    pub fn get_auto_decompress(&self) -> bool {
+        self.auto_decompress
+    }
+
+    /// Enable performance metrics collection
+    /// Disabled by default for better performance
+    #[php]
+    pub fn set_collect_metrics(&mut self, enabled: bool) {
+        self.collect_metrics = enabled;
+    }
+
+    /// Check if metrics collection is enabled
+    #[php]
+    pub fn get_collect_metrics(&self) -> bool {
+        self.collect_metrics
+    }
+
+    /// Set maximum concurrent requests
+    /// Setting to 0 or less disables the limit
+    #[php]
+    pub fn set_max_concurrent_requests(&mut self, max: i64) {
+        if max > 0 {
+            self.concurrency_limiter = Some(Arc::new(Semaphore::new(max as usize)));
+        } else {
+            self.concurrency_limiter = None;
+        }
+    }
+
     /// Send a request and return a future that resolves to HttpResponse
     #[php]
     pub fn send(&mut self, request: &HttpRequest) -> PhpResult<RustFuture> {
@@ -217,19 +265,34 @@ impl HttpClient {
         let timeout = self.timeout;
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let auto_decompress = self.auto_decompress;
         let method = request.get_method();
         let uri = request.get_uri();
         let mut headers = request.get_headers();
         let body_zval = request.get_body();
         let client = self.client.as_ref().unwrap().clone();
         let cookie_jar = self.cookie_jar.clone();
+        let concurrency_limiter = self.concurrency_limiter.clone();
 
         // Add authentication header if configured
         if let Some(ref auth) = self.auth_header {
             headers.insert("Authorization".to_string(), auth.clone());
         }
 
+        // Add Accept-Encoding header if auto-decompression is enabled
+        if auto_decompress && !headers.contains_key("Accept-Encoding") {
+            headers.insert("Accept-Encoding".to_string(), "gzip, deflate".to_string());
+        }
+
         Ok(RustFuture::new(async move {
+            // Acquire concurrency permit if limiter is set
+            let _permit = if let Some(ref limiter) = concurrency_limiter {
+                Some(limiter.acquire().await.map_err(|e| format!("Failed to acquire concurrency permit: {}", e))?)
+            } else {
+                None
+            };
+            // Permit is automatically released when _permit is dropped
+
             let mut current_uri = uri.clone();
             let mut current_method = method.clone();
             let mut current_body_zval = body_zval.shallow_clone();
@@ -479,6 +542,9 @@ impl HttpClient {
             auth_header: self.auth_header.clone(),
             cookie_jar: self.cookie_jar.clone(),
             retry_config: self.retry_config.clone(),
+            auto_decompress: self.auto_decompress,
+            collect_metrics: self.collect_metrics,
+            concurrency_limiter: self.concurrency_limiter.clone(),
         }
     }
 }

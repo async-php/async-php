@@ -11,6 +11,7 @@ pub mod server;
 pub mod auth;
 pub mod cookies;
 pub mod retry;
+pub mod metrics;
 
 // Re-export main types
 
