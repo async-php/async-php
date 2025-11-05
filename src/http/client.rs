@@ -481,8 +481,16 @@ impl HttpClient {
                             http_response.set_metrics(metrics);
                         }
 
-                        // Wrap response body
-                        let response_body = HttpResponseBody::new_internal(body);
+                        // Get Content-Encoding header for automatic decompression
+                        let content_encoding = if auto_decompress {
+                            parts.headers.get("content-encoding")
+                                .and_then(|v| v.to_str().ok())
+                        } else {
+                            None
+                        };
+
+                        // Wrap response body with optional decompression
+                        let response_body = HttpResponseBody::new_internal(body, content_encoding);
                         let body_zval = ext_php_rs::types::ZendClassObject::new(response_body)
                             .into_zval(false)
                             .map_err(|e| format!("Failed to create response body: {:?}", e))?;

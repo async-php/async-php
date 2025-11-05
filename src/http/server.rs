@@ -590,7 +590,7 @@ impl HttpServer {
         }
 
         // Wrap request body
-        let request_body = HttpResponseBody::new_internal(body);
+        let request_body = HttpResponseBody::new_internal(body, None);
         let body_zval = ext_php_rs::types::ZendClassObject::new(request_body)
             .into_zval(false)
             .map_err(|e| format!("Failed to create request body: {:?}", e))?;

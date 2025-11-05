@@ -12,6 +12,7 @@ use std::task::{Context, Poll};
 use ext_php_rs::convert::IntoZval;
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio::sync::Mutex;
+use async_compression::tokio::bufread::{GzipDecoder, DeflateDecoder};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -22,6 +23,7 @@ pub struct HttpResponseBody {
     body: Arc<Mutex<Option<Incoming>>>,
     buffer: Arc<Mutex<Vec<u8>>>,
     eof: Arc<Mutex<bool>>,
+    content_encoding: Option<String>, // Store encoding for decompression in read_all
 }
 
 // SAFETY: Safe because the async runtime is single-threaded
@@ -30,24 +32,56 @@ unsafe impl Sync for HttpResponseBody {}
 
 impl HttpResponseBody {
     /// Create a new response body wrapper
-    pub fn new_internal(body: Incoming) -> Self {
+    /// content_encoding: Optional "gzip" or "deflate" for automatic decompression
+    pub fn new_internal(body: Incoming, content_encoding: Option<&str>) -> Self {
         Self {
             body: Arc::new(Mutex::new(Some(body))),
             buffer: Arc::new(Mutex::new(Vec::new())),
             eof: Arc::new(Mutex::new(false)),
+            content_encoding: content_encoding.map(|s| s.to_string()),
         }
     }
 
-    /// Convert bytes to Zval string
+    /// Decompress data based on content encoding
+    async fn decompress(data: Vec<u8>, encoding: &str) -> Result<Vec<u8>> {
+        use tokio::io::AsyncReadExt;
+
+        match encoding {
+            "gzip" => {
+                let cursor = std::io::Cursor::new(data);
+                let mut decoder = GzipDecoder::new(tokio::io::BufReader::new(cursor));
+                let mut decompressed = Vec::new();
+                decoder.read_to_end(&mut decompressed).await
+                    .map_err(|e| format!("Gzip decompression failed: {}", e))?;
+                Ok(decompressed)
+            }
+            "deflate" => {
+                let cursor = std::io::Cursor::new(data);
+                let mut decoder = DeflateDecoder::new(tokio::io::BufReader::new(cursor));
+                let mut decompressed = Vec::new();
+                decoder.read_to_end(&mut decompressed).await
+                    .map_err(|e| format!("Deflate decompression failed: {}", e))?;
+                Ok(decompressed)
+            }
+            _ => Ok(data), // Unknown encoding, return as-is
+        }
+    }
+
+    /// Convert bytes to Zval string (binary-safe)
     fn bytes_to_zval(data: Vec<u8>) -> Result<Zval> {
         if data.is_empty() {
             return Ok(Zval::null());
         }
 
-        let s = String::from_utf8_lossy(&data).to_string();
+        // PHP strings are binary-safe and can store any byte sequence
+        // We use from_utf8_unchecked to preserve raw bytes without validation
+        // This is necessary for binary data (though now decompressed)
         let mut z = Zval::new();
-        z.set_string(&s, false)
-            .map_err(|e| format!("Failed to create string: {:?}", e))?;
+        unsafe {
+            let s = std::str::from_utf8_unchecked(&data);
+            z.set_string(s, false)
+                .map_err(|e| format!("Failed to create string: {:?}", e))?;
+        }
         Ok(z)
     }
 
@@ -73,6 +107,7 @@ impl HttpResponseBody {
 impl HttpResponseBody {
     /// Read data from the response body asynchronously
     /// Returns a Future that resolves to a string, or null if EOF
+    /// Note: Returns raw data without decompression (use read_all for automatic decompression)
     #[php]
     pub fn read(&self, length: i64) -> RustFuture {
         let body = self.body.clone();
@@ -121,11 +156,13 @@ impl HttpResponseBody {
     }
 
     /// Read all remaining data from the response body
+    /// Automatically decompresses if Content-Encoding is gzip or deflate
     #[php]
     pub fn read_all(&self) -> RustFuture {
         let body = self.body.clone();
         let buffer = self.buffer.clone();
         let eof = self.eof.clone();
+        let content_encoding = self.content_encoding.clone();
 
         RustFuture::new(async move {
             let mut buf = buffer.lock().await;
@@ -138,7 +175,16 @@ impl HttpResponseBody {
             }
 
             *eof.lock().await = true;
-            Self::bytes_to_zval(buf.drain(..).collect())
+
+            // Decompress if needed
+            let data = buf.drain(..).collect::<Vec<u8>>();
+            let final_data = if let Some(encoding) = content_encoding {
+                Self::decompress(data, &encoding).await?
+            } else {
+                data
+            };
+
+            Self::bytes_to_zval(final_data)
         })
     }
 
