@@ -15,6 +15,7 @@ pub struct RetryConfig {
     /// Whether to retry on timeout errors
     pub retry_on_timeout: bool,
     /// HTTP status codes that should trigger a retry (e.g., 429, 500, 502, 503, 504)
+    #[allow(dead_code)]
     pub retry_status_codes: Vec<u16>,
 }
 
@@ -41,6 +42,7 @@ impl RetryConfig {
     }
 
     /// Check if a status code should trigger a retry
+    #[allow(dead_code)]
     pub fn should_retry_status(&self, status_code: u16) -> bool {
         self.retry_status_codes.contains(&status_code)
     }

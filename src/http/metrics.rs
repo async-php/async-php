@@ -1,5 +1,5 @@
 /// HTTP request performance metrics
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use ext_php_rs::prelude::*;
 
 /// Performance metrics for HTTP requests
@@ -87,11 +87,6 @@ impl MetricsCollector {
         }
     }
 
-    /// Increment redirect counter
-    pub fn increment_redirects(&mut self) {
-        self.redirect_count += 1;
-    }
-
     /// Set redirect count directly
     pub fn set_redirect_count(&mut self, count: u32) {
         self.redirect_count = count;
@@ -132,6 +127,7 @@ mod tests {
 
     #[test]
     fn test_metrics_collector() {
+        use std::time::Duration;
         let mut collector = MetricsCollector::new();
 
         sleep(Duration::from_millis(10));
@@ -140,7 +136,7 @@ mod tests {
         sleep(Duration::from_millis(10));
         collector.mark_first_byte();
 
-        collector.increment_redirects();
+        collector.set_redirect_count(1);
 
         let metrics = collector.build();
 

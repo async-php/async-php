@@ -62,6 +62,7 @@ impl CookieJar {
     }
 
     /// Get all cookies as a debug string
+    #[allow(dead_code)]
     pub fn debug_cookies(&self) -> String {
         if let Ok(store) = self.store.lock() {
             let mut result = Vec::new();
