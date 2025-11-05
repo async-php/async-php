@@ -21,7 +21,7 @@ use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter}
 use crate::http::auth;
 use crate::http::cookies::CookieJar;
 use crate::http::retry::RetryConfig;
-use crate::http::metrics::{RequestMetrics, MetricsCollector};
+use crate::http::metrics::MetricsCollector;
 use crate::future::RustFuture;
 
 type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
@@ -273,6 +273,8 @@ impl HttpClient {
         let client = self.client.as_ref().unwrap().clone();
         let cookie_jar = self.cookie_jar.clone();
         let concurrency_limiter = self.concurrency_limiter.clone();
+        let retry_config = self.retry_config.clone();
+        let collect_metrics = self.collect_metrics;
 
         // Add authentication header if configured
         if let Some(ref auth) = self.auth_header {
@@ -293,72 +295,105 @@ impl HttpClient {
             };
             // Permit is automatically released when _permit is dropped
 
-            let mut current_uri = uri.clone();
-            let mut current_method = method.clone();
-            let mut current_body_zval = body_zval.shallow_clone();
-            let mut visited_urls: HashSet<String> = HashSet::new();
-            let mut redirect_count = 0u32;
+            // Initialize metrics collector if enabled
+            let mut metrics_collector = if collect_metrics {
+                Some(MetricsCollector::new())
+            } else {
+                None
+            };
 
-            loop {
-                // Prevent redirect loops by tracking visited URLs
-                if visited_urls.contains(&current_uri) {
-                    return Err("Redirect loop detected".to_string());
-                }
-                visited_urls.insert(current_uri.clone());
+            // Retry loop - wrap the entire request execution
+            let max_retry_attempts = retry_config.as_ref().map(|c| c.max_retries).unwrap_or(0);
+            let mut last_error: Option<String> = None;
 
-                // Parse method and URI
-                let http_method = current_method.parse::<hyper::Method>()
-                    .map_err(|e| format!("Invalid HTTP method '{}': {}", current_method, e))?;
-                let http_uri = current_uri.parse::<hyper::Uri>()
-                    .map_err(|e| format!("Invalid URI '{}': {}", current_uri, e))?;
-
-                // Build request with headers
-                let mut req_builder = hyper::Request::builder()
-                    .method(http_method)
-                    .uri(http_uri);
-
-                // Add cookies from cookie jar if enabled
-                if let Some(ref jar) = cookie_jar {
-                    if let Some(cookie_header) = jar.get_cookies_for_url(&current_uri) {
-                        req_builder = req_builder.header("Cookie", cookie_header);
+            for attempt in 0..=max_retry_attempts {
+                // If this is a retry, apply backoff delay
+                if attempt > 0 {
+                    if let Some(ref config) = retry_config {
+                        let backoff = config.calculate_backoff(attempt - 1);
+                        tokio::time::sleep(backoff).await;
                     }
                 }
 
-                for (key, value) in &headers {
-                    req_builder = req_builder.header(key, value);
-                }
+                // Reset state for this attempt
+                let mut current_uri = uri.clone();
+                let mut current_method = method.clone();
+                let mut current_body_zval = body_zval.shallow_clone();
+                let mut visited_urls: HashSet<String> = HashSet::new();
+                let mut redirect_count = 0u32;
 
-                // Build streaming body
-                let hyper_body = if current_body_zval.is_null() || redirect_count > 0 {
-                    // For redirects, we don't send the body (except for 307/308)
-                    BodyExt::boxed(
-                        http_body_util::Empty::<Bytes>::new()
-                            .map_err(|never| match never {})
-                    )
-                } else {
-                    let php_reader = PhpReaderAdapter::new(current_body_zval.shallow_clone());
-                    let stream = tokio_util::io::ReaderStream::new(php_reader)
-                        .map(|result| result.map(Frame::data).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
-                    BodyExt::boxed(StreamBody::new(stream))
-                };
+                // Execute request with redirect handling
+                let request_result: Result<ext_php_rs::types::Zval, String> = async {
+                    loop {
+                        // Prevent redirect loops by tracking visited URLs
+                        if visited_urls.contains(&current_uri) {
+                            return Err("Redirect loop detected".to_string());
+                        }
+                        visited_urls.insert(current_uri.clone());
 
-                let hyper_request = req_builder.body(hyper_body)
-                    .map_err(|e| format!("Failed to build request: {}", e))?;
+                        // Parse method and URI
+                        let http_method = current_method.parse::<hyper::Method>()
+                            .map_err(|e| format!("Invalid HTTP method '{}': {}", current_method, e))?;
+                        let http_uri = current_uri.parse::<hyper::Uri>()
+                            .map_err(|e| format!("Invalid URI '{}': {}", current_uri, e))?;
 
-                // Execute request with optional timeout
-                let response = if let Some(timeout_duration) = timeout {
-                    tokio::time::timeout(timeout_duration, client.request(hyper_request))
-                        .await
-                        .map_err(|_| "Request timeout".to_string())?
-                        .map_err(|e| format!("Request failed: {}", e))?
-                } else {
-                    client.request(hyper_request)
-                        .await
-                        .map_err(|e| format!("Request failed: {}", e))?
-                };
+                        // Build request with headers
+                        let mut req_builder = hyper::Request::builder()
+                            .method(http_method)
+                            .uri(http_uri);
 
-                let (parts, body) = response.into_parts();
-                let status_code = parts.status.as_u16();
+                        // Add cookies from cookie jar if enabled
+                        if let Some(ref jar) = cookie_jar {
+                            if let Some(cookie_header) = jar.get_cookies_for_url(&current_uri) {
+                                req_builder = req_builder.header("Cookie", cookie_header);
+                            }
+                        }
+
+                        for (key, value) in &headers {
+                            req_builder = req_builder.header(key, value);
+                        }
+
+                        // Build streaming body
+                        let hyper_body = if current_body_zval.is_null() || redirect_count > 0 {
+                            // For redirects, we don't send the body (except for 307/308)
+                            BodyExt::boxed(
+                                http_body_util::Empty::<Bytes>::new()
+                                    .map_err(|never| match never {})
+                            )
+                        } else {
+                            let php_reader = PhpReaderAdapter::new(current_body_zval.shallow_clone());
+                            let stream = tokio_util::io::ReaderStream::new(php_reader)
+                                .map(|result| result.map(Frame::data).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>));
+                            BodyExt::boxed(StreamBody::new(stream))
+                        };
+
+                        let hyper_request = req_builder.body(hyper_body)
+                            .map_err(|e| format!("Failed to build request: {}", e))?;
+
+                        // Mark request sent for metrics
+                        if let Some(ref mut collector) = metrics_collector {
+                            collector.mark_request_sent();
+                        }
+
+                        // Execute request with optional timeout
+                        let response = if let Some(timeout_duration) = timeout {
+                            tokio::time::timeout(timeout_duration, client.request(hyper_request))
+                                .await
+                                .map_err(|_| "Request timeout".to_string())?
+                                .map_err(|e| format!("Request failed: {}", e))?
+                        } else {
+                            client.request(hyper_request)
+                                .await
+                                .map_err(|e| format!("Request failed: {}", e))?
+                        };
+
+                        // Mark first byte received for metrics
+                        if let Some(ref mut collector) = metrics_collector {
+                            collector.mark_first_byte();
+                        }
+
+                        let (parts, body) = response.into_parts();
+                        let status_code = parts.status.as_u16();
 
                 // Store cookies from Set-Cookie headers if cookie jar is enabled
                 if let Some(ref jar) = cookie_jar {
@@ -428,30 +463,71 @@ impl HttpClient {
                     }
                 }
 
-                // Build response (no more redirects or redirect limit reached)
-                let mut http_response = HttpResponse::__construct(status_code as i32);
+                        // Build response (no more redirects or redirect limit reached)
+                        let mut http_response = HttpResponse::__construct(status_code as i32);
 
-                http_response.set_version(Self::version_to_string(parts.version).to_string());
+                        http_response.set_version(Self::version_to_string(parts.version).to_string());
 
-                for (key, value) in &parts.headers {
-                    if let Ok(value_str) = value.to_str() {
-                        http_response.set_header(key.to_string(), value_str.to_string());
+                        for (key, value) in &parts.headers {
+                            if let Ok(value_str) = value.to_str() {
+                                http_response.set_header(key.to_string(), value_str.to_string());
+                            }
+                        }
+
+                        // Attach metrics if collection is enabled
+                        if let Some(ref mut collector) = metrics_collector {
+                            collector.set_redirect_count(redirect_count);
+                            let metrics = collector.clone().build();
+                            http_response.set_metrics(metrics);
+                        }
+
+                        // Wrap response body
+                        let response_body = HttpResponseBody::new_internal(body);
+                        let body_zval = ext_php_rs::types::ZendClassObject::new(response_body)
+                            .into_zval(false)
+                            .map_err(|e| format!("Failed to create response body: {:?}", e))?;
+
+                        http_response.set_body(&body_zval)
+                            .map_err(|e| format!("Failed to set response body: {:?}", e))?;
+
+                        return ext_php_rs::types::ZendClassObject::new(http_response)
+                            .into_zval(false)
+                            .map_err(|e| format!("Failed to convert HttpResponse to Zval: {:?}", e));
+                    }
+                }.await;
+
+                // Handle retry logic
+                match request_result {
+                    Ok(response_zval) => {
+                        // Request successful, return the response
+                        return Ok(response_zval);
+                    }
+                    Err(error) => {
+                        last_error = Some(error.clone());
+
+                        // Check if we should retry
+                        let should_retry = if let Some(ref config) = retry_config {
+                            // Check if error is timeout-related and retry_on_timeout is enabled
+                            let is_timeout = error.contains("timeout") || error.contains("Timeout");
+                            let is_network_error = error.contains("Request failed") || error.contains("connection");
+
+                            (is_timeout && config.retry_on_timeout) || is_network_error
+                        } else {
+                            false
+                        };
+
+                        // If this is the last attempt or we shouldn't retry, return error
+                        if !should_retry || attempt >= max_retry_attempts {
+                            return Err(error);
+                        }
+
+                        // Otherwise continue to next retry attempt
                     }
                 }
-
-                // Wrap response body
-                let response_body = HttpResponseBody::new_internal(body);
-                let body_zval = ext_php_rs::types::ZendClassObject::new(response_body)
-                    .into_zval(false)
-                    .map_err(|e| format!("Failed to create response body: {:?}", e))?;
-
-                http_response.set_body(&body_zval)
-                    .map_err(|e| format!("Failed to set response body: {:?}", e))?;
-
-                return ext_php_rs::types::ZendClassObject::new(http_response)
-                    .into_zval(false)
-                    .map_err(|e| format!("Failed to convert HttpResponse to Zval: {:?}", e));
             }
+
+            // If we exhausted all retries, return the last error
+            Err(last_error.unwrap_or_else(|| "Request failed after retries".to_string()))
         }))
     }
 }

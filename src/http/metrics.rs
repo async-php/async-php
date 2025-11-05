@@ -92,6 +92,11 @@ impl MetricsCollector {
         self.redirect_count += 1;
     }
 
+    /// Set redirect count directly
+    pub fn set_redirect_count(&mut self, count: u32) {
+        self.redirect_count = count;
+    }
+
     /// Build final metrics
     pub fn build(self) -> RequestMetrics {
         let end_time = Instant::now();

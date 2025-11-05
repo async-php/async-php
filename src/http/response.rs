@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use crate::http::types::StatusCodes;
+use crate::http::metrics::RequestMetrics;
 use crate::io::get_read_closer_ce;
 
 /// HTTP Response structure
@@ -18,6 +19,8 @@ pub struct HttpResponse {
     headers: HashMap<String, String>,
     /// Response body as an IO ReadCloser (allows streaming)
     body: Zval,
+    /// Performance metrics (optional)
+    metrics: Option<RequestMetrics>,
 }
 
 // SAFETY: Safe because runtime is single-threaded
@@ -36,6 +39,7 @@ impl HttpResponse {
             version: "1.1".to_string(),
             headers: HashMap::new(),
             body: Zval::null(),
+            metrics: None,
         }
     }
 
@@ -55,6 +59,7 @@ impl HttpResponse {
             version: "1.1".to_string(),
             headers: HashMap::new(),
             body: body.shallow_clone(),
+            metrics: None,
         })
     }
 
@@ -130,7 +135,14 @@ impl HttpResponse {
             version: self.version.clone(),
             headers: self.headers.clone(),
             body: Zval::null(),
+            metrics: self.metrics.clone(),
         }
+    }
+
+    /// Get performance metrics if available
+    #[php]
+    pub fn get_metrics(&self) -> Option<RequestMetrics> {
+        self.metrics.clone()
     }
 
     /// Check if the response is successful (2xx)
@@ -156,5 +168,13 @@ impl HttpResponse {
     /// Check if the response is an error (4xx or 5xx)
     pub fn is_error(&self) -> bool {
         StatusCodes::is_error(self.status_code)
+    }
+}
+
+// Internal methods not exposed to PHP
+impl HttpResponse {
+    /// Set performance metrics (internal only)
+    pub(crate) fn set_metrics(&mut self, metrics: RequestMetrics) {
+        self.metrics = Some(metrics);
     }
 }
