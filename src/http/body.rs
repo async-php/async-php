@@ -6,24 +6,70 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use crate::future::RustFuture;
 use hyper::body::Incoming;
-use http_body_util::BodyExt;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use ext_php_rs::convert::IntoZval;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf, AsyncReadExt};
 use tokio::sync::Mutex;
 use async_compression::tokio::bufread::{GzipDecoder, DeflateDecoder};
 
 type Result<T> = std::result::Result<T, String>;
 
+use futures::StreamExt;
+
+/// Helper function to convert frame results to byte results
+fn frame_to_bytes(
+    result: std::result::Result<hyper::body::Frame<bytes::Bytes>, hyper::Error>
+) -> std::result::Result<bytes::Bytes, std::io::Error> {
+    result
+        .map(|frame| frame.into_data().unwrap_or_default())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+}
+
+/// Type alias for the stream reader after converting from Incoming
+type BodyStreamReader = tokio_util::io::StreamReader<
+    futures::stream::Map<
+        http_body_util::BodyStream<Incoming>,
+        fn(std::result::Result<hyper::body::Frame<bytes::Bytes>, hyper::Error>) -> std::result::Result<bytes::Bytes, std::io::Error>
+    >,
+    bytes::Bytes
+>;
+
+/// Enum to represent different decompression states
+enum DecompressionReader {
+    None(BodyStreamReader),
+    Gzip(Box<GzipDecoder<tokio::io::BufReader<BodyStreamReader>>>),
+    Deflate(Box<DeflateDecoder<tokio::io::BufReader<BodyStreamReader>>>),
+}
+
+impl DecompressionReader {
+    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            DecompressionReader::None(reader) => reader.read(buf).await,
+            DecompressionReader::Gzip(decoder) => decoder.read(buf).await,
+            DecompressionReader::Deflate(decoder) => decoder.read(buf).await,
+        }
+    }
+
+    async fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        match self {
+            DecompressionReader::None(reader) => reader.read_to_end(buf).await,
+            DecompressionReader::Gzip(decoder) => decoder.read_to_end(buf).await,
+            DecompressionReader::Deflate(decoder) => decoder.read_to_end(buf).await,
+        }
+    }
+}
+
+// SAFETY: Safe because the async runtime is single-threaded
+unsafe impl Send for DecompressionReader {}
+unsafe impl Sync for DecompressionReader {}
+
 /// Wrapper for HTTP response body that allows streaming reads
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponseBody")]
 pub struct HttpResponseBody {
-    body: Arc<Mutex<Option<Incoming>>>,
-    buffer: Arc<Mutex<Vec<u8>>>,
+    reader: Arc<Mutex<Option<DecompressionReader>>>,
     eof: Arc<Mutex<bool>>,
-    content_encoding: Option<String>, // Store encoding for decompression in read_all
 }
 
 // SAFETY: Safe because the async runtime is single-threaded
@@ -34,36 +80,29 @@ impl HttpResponseBody {
     /// Create a new response body wrapper
     /// content_encoding: Optional "gzip" or "deflate" for automatic decompression
     pub fn new_internal(body: Incoming, content_encoding: Option<&str>) -> Self {
+        use tokio_util::io::StreamReader;
+        use http_body_util::BodyStream;
+
+        // Convert Incoming (Body) to Stream, then to StreamReader
+        let body_stream = BodyStream::new(body);
+        let stream_reader = StreamReader::new(body_stream.map(frame_to_bytes as _));
+
+        // Wrap with decompressor if needed
+        let reader = match content_encoding {
+            Some("gzip") => {
+                let buffered = tokio::io::BufReader::new(stream_reader);
+                DecompressionReader::Gzip(Box::new(GzipDecoder::new(buffered)))
+            }
+            Some("deflate") => {
+                let buffered = tokio::io::BufReader::new(stream_reader);
+                DecompressionReader::Deflate(Box::new(DeflateDecoder::new(buffered)))
+            }
+            _ => DecompressionReader::None(stream_reader),
+        };
+
         Self {
-            body: Arc::new(Mutex::new(Some(body))),
-            buffer: Arc::new(Mutex::new(Vec::new())),
+            reader: Arc::new(Mutex::new(Some(reader))),
             eof: Arc::new(Mutex::new(false)),
-            content_encoding: content_encoding.map(|s| s.to_string()),
-        }
-    }
-
-    /// Decompress data based on content encoding
-    async fn decompress(data: Vec<u8>, encoding: &str) -> Result<Vec<u8>> {
-        use tokio::io::AsyncReadExt;
-
-        match encoding {
-            "gzip" => {
-                let cursor = std::io::Cursor::new(data);
-                let mut decoder = GzipDecoder::new(tokio::io::BufReader::new(cursor));
-                let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed).await
-                    .map_err(|e| format!("Gzip decompression failed: {}", e))?;
-                Ok(decompressed)
-            }
-            "deflate" => {
-                let cursor = std::io::Cursor::new(data);
-                let mut decoder = DeflateDecoder::new(tokio::io::BufReader::new(cursor));
-                let mut decompressed = Vec::new();
-                decoder.read_to_end(&mut decompressed).await
-                    .map_err(|e| format!("Deflate decompression failed: {}", e))?;
-                Ok(decompressed)
-            }
-            _ => Ok(data), // Unknown encoding, return as-is
         }
     }
 
@@ -75,7 +114,6 @@ impl HttpResponseBody {
 
         // PHP strings are binary-safe and can store any byte sequence
         // We use from_utf8_unchecked to preserve raw bytes without validation
-        // This is necessary for binary data (though now decompressed)
         let mut z = Zval::new();
         unsafe {
             let s = std::str::from_utf8_unchecked(&data);
@@ -84,34 +122,16 @@ impl HttpResponseBody {
         }
         Ok(z)
     }
-
-    /// Read next frame from body into buffer
-    async fn read_frame_into_buffer(
-        incoming: &mut Incoming,
-        buffer: &mut Vec<u8>,
-    ) -> Result<bool> {
-        match incoming.frame().await {
-            Some(Ok(frame)) => {
-                if let Some(chunk) = frame.data_ref() {
-                    buffer.extend_from_slice(chunk);
-                }
-                Ok(true)
-            }
-            Some(Err(e)) => Err(format!("Error reading response body: {}", e)),
-            None => Ok(false), // EOF
-        }
-    }
 }
 
 #[php_impl]
 impl HttpResponseBody {
     /// Read data from the response body asynchronously
     /// Returns a Future that resolves to a string, or null if EOF
-    /// Note: Returns raw data without decompression (use read_all for automatic decompression)
+    /// Now automatically decompresses if Content-Encoding is gzip or deflate
     #[php]
     pub fn read(&self, length: i64) -> RustFuture {
-        let body = self.body.clone();
-        let buffer = self.buffer.clone();
+        let reader = self.reader.clone();
         let eof = self.eof.clone();
 
         RustFuture::new(async move {
@@ -122,35 +142,27 @@ impl HttpResponseBody {
                 return Ok::<Zval, String>(Zval::null());
             }
 
-            let mut buf = buffer.lock().await;
-
-            // Return from buffer if enough data is available
-            if buf.len() >= length {
-                return Self::bytes_to_zval(buf.drain(..length).collect());
-            }
-
-            // Need to read more data from the body
-            let mut body_guard = body.lock().await;
-            let Some(mut incoming) = body_guard.take() else {
+            // Get the reader
+            let mut reader_guard = reader.lock().await;
+            let Some(reader_mut) = reader_guard.as_mut() else {
                 *eof.lock().await = true;
-                return Self::bytes_to_zval(buf.drain(..).collect());
+                return Ok(Zval::null());
             };
 
-            // Read frames until we have enough data or reach EOF
-            loop {
-                let has_more = Self::read_frame_into_buffer(&mut incoming, &mut buf).await?;
-
-                if !has_more {
+            // Read data from the decompression reader
+            let mut buffer = vec![0u8; length];
+            match reader_mut.read(&mut buffer).await {
+                Ok(0) => {
                     // EOF reached
                     *eof.lock().await = true;
-                    return Self::bytes_to_zval(buf.drain(..).collect());
+                    Ok(Zval::null())
                 }
-
-                // Check if we have enough data now
-                if buf.len() >= length {
-                    *body_guard = Some(incoming);
-                    return Self::bytes_to_zval(buf.drain(..length).collect());
+                Ok(n) => {
+                    // Truncate to actual bytes read
+                    buffer.truncate(n);
+                    Self::bytes_to_zval(buffer)
                 }
+                Err(e) => Err(format!("Error reading response body: {}", e))
             }
         })
     }
@@ -159,32 +171,26 @@ impl HttpResponseBody {
     /// Automatically decompresses if Content-Encoding is gzip or deflate
     #[php]
     pub fn read_all(&self) -> RustFuture {
-        let body = self.body.clone();
-        let buffer = self.buffer.clone();
+        let reader = self.reader.clone();
         let eof = self.eof.clone();
-        let content_encoding = self.content_encoding.clone();
 
         RustFuture::new(async move {
-            let mut buf = buffer.lock().await;
-            let mut body_guard = body.lock().await;
-
-            if let Some(incoming) = body_guard.take() {
-                let collected = incoming.collect().await
-                    .map_err(|e| format!("Error reading response body: {}", e))?;
-                buf.extend_from_slice(&collected.to_bytes());
-            }
-
-            *eof.lock().await = true;
-
-            // Decompress if needed
-            let data = buf.drain(..).collect::<Vec<u8>>();
-            let final_data = if let Some(encoding) = content_encoding {
-                Self::decompress(data, &encoding).await?
-            } else {
-                data
+            // Get the reader
+            let mut reader_guard = reader.lock().await;
+            let Some(reader_mut) = reader_guard.as_mut() else {
+                *eof.lock().await = true;
+                return Ok(Zval::null());
             };
 
-            Self::bytes_to_zval(final_data)
+            // Read all data from the decompression reader
+            let mut buffer = Vec::new();
+            match reader_mut.read_to_end(&mut buffer).await {
+                Ok(_) => {
+                    *eof.lock().await = true;
+                    Self::bytes_to_zval(buffer)
+                }
+                Err(e) => Err(format!("Error reading response body: {}", e))
+            }
         })
     }
 
