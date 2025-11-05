@@ -1,17 +1,17 @@
-use std::io;
-use std::pin::Pin;
+use crate::future::RustFuture;
+use async_compression::tokio::bufread::{DeflateDecoder, GzipDecoder};
+use ext_php_rs::convert::IntoZval;
 /// HTTP Response Body wrapper for streaming response data
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use crate::future::RustFuture;
 use hyper::body::Incoming;
+use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use ext_php_rs::convert::IntoZval;
-use tokio::io::{AsyncRead, ReadBuf, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 use tokio::sync::Mutex;
-use async_compression::tokio::bufread::{GzipDecoder, DeflateDecoder};
 
 type Result<T> = std::result::Result<T, String>;
 

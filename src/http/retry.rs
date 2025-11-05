@@ -1,6 +1,7 @@
 /// HTTP request retry logic with exponential backoff
 use std::time::Duration;
 
+
 /// Configuration for request retry behavior
 #[derive(Clone, Debug)]
 pub struct RetryConfig {

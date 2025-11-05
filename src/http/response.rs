@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use crate::http::metrics::RequestMetrics;
+use crate::http::types::StatusCodes;
+use crate::io::get_read_closer_ce;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use crate::http::types::StatusCodes;
-use crate::http::metrics::RequestMetrics;
-use crate::io::get_read_closer_ce;
+use std::collections::HashMap;
 
 /// HTTP Response structure
 #[php_class]

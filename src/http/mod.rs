@@ -15,9 +15,9 @@ pub mod metrics;
 
 // Re-export main types
 
+pub use body::HttpResponseBody;
+pub(crate) use body::PhpReaderAdapter;
+pub use client::HttpClient;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
-pub use body::HttpResponseBody;
-pub use client::HttpClient;
 pub use server::HttpServer;
-pub(crate) use body::PhpReaderAdapter;

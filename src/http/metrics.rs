@@ -1,6 +1,6 @@
+use ext_php_rs::prelude::*;
 /// HTTP request performance metrics
 use std::time::Instant;
-use ext_php_rs::prelude::*;
 
 /// Performance metrics for HTTP requests
 #[php_class]

@@ -1,6 +1,6 @@
+use base64::engine::general_purpose::STANDARD as BASE64;
 /// HTTP Authentication helpers
 use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64;
 
 /// Generate Basic Authentication header value
 /// Returns: "Basic <base64-encoded username:password>"

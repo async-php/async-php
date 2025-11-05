@@ -1,6 +1,6 @@
+use cookie::Cookie as RawCookie;
 /// Cookie management for HTTP client
 use cookie_store::CookieStore;
-use cookie::Cookie as RawCookie;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
@@ -68,10 +68,10 @@ impl CookieJar {
             let mut result = Vec::new();
             for cookie in store.iter_any() {
                 result.push(format!("{}={} (domain={:?}, path={:?})",
-                    cookie.name(),
-                    cookie.value(),
-                    cookie.domain(),
-                    cookie.path()
+                                    cookie.name(),
+                                    cookie.value(),
+                                    cookie.domain(),
+                                    cookie.path()
                 ));
             }
             result.join("\n")
@@ -98,7 +98,7 @@ mod tests {
         // Store a cookie
         jar.store_cookies_from_response(
             "https://example.com/path",
-            vec!["session=abc123; Path=/; HttpOnly"]
+            vec!["session=abc123; Path=/; HttpOnly"],
         );
 
         // Retrieve cookies for the same URL
@@ -114,7 +114,7 @@ mod tests {
         // Store cookie for subdomain
         jar.store_cookies_from_response(
             "https://api.example.com/",
-            vec!["token=xyz; Domain=example.com"]
+            vec!["token=xyz; Domain=example.com"],
         );
 
         // Should be available for main domain
@@ -128,7 +128,7 @@ mod tests {
 
         jar.store_cookies_from_response(
             "https://example.com/",
-            vec!["session=abc"]
+            vec!["session=abc"],
         );
 
         jar.clear();

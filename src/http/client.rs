@@ -1,28 +1,28 @@
+use ext_php_rs::convert::IntoZval;
 /// HTTP Client implementation
 
 use ext_php_rs::prelude::*;
-use ext_php_rs::convert::IntoZval;
 
-use std::time::Duration;
-use std::sync::Arc;
-use std::collections::HashSet;
-use tokio::sync::Semaphore;
+use bytes::Bytes;
+use futures::StreamExt;
 use http_body_util::BodyExt;
-use hyper_util::client::legacy::Client;
+use http_body_util::StreamBody;
+use hyper::body::Frame;
 use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::client::legacy::Client;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
-use bytes::Bytes;
-use hyper::body::Frame;
-use http_body_util::StreamBody;
-use futures::StreamExt;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Semaphore;
 
-use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter};
+use crate::future::RustFuture;
 use crate::http::auth;
 use crate::http::cookies::CookieJar;
-use crate::http::retry::RetryConfig;
 use crate::http::metrics::MetricsCollector;
-use crate::future::RustFuture;
+use crate::http::retry::RetryConfig;
+use crate::http::{HttpRequest, HttpResponse, HttpResponseBody, PhpReaderAdapter};
 
 type HyperClient = Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, http_body_util::combinators::BoxBody<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>>>;
 
@@ -395,73 +395,73 @@ impl HttpClient {
                         let (parts, body) = response.into_parts();
                         let status_code = parts.status.as_u16();
 
-                // Store cookies from Set-Cookie headers if cookie jar is enabled
-                if let Some(ref jar) = cookie_jar {
-                    let set_cookie_headers: Vec<&str> = parts.headers
-                        .get_all("set-cookie")
-                        .iter()
-                        .filter_map(|v| v.to_str().ok())
-                        .collect();
+                        // Store cookies from Set-Cookie headers if cookie jar is enabled
+                        if let Some(ref jar) = cookie_jar {
+                            let set_cookie_headers: Vec<&str> = parts.headers
+                                .get_all("set-cookie")
+                                .iter()
+                                .filter_map(|v| v.to_str().ok())
+                                .collect();
 
-                    if !set_cookie_headers.is_empty() {
-                        jar.store_cookies_from_response(&current_uri, set_cookie_headers);
-                    }
-                }
+                            if !set_cookie_headers.is_empty() {
+                                jar.store_cookies_from_response(&current_uri, set_cookie_headers);
+                            }
+                        }
 
-                // Check if we should follow redirects
-                let is_redirect = matches!(status_code, 301 | 302 | 303 | 307 | 308);
+                        // Check if we should follow redirects
+                        let is_redirect = matches!(status_code, 301 | 302 | 303 | 307 | 308);
 
-                if is_redirect && follow_redirects && redirect_count < max_redirects {
-                    // Extract Location header
-                    if let Some(location) = parts.headers.get("location") {
-                        if let Ok(location_str) = location.to_str() {
-                            redirect_count += 1;
+                        if is_redirect && follow_redirects && redirect_count < max_redirects {
+                            // Extract Location header
+                            if let Some(location) = parts.headers.get("location") {
+                                if let Ok(location_str) = location.to_str() {
+                                    redirect_count += 1;
 
-                            // Handle relative vs absolute URLs
-                            current_uri = if location_str.starts_with("http://") || location_str.starts_with("https://") {
-                                location_str.to_string()
-                            } else {
-                                // Parse current URI to get base URL
-                                let base_uri = current_uri.parse::<hyper::Uri>()
-                                    .map_err(|e| format!("Failed to parse base URI: {}", e))?;
+                                    // Handle relative vs absolute URLs
+                                    current_uri = if location_str.starts_with("http://") || location_str.starts_with("https://") {
+                                        location_str.to_string()
+                                    } else {
+                                        // Parse current URI to get base URL
+                                        let base_uri = current_uri.parse::<hyper::Uri>()
+                                            .map_err(|e| format!("Failed to parse base URI: {}", e))?;
 
-                                let scheme = base_uri.scheme_str().unwrap_or("https");
-                                let authority = base_uri.authority()
-                                    .ok_or_else(|| "Missing authority in redirect base URL".to_string())?;
+                                        let scheme = base_uri.scheme_str().unwrap_or("https");
+                                        let authority = base_uri.authority()
+                                            .ok_or_else(|| "Missing authority in redirect base URL".to_string())?;
 
-                                if location_str.starts_with('/') {
-                                    // Absolute path
-                                    format!("{}://{}{}", scheme, authority, location_str)
-                                } else {
-                                    // Relative path
-                                    let base_path = base_uri.path();
-                                    let last_slash = base_path.rfind('/').unwrap_or(0);
-                                    let base_dir = &base_path[..=last_slash];
-                                    format!("{}://{}{}{}", scheme, authority, base_dir, location_str)
-                                }
-                            };
+                                        if location_str.starts_with('/') {
+                                            // Absolute path
+                                            format!("{}://{}{}", scheme, authority, location_str)
+                                        } else {
+                                            // Relative path
+                                            let base_path = base_uri.path();
+                                            let last_slash = base_path.rfind('/').unwrap_or(0);
+                                            let base_dir = &base_path[..=last_slash];
+                                            format!("{}://{}{}{}", scheme, authority, base_dir, location_str)
+                                        }
+                                    };
 
-                            // Handle method change for certain status codes
-                            // 303 always changes to GET
-                            // 301, 302 change POST to GET
-                            match status_code {
-                                303 => {
-                                    current_method = "GET".to_string();
-                                    current_body_zval = ext_php_rs::types::Zval::null();
-                                }
-                                301 | 302 if current_method == "POST" => {
-                                    current_method = "GET".to_string();
-                                    current_body_zval = ext_php_rs::types::Zval::null();
-                                }
-                                _ => {
-                                    // 307, 308 keep method and body
+                                    // Handle method change for certain status codes
+                                    // 303 always changes to GET
+                                    // 301, 302 change POST to GET
+                                    match status_code {
+                                        303 => {
+                                            current_method = "GET".to_string();
+                                            current_body_zval = ext_php_rs::types::Zval::null();
+                                        }
+                                        301 | 302 if current_method == "POST" => {
+                                            current_method = "GET".to_string();
+                                            current_body_zval = ext_php_rs::types::Zval::null();
+                                        }
+                                        _ => {
+                                            // 307, 308 keep method and body
+                                        }
+                                    }
+
+                                    continue; // Follow redirect
                                 }
                             }
-
-                            continue; // Follow redirect
                         }
-                    }
-                }
 
                         // Build response (no more redirects or redirect limit reached)
                         let mut http_response = HttpResponse::__construct(status_code as i32);

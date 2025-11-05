@@ -2,6 +2,7 @@
 
 use ext_php_rs::prelude::*;
 
+
 /// HTTP status codes as constants
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\StatusCodes")]

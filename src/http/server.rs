@@ -1,20 +1,20 @@
+use crate::future::RustFuture;
+use crate::http::body::PhpReaderBody;
+use crate::http::{HttpRequest, HttpResponseBody};
+use bytes::{Buf, Bytes};
+use ext_php_rs::convert::IntoZval;
 /// HTTP Server implementation supporting HTTP/1.1, HTTP/2, and HTTP/3
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
-use crate::http::{HttpRequest, HttpResponseBody};
-use crate::http::body::PhpReaderBody;
-use crate::future::RustFuture;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::TcpListener;
+use http_body_util::{BodyExt, Full};
 use hyper::server::conn::{http1, http2};
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
-use bytes::{Bytes, Buf};
-use http_body_util::{Full, BodyExt};
 use rustls::ServerConfig;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 
@@ -312,11 +312,10 @@ impl HttpServer {
     }
 
 
-
     /// Serve a single HTTP/2 connection using LocalExecutor (no channel needed)
     async fn serve_http2_connection<
         T,
-    >( 
+    >(
         io: TokioIo<T>,
         handler: Zval,
     ) -> Result<(), String>

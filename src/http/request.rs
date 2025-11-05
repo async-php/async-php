@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::io::get_read_closer_ce;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use crate::io::get_read_closer_ce;
+use std::collections::HashMap;
 
 /// HTTP Request structure - rust侧仅提供最简内核实现
 /// 应用层负责在PHP中实现具体的body逻辑
