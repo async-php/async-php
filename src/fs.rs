@@ -258,12 +258,21 @@ impl AsyncFileHandle {
         RustFuture::new(future)
     }
     
-    pub fn seek(&self, pos: i64) -> RustFuture {
+    pub fn seek(&self, offset: i64, whence: i64) -> RustFuture {
         let file = self.inner.clone();
         let future = async move {
             let mut z = Zval::new();
             if let Ok(mut lock) = file.try_borrow_mut() {
-                match lock.seek(SeekFrom::Start(pos as u64)).await {
+                // Map whence parameter to SeekFrom
+                // 0 = SEEK_START, 1 = SEEK_CURRENT, 2 = SEEK_END
+                let seek_from = match whence {
+                    0 => SeekFrom::Start(offset as u64),
+                    1 => SeekFrom::Current(offset),
+                    2 => SeekFrom::End(offset),
+                    _ => SeekFrom::Start(offset as u64), // Default to SEEK_START
+                };
+
+                match lock.seek(seek_from).await {
                     Ok(new_pos) => z.set_long(new_pos as i64),
                     Err(_) => z.set_bool(false),
                 }

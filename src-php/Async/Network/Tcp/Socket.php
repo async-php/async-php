@@ -8,6 +8,10 @@ use Async\IO\Closer;
 use Async\Kernel\Network\TcpStream as KernelTcpStream;
 use Fiber;
 
+/**
+ * Socket represents a TCP connection
+ * Implements IO interfaces directly
+ */
 class Socket implements Reader, Writer, Closer
 {
     private KernelTcpStream $inner;
@@ -41,10 +45,15 @@ class Socket implements Reader, Writer, Closer
         return $result ?: 0;
     }
 
+    public function flush(): void
+    {
+        // TCP streams flush automatically
+    }
+
     public function close(): bool
     {
         $future = $this->inner->close();
-        return Fiber::suspend($future);
+        return (bool)Fiber::suspend($future);
     }
 
     public function remoteAddr(): string
@@ -55,6 +64,11 @@ class Socket implements Reader, Writer, Closer
     public function localAddr(): string
     {
         return $this->inner->local_addr();
+    }
+
+    public function setNodelay(bool $nodelay): bool
+    {
+        return $this->inner->set_nodelay($nodelay);
     }
 
     /**

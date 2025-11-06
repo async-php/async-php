@@ -2,10 +2,18 @@
 
 namespace Async\FileSystem;
 
+use Async\IO\Reader;
+use Async\IO\Writer;
+use Async\IO\Closer;
+use Async\IO\Seeker;
 use Async\Kernel\FileSystem\FileHandle as KernelFileHandle;
 use Fiber;
 
-class FileHandle
+/**
+ * FileHandle represents an open file
+ * Implements IO interfaces directly
+ */
+class FileHandle implements Reader, Writer, Closer, Seeker
 {
     private KernelFileHandle $inner;
 
@@ -24,27 +32,40 @@ class FileHandle
         return new self($kernelHandle);
     }
 
-    public function read(int $length): string|false
+    public function read(int $length): ?string
     {
         $future = $this->inner->read($length);
-        return Fiber::suspend($future);
+        $result = Fiber::suspend($future);
+        return ($result === false || $result === '') ? null : $result;
     }
 
-    public function write(string $data): int|false
+    public function write(string $data): int
     {
         $future = $this->inner->write($data);
-        return Fiber::suspend($future);
+        $result = Fiber::suspend($future);
+        return $result === false ? 0 : (int)$result;
     }
-    
-    public function seek(int $offset): int|false
+
+    public function flush(): void
     {
-        $future = $this->inner->seek($offset);
-        return Fiber::suspend($future);
+        // Files flush automatically
+    }
+
+    public function seek(int $offset, int $whence = self::SEEK_START): int
+    {
+        $future = $this->inner->seek($offset, $whence);
+        $result = Fiber::suspend($future);
+
+        if ($result === false) {
+            throw new \RuntimeException("Seek operation failed");
+        }
+
+        return (int)$result;
     }
 
     public function close(): bool
     {
         $future = $this->inner->close();
-        return Fiber::suspend($future);
+        return (bool)Fiber::suspend($future);
     }
 }

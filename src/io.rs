@@ -1,153 +1,175 @@
-/// Core IO interfaces inspired by Go's io package
-/// This module defines the fundamental IO interface traits that can be
-/// implemented by various components in the async-php runtime
+/// Core IO utilities for async-php
+/// This module provides Rust types that wrap tokio IO traits
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::zend::ClassEntry;
-use ext_php_rs::class::RegisteredClass;
+use crate::future::RustFuture;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncSeek, AsyncBufRead, AsyncReadExt, AsyncWriteExt, AsyncSeekExt, AsyncBufReadExt};
+use std::io::SeekFrom;
 
-#[no_mangle]
-pub fn get_reader_ce() -> &'static ClassEntry {
-    PhpInterfaceReader::get_metadata().ce()
+/// AsyncReader wraps Box<dyn AsyncRead + Unpin>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncReader")]
+pub struct AsyncReader {
+    inner: Box<dyn AsyncRead + Unpin>,
 }
 
-#[no_mangle]
-pub fn get_writer_ce() -> &'static ClassEntry {
-    PhpInterfaceWriter::get_metadata().ce()
+#[php_impl]
+impl AsyncReader {
+    /// Read up to length bytes
+    pub fn read(&mut self, length: i64) -> RustFuture {
+        let mut buf = vec![0u8; length as usize];
+
+        // We need to move the reader, but we can't because self is borrowed
+        // Solution: Use a placeholder and swap
+        let mut reader = Box::new(tokio::io::empty()) as Box<dyn AsyncRead + Unpin>;
+        std::mem::swap(&mut self.inner, &mut reader);
+
+        let future = async move {
+            let n = reader.read(&mut buf).await.map_err(|e| e.to_string())?;
+
+            if n == 0 {
+                return Ok::<Zval, String>(Zval::null());
+            }
+
+            buf.truncate(n);
+            let s = String::from_utf8_lossy(&buf).to_string();
+            let mut z = Zval::new();
+            z.set_string(&s, false)
+                .map_err(|e| format!("set_string error: {:?}", e))?;
+            Ok(z)
+        };
+
+        RustFuture::new(future)
+    }
 }
 
-#[no_mangle]
-pub fn get_closer_ce() -> &'static ClassEntry {
-    PhpInterfaceCloser::get_metadata().ce()
+/// AsyncWriter wraps Box<dyn AsyncWrite + Unpin>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncWriter")]
+pub struct AsyncWriter {
+    inner: Box<dyn AsyncWrite + Unpin>,
 }
 
-#[no_mangle]
-pub fn get_seeker_ce() -> &'static ClassEntry {
-    PhpInterfaceSeeker::get_metadata().ce()
+#[php_impl]
+impl AsyncWriter {
+    /// Write data
+    pub fn write(&mut self, data: String) -> RustFuture {
+        let mut writer = Box::new(tokio::io::sink()) as Box<dyn AsyncWrite + Unpin>;
+        std::mem::swap(&mut self.inner, &mut writer);
+
+        let future = async move {
+            let bytes = data.as_bytes();
+            writer.write_all(bytes).await.map_err(|e| e.to_string())?;
+
+            let mut z = Zval::new();
+            z.set_long(bytes.len() as i64);
+            Ok::<Zval, String>(z)
+        };
+
+        RustFuture::new(future)
+    }
+
+    /// Flush buffered data
+    pub fn flush(&mut self) -> RustFuture {
+        let mut writer = Box::new(tokio::io::sink()) as Box<dyn AsyncWrite + Unpin>;
+        std::mem::swap(&mut self.inner, &mut writer);
+
+        let future = async move {
+            writer.flush().await.map_err(|e| e.to_string())?;
+            let mut z = Zval::new();
+            z.set_bool(true);
+            Ok::<Zval, String>(z)
+        };
+
+        RustFuture::new(future)
+    }
 }
 
-#[no_mangle]
-pub fn get_byte_reader_ce() -> &'static ClassEntry {
-    PhpInterfaceByteReader::get_metadata().ce()
+/// AsyncSeeker wraps Box<dyn AsyncSeek + Unpin>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncSeeker")]
+pub struct AsyncSeeker {
+    inner: Box<dyn AsyncSeek + Unpin>,
 }
 
-/// Reader is the interface that wraps the basic Read method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\Reader")]
-#[allow(dead_code)]
-pub trait Reader {
-    /// Read reads up to length bytes. It returns the data read as string and any error encountered.
-    /// Even if Read returns length < requested, it may use all of buffer as scratch space.
-    /// If some data is available but not length bytes, Read conventionally returns what is available.
-    fn read(&mut self, length: i64) -> PhpResult<Option<String>>;
+#[php_impl]
+impl AsyncSeeker {
+    /// Seek to a position
+    pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
+        let mut seeker = Box::new(tokio::io::empty()) as Box<dyn AsyncSeek + Unpin>;
+        std::mem::swap(&mut self.inner, &mut seeker);
+
+        let future = async move {
+            let seek_from = match whence {
+                0 => SeekFrom::Start(offset as u64),
+                1 => SeekFrom::Current(offset),
+                2 => SeekFrom::End(offset),
+                _ => SeekFrom::Start(offset as u64),
+            };
+
+            let new_pos = seeker.seek(seek_from).await.map_err(|e| e.to_string())?;
+
+            let mut z = Zval::new();
+            z.set_long(new_pos as i64);
+            Ok::<Zval, String>(z)
+        };
+
+        RustFuture::new(future)
+    }
 }
 
-/// Writer is the interface that wraps the basic Write method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\Writer")]
-#[allow(dead_code)]
-pub trait Writer {
-    /// Write writes data bytes to the underlying data stream.
-    /// It returns the number of bytes written and any error encountered that caused the write to stop early.
-    fn write(&mut self, data: String) -> PhpResult<i64>;
-
-    /// Flush writes any buffered data to the underlying io.Writer.
-    fn flush(&mut self) -> PhpResult<()>;
+/// AsyncBufReader wraps Box<dyn AsyncBufRead + Unpin>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncBufReader")]
+pub struct AsyncBufReader {
+    inner: Box<dyn AsyncBufRead + Unpin>,
 }
 
-/// Closer is the interface that wraps the basic Close method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\Closer")]
-#[allow(dead_code)]
-pub trait Closer {
-    /// Close closes the underlying resource, returns true on success
-    fn close(&mut self) -> PhpResult<bool>;
-}
+#[php_impl]
+impl AsyncBufReader {
+    /// Read a line
+    pub fn read_line(&mut self) -> RustFuture {
+        let mut reader = Box::new(tokio::io::empty()) as Box<dyn AsyncBufRead + Unpin>;
+        std::mem::swap(&mut self.inner, &mut reader);
 
-/// ReaderAt is the interface that wraps the basic ReadAt method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReaderAt")]
-#[allow(dead_code)]
-pub trait ReaderAt {
-    /// ReadAt reads data starting at offset in the underlying input source.
-    /// It returns the data read as string and any error encountered.
-    fn read_at(&self, offset: i64, length: i64) -> PhpResult<Option<String>>;
-}
+        let future = async move {
+            let mut line = String::new();
+            let n = reader.read_line(&mut line).await.map_err(|e| e.to_string())?;
 
-/// WriterAt is the interface that wraps the basic WriteAt method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\WriterAt")]
-#[allow(dead_code)]
-pub trait WriterAt {
-    /// WriteAt writes data to the underlying data stream at offset.
-    /// It returns the number of bytes written and any error encountered.
-    fn write_at(&self, offset: i64, data: String) -> PhpResult<i64>;
-}
+            if n == 0 {
+                return Ok::<Zval, String>(Zval::null());
+            }
 
-/// Seeker is the interface that wraps the basic Seek method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\Seeker")]
-#[allow(dead_code)]
-pub trait Seeker {
-    /// Seek sets the offset for the next Read or Write to offset, interpreted
-    /// according to whence: SeekStart means relative to the start of the file,
-    /// SeekCurrent means relative to the current offset, and SeekEnd means
-    /// relative to the end. Seek returns the new offset relative to the start of
-    /// the file and an error, if any.
-    fn seek(&mut self, offset: i64, whence: i64) -> PhpResult<i64>;
-}
+            let mut z = Zval::new();
+            z.set_string(&line, false)
+                .map_err(|e| format!("set_string error: {:?}", e))?;
+            Ok(z)
+        };
 
-/// ReaderFrom is the interface that wraps the ReadFrom method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReaderFrom")]
-#[allow(dead_code)]
-pub trait ReaderFrom {
-    /// ReadFrom reads data from r until EOF or error.
-    /// The return value is the number of bytes read.
-    fn read_from(&mut self, reader: &mut Zval) -> PhpResult<i64>;
-}
+        RustFuture::new(future)
+    }
 
-/// WriterTo is the interface that wraps the WriteTo method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\WriterTo")]
-#[allow(dead_code)]
-pub trait WriterTo {
-    /// WriteTo writes data to w until there's no more data to write or when an error occurs.
-    /// The return value is the number of bytes written.
-    fn write_to(&self, writer: &mut Zval) -> PhpResult<i64>;
-}
+    /// Read until delimiter
+    pub fn read_until(&mut self, delim: u8) -> RustFuture {
+        let mut reader = Box::new(tokio::io::empty()) as Box<dyn AsyncBufRead + Unpin>;
+        std::mem::swap(&mut self.inner, &mut reader);
 
-/// ByteReader is the interface that wraps the ReadByte method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ByteReader")]
-#[allow(dead_code)]
-pub trait ByteReader {
-    /// ReadByte reads and returns a single byte. If no byte is available, returns -1.
-    fn read_byte(&mut self) -> PhpResult<i32>;
-}
+        let future = async move {
+            let mut buf = Vec::new();
+            let n = reader.read_until(delim, &mut buf).await.map_err(|e| e.to_string())?;
 
-/// StringReader is the interface that wraps the ReadString method.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\StringReader")]
-#[allow(dead_code)]
-pub trait StringReader {
-    /// ReadString reads until the first occurrence of delim in the input,
-    /// returning a string containing the data up to and including the delimiter.
-    fn read_string(&mut self, delim: i32) -> PhpResult<String>;
-}
+            if n == 0 {
+                return Ok::<Zval, String>(Zval::null());
+            }
 
-/// ByteScanner is the interface that adds UnreadByte and ReadBytes methods.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ByteScanner")]
-#[php(extends(ce = get_byte_reader_ce, stub = "Async\\Kernel\\IO\\ByteReader"))]
-#[allow(dead_code)]
-pub trait ByteScanner: ByteReader {
-    /// UnreadByte unreads the last byte. Only the immediately previous byte can be unread.
-    fn unread_byte(
-        &mut self
-    ) -> PhpResult<()>;
-    /// ReadBytes reads until the first occurrence of delim in the input,
-    /// returning a string containing the data up to and including the delimiter.
-    fn read_bytes(&mut self, delim: i32) -> PhpResult<String>;
+            let s = String::from_utf8_lossy(&buf).to_string();
+            let mut z = Zval::new();
+            z.set_string(&s, false)
+                .map_err(|e| format!("set_string error: {:?}", e))?;
+            Ok(z)
+        };
+
+        RustFuture::new(future)
+    }
 }

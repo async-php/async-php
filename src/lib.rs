@@ -18,6 +18,7 @@ mod logger;
 mod tls;
 
 use future::RustFuture;
+use io::{AsyncReader, AsyncWriter, AsyncSeeker, AsyncBufReader};
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use channel::AsyncChannel;
@@ -25,12 +26,6 @@ use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use logger::AsyncLogger;
 use tls::AsyncTlsStream;
-use io::{
-    PhpInterfaceReader, PhpInterfaceWriter, PhpInterfaceCloser,
-    PhpInterfaceReaderAt, PhpInterfaceWriterAt, PhpInterfaceSeeker,
-    PhpInterfaceReaderFrom, PhpInterfaceWriterTo,
-    PhpInterfaceByteReader, PhpInterfaceByteScanner, PhpInterfaceStringReader
-};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -176,17 +171,10 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPgSqlTransaction>()
         .class::<AsyncTime>()
         .class::<AsyncLogger>() // Register AsyncLogger
-        .interface::<PhpInterfaceReader>()
-        .interface::<PhpInterfaceWriter>()
-        .interface::<PhpInterfaceCloser>()
-        .interface::<PhpInterfaceReaderAt>()
-        .interface::<PhpInterfaceWriterAt>()
-        .interface::<PhpInterfaceSeeker>()
-        .interface::<PhpInterfaceReaderFrom>()
-        .interface::<PhpInterfaceWriterTo>()
-        .interface::<PhpInterfaceByteReader>()
-        .interface::<PhpInterfaceByteScanner>()
-        .interface::<PhpInterfaceStringReader>()
+        .class::<AsyncReader>() // IO types
+        .class::<AsyncWriter>()
+        .class::<AsyncSeeker>()
+        .class::<AsyncBufReader>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }
