@@ -2,10 +2,13 @@
 
 namespace Async\Network\Tcp;
 
+use Async\IO\Reader;
+use Async\IO\Writer;
+use Async\IO\Closer;
 use Async\Kernel\Network\TcpStream as KernelTcpStream;
 use Fiber;
 
-class Socket
+class Socket implements Reader, Writer, Closer
 {
     private KernelTcpStream $inner;
 
@@ -24,16 +27,18 @@ class Socket
         return new self($kernelStream);
     }
 
-    public function read(int $length = 1024): string|false
+    public function read(int $length): ?string
     {
         $future = $this->inner->read($length);
-        return Fiber::suspend($future);
+        $result = Fiber::suspend($future);
+        return $result ?: null;
     }
 
-    public function write(string $data): int|false
+    public function write(string $data): int
     {
         $future = $this->inner->write($data);
-        return Fiber::suspend($future);
+        $result = Fiber::suspend($future);
+        return $result ?: 0;
     }
 
     public function close(): bool
@@ -41,9 +46,22 @@ class Socket
         $future = $this->inner->close();
         return Fiber::suspend($future);
     }
-    
-    public function getPeerAddress(): string
+
+    public function remoteAddr(): string
     {
         return $this->inner->peer_addr();
+    }
+
+    public function localAddr(): string
+    {
+        return $this->inner->local_addr();
+    }
+
+    /**
+     * @deprecated Use remoteAddr() instead
+     */
+    public function getPeerAddress(): string
+    {
+        return $this->remoteAddr();
     }
 }

@@ -26,10 +26,9 @@ use time::AsyncTime;
 use logger::AsyncLogger;
 use tls::AsyncTlsStream;
 use io::{
-    PhpInterfaceReader, PhpInterfaceWriter, PhpInterfaceCloser, PhpInterfaceReadCloser,
-    PhpInterfaceWriteCloser, PhpInterfaceReaderAt, PhpInterfaceWriterAt, PhpInterfaceSeeker,
-    PhpInterfaceReadSeeker, PhpInterfaceWriteSeeker, PhpInterfaceReadWriter,
-    PhpInterfaceReadWriteSeeker, PhpInterfaceReaderFrom, PhpInterfaceWriterTo,
+    PhpInterfaceReader, PhpInterfaceWriter, PhpInterfaceCloser,
+    PhpInterfaceReaderAt, PhpInterfaceWriterAt, PhpInterfaceSeeker,
+    PhpInterfaceReaderFrom, PhpInterfaceWriterTo,
     PhpInterfaceByteReader, PhpInterfaceByteScanner, PhpInterfaceStringReader
 };
 
@@ -166,7 +165,6 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncTlsStream>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
-        .class::<http::HttpServer>()
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
         .class::<http::HttpResponseBody>()
@@ -181,15 +179,9 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .interface::<PhpInterfaceReader>()
         .interface::<PhpInterfaceWriter>()
         .interface::<PhpInterfaceCloser>()
-        .interface::<PhpInterfaceReadCloser>()
-        .interface::<PhpInterfaceWriteCloser>()
         .interface::<PhpInterfaceReaderAt>()
         .interface::<PhpInterfaceWriterAt>()
         .interface::<PhpInterfaceSeeker>()
-        .interface::<PhpInterfaceReadSeeker>()
-        .interface::<PhpInterfaceWriteSeeker>()
-        .interface::<PhpInterfaceReadWriter>()
-        .interface::<PhpInterfaceReadWriteSeeker>()
         .interface::<PhpInterfaceReaderFrom>()
         .interface::<PhpInterfaceWriterTo>()
         .interface::<PhpInterfaceByteReader>()

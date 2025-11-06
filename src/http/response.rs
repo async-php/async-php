@@ -1,6 +1,5 @@
 use crate::http::metrics::RequestMetrics;
 use crate::http::types::StatusCodes;
-use crate::io::get_read_closer_ce;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use std::collections::HashMap;
@@ -45,13 +44,6 @@ impl HttpResponse {
 
     /// Create a new response with a body
     pub fn create(status_code: i32, body: &Zval) -> PhpResult<Self> {
-        let interface_ce = get_read_closer_ce();
-
-        let object = body.object();
-        if object.is_none() || !object.unwrap().instance_of(interface_ce) {
-            return Err(PhpException::default("Body must implement ReadCloser".into()));
-        }
-
         let reason = StatusCodes::get_default_reason_phrase(status_code);
         Ok(Self {
             status_code,

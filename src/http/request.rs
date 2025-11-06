@@ -1,4 +1,3 @@
-use crate::io::get_read_closer_ce;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use std::collections::HashMap;
@@ -98,12 +97,6 @@ impl HttpRequest {
     /// Set the request body using an IO ReadCloser
     /// body参数应该是实现了Reader和Closer接口的对象
     pub fn set_body(&mut self, body: &Zval) -> PhpResult<()> {
-        let interface_ce = get_read_closer_ce();
-        let object = body.object();
-        if object.is_none() || !object.unwrap().instance_of(interface_ce) {
-            return Err(PhpException::default("Body must implement ReadCloser".into()));
-        }
-
         self.body = body.shallow_clone();
         Ok(())
     }

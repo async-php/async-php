@@ -13,18 +13,8 @@ pub fn get_reader_ce() -> &'static ClassEntry {
 }
 
 #[no_mangle]
-pub fn get_read_closer_ce() -> &'static ClassEntry {
-    PhpInterfaceReadCloser::get_metadata().ce()
-}
-
-#[no_mangle]
 pub fn get_writer_ce() -> &'static ClassEntry {
     PhpInterfaceWriter::get_metadata().ce()
-}
-
-#[no_mangle]
-pub fn get_write_closer_ce() -> &'static ClassEntry {
-    PhpInterfaceWriteCloser::get_metadata().ce()
 }
 
 #[no_mangle]
@@ -146,59 +136,6 @@ pub trait StringReader {
     /// returning a string containing the data up to and including the delimiter.
     fn read_string(&mut self, delim: i32) -> PhpResult<String>;
 }
-
-// ==========================================
-// Composite / Derived Interfaces
-// ==========================================
-
-/// ReadCloser is the interface that combines Reader and Closer.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReadCloser")]
-#[php(extends(ce = get_reader_ce, stub = "Async\\Kernel\\IO\\Reader"))]
-#[php(extends(ce = get_closer_ce, stub = "Async\\Kernel\\IO\\Closer"))]
-#[allow(dead_code)]
-pub trait ReadCloser: Reader + Closer {}
-
-/// WriteCloser is the interface that combines Writer and Closer.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\WriteCloser")]
-#[php(extends(ce = get_writer_ce, stub = "Async\\Kernel\\IO\\Writer"))]
-#[php(extends(ce = get_closer_ce, stub = "Async\\Kernel\\IO\\Closer"))]
-#[allow(dead_code)]
-pub trait WriteCloser: Writer + Closer {}
-
-/// ReadSeeker is the interface that combines Reader and Seeker.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReadSeeker")]
-#[php(extends(ce = get_reader_ce, stub = "Async\\Kernel\\IO\\Reader"))]
-#[php(extends(ce = get_seeker_ce, stub = "Async\\Kernel\\IO\\Seeker"))]
-#[allow(dead_code)]
-pub trait ReadSeeker: Reader + Seeker {}
-
-/// WriteSeeker is the interface that combines Writer and Seeker.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\WriteSeeker")]
-#[php(extends(ce = get_writer_ce, stub = "Async\\Kernel\\IO\\Writer"))]
-#[php(extends(ce = get_seeker_ce, stub = "Async\\Kernel\\IO\\Seeker"))]
-#[allow(dead_code)]
-pub trait WriteSeeker: Writer + Seeker {}
-
-/// ReadWriter is the interface that combines Reader and Writer.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReadWriter")]
-#[php(extends(ce = get_reader_ce, stub = "Async\\Kernel\\IO\\Reader"))]
-#[php(extends(ce = get_writer_ce, stub = "Async\\Kernel\\IO\\Writer"))]
-#[allow(dead_code)]
-pub trait ReadWriter: Reader + Writer {}
-
-/// ReadWriteSeeker is the interface that combines Reader, Writer, and Seeker.
-#[php_interface]
-#[php(name = "Async\\Kernel\\IO\\ReadWriteSeeker")]
-#[php(extends(ce = get_reader_ce, stub = "Async\\Kernel\\IO\\Reader"))]
-#[php(extends(ce = get_writer_ce, stub = "Async\\Kernel\\IO\\Writer"))]
-#[php(extends(ce = get_seeker_ce, stub = "Async\\Kernel\\IO\\Seeker"))]
-#[allow(dead_code)]
-pub trait ReadWriteSeeker: Reader + Writer + Seeker {}
 
 /// ByteScanner is the interface that adds UnreadByte and ReadBytes methods.
 #[php_interface]

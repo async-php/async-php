@@ -5,6 +5,8 @@ namespace Async\Network\Http;
 use Async\Kernel\Network\Http\HttpServer as KernelServer;
 use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
 use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
+use Async\Kernel\Network\Http\HttpConnection;
+use Async\Network\Tcp\Listener;
 
 class Server
 {
@@ -152,5 +154,79 @@ class Server
         }
 
         $server->listen($addr, $handler);
+    }
+
+    /**
+     * Start a simple HTTP/1.1 server using the new Go-style architecture
+     *
+     * This method provides a low-level, connection-oriented server that:
+     * - Gives you full control over connection handling
+     * - Only supports HTTP/1.1 (no HTTP/2 or HTTP/3)
+     * - Uses the new HttpConnection API
+     * - Follows Go's net/http pattern
+     *
+     * Example:
+     * ```php
+     * Server::serve('0.0.0.0:8080', function($request) {
+     *     return Response::text('Hello World');
+     * });
+     * ```
+     *
+     * @param string $addr Address to bind (e.g., "0.0.0.0:8080")
+     * @param callable $handler Request handler function(Request): Response
+     */
+    public static function serve(string $addr, callable $handler): never
+    {
+        $listener = Listener::bind($addr);
+        echo "HTTP server listening on $addr\n";
+
+        while (true) {
+            $conn = $listener->accept();
+
+            // Spawn a coroutine to handle this connection
+            go(function () use ($conn, $handler) {
+                $httpConn = HttpConnection::from($conn);
+
+                // Handle multiple requests on the same connection (HTTP keep-alive)
+                while (true) {
+                    $future = $httpConn->readRequest();
+                    $kernelRequest = \Fiber::suspend($future);
+
+                    // Connection closed
+                    if ($kernelRequest === null) {
+                        break;
+                    }
+
+                    // Wrap kernel request in user-friendly Request object
+                    $request = new Request($kernelRequest);
+
+                    // Call user handler
+                    $response = $handler($request);
+
+                    // Convert Response to KernelResponse
+                    $kernelResponse = null;
+                    if ($response instanceof Response) {
+                        $kernelResponse = $response->getKernel();
+                    } elseif ($response instanceof KernelResponse) {
+                        $kernelResponse = $response;
+                    } else {
+                        // Create a simple 200 OK response
+                        $kernelResponse = new KernelResponse(200);
+                        if (is_string($response)) {
+                            $kernelResponse->setBody($response);
+                        } elseif ($response !== null) {
+                            $kernelResponse->setBody((string)$response);
+                        }
+                    }
+
+                    // Write response
+                    $future = $httpConn->writeResponse($kernelResponse);
+                    \Fiber::suspend($future);
+                }
+
+                // Close the connection
+                $conn->close();
+            });
+        }
     }
 }
