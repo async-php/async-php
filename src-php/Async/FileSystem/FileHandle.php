@@ -6,6 +6,10 @@ use Async\IO\Reader;
 use Async\IO\Writer;
 use Async\IO\Closer;
 use Async\IO\Seeker;
+use Async\IO\ReaderAt;
+use Async\IO\WriterAt;
+use Async\IO\ReaderFrom;
+use Async\IO\WriterTo;
 use Async\Kernel\FileSystem\FileHandle as KernelFileHandle;
 use Fiber;
 
@@ -13,7 +17,7 @@ use Fiber;
  * FileHandle represents an open file
  * Implements IO interfaces directly
  */
-class FileHandle implements Reader, Writer, Closer, Seeker
+class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, ReaderFrom, WriterTo
 {
     private KernelFileHandle $inner;
 
@@ -67,5 +71,83 @@ class FileHandle implements Reader, Writer, Closer, Seeker
     {
         $future = $this->inner->close();
         return (bool)Fiber::suspend($future);
+    }
+
+    public function readAt(int $offset, int $length): ?string
+    {
+        // Save current position
+        $currentPos = $this->seek(0, self::SEEK_CURRENT);
+
+        // Seek to target offset
+        $this->seek($offset, self::SEEK_START);
+
+        // Read data
+        $data = $this->read($length);
+
+        // Restore original position
+        $this->seek($currentPos, self::SEEK_START);
+
+        return $data;
+    }
+
+    public function writeAt(int $offset, string $data): int
+    {
+        // Save current position
+        $currentPos = $this->seek(0, self::SEEK_CURRENT);
+
+        // Seek to target offset
+        $this->seek($offset, self::SEEK_START);
+
+        // Write data
+        $n = $this->write($data);
+
+        // Restore original position
+        $this->seek($currentPos, self::SEEK_START);
+
+        return $n;
+    }
+
+    public function readFrom(Reader $reader): int
+    {
+        $totalWritten = 0;
+        $bufferSize = 8192;
+
+        while (true) {
+            $data = $reader->read($bufferSize);
+            if ($data === null || $data === '') {
+                break;
+            }
+
+            $n = $this->write($data);
+            $totalWritten += $n;
+
+            if ($n < strlen($data)) {
+                break;
+            }
+        }
+
+        return $totalWritten;
+    }
+
+    public function writeTo(Writer $writer): int
+    {
+        $totalWritten = 0;
+        $bufferSize = 8192;
+
+        while (true) {
+            $data = $this->read($bufferSize);
+            if ($data === null || $data === '') {
+                break;
+            }
+
+            $n = $writer->write($data);
+            $totalWritten += $n;
+
+            if ($n < strlen($data)) {
+                break;
+            }
+        }
+
+        return $totalWritten;
     }
 }

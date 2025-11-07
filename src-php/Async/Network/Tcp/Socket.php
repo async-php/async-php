@@ -5,6 +5,8 @@ namespace Async\Network\Tcp;
 use Async\IO\Reader;
 use Async\IO\Writer;
 use Async\IO\Closer;
+use Async\IO\ReaderFrom;
+use Async\IO\WriterTo;
 use Async\Kernel\Network\TcpStream as KernelTcpStream;
 use Fiber;
 
@@ -12,7 +14,7 @@ use Fiber;
  * Socket represents a TCP connection
  * Implements IO interfaces directly
  */
-class Socket implements Reader, Writer, Closer
+class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
 {
     private KernelTcpStream $inner;
 
@@ -77,5 +79,49 @@ class Socket implements Reader, Writer, Closer
     public function getPeerAddress(): string
     {
         return $this->remoteAddr();
+    }
+
+    public function readFrom(Reader $reader): int
+    {
+        $totalWritten = 0;
+        $bufferSize = 8192;
+
+        while (true) {
+            $data = $reader->read($bufferSize);
+            if ($data === null || $data === '') {
+                break;
+            }
+
+            $n = $this->write($data);
+            $totalWritten += $n;
+
+            if ($n < strlen($data)) {
+                break;
+            }
+        }
+
+        return $totalWritten;
+    }
+
+    public function writeTo(Writer $writer): int
+    {
+        $totalWritten = 0;
+        $bufferSize = 8192;
+
+        while (true) {
+            $data = $this->read($bufferSize);
+            if ($data === null || $data === '') {
+                break;
+            }
+
+            $n = $writer->write($data);
+            $totalWritten += $n;
+
+            if ($n < strlen($data)) {
+                break;
+            }
+        }
+
+        return $totalWritten;
     }
 }
