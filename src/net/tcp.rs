@@ -2,10 +2,10 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
+use crate::util::Shared;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::rc::Rc;
-use std::cell::RefCell;
 
 // --- TCP Listener ---
 
@@ -32,7 +32,7 @@ impl AsyncTcpListener {
         let listener = self.inner.clone();
         let future = async move {
             let (stream, _addr) = listener.accept().await.map_err(|e| e.to_string())?;
-            let obj = AsyncTcpStream { inner: Rc::new(RefCell::new(stream)) };
+            let obj = AsyncTcpStream { inner: Shared::new(stream) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert AsyncTcpStream to Zval: {:?}", e))
@@ -50,7 +50,7 @@ impl AsyncTcpListener {
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\TcpStream")]
 pub struct AsyncTcpStream {
-    inner: Rc<RefCell<TcpStream>>,
+    inner: Shared<TcpStream>,
 }
 
 #[php_impl]
@@ -58,7 +58,7 @@ impl AsyncTcpStream {
     pub fn connect(addr: String) -> RustFuture {
         let future = async move {
             let stream = TcpStream::connect(addr).await.map_err(|e| e.to_string())?;
-            let obj = AsyncTcpStream { inner: Rc::new(RefCell::new(stream)) };
+            let obj = AsyncTcpStream { inner: Shared::new(stream) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert AsyncTcpStream to Zval: {:?}", e))
@@ -70,9 +70,8 @@ impl AsyncTcpStream {
         let stream = self.inner.clone();
         let future = async move {
             let mut buf = vec![0u8; length];
-            let mut lock = stream.try_borrow_mut().map_err(|_| "Resource busy".to_string())?;
 
-            let n = lock.read(&mut buf).await.map_err(|e| e.to_string())?;
+            let n = stream.get_mut().read(&mut buf).await.map_err(|e| e.to_string())?;
 
             if n == 0 {
                 return Ok::<Zval, String>(Zval::new());
@@ -89,8 +88,7 @@ impl AsyncTcpStream {
     pub fn write(&self, data: String) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-            let mut lock = stream.try_borrow_mut().map_err(|_| "Resource busy".to_string())?;
-            lock.write_all(data.as_bytes()).await.map_err(|e| e.to_string())?;
+            stream.get_mut().write_all(data.as_bytes()).await.map_err(|e| e.to_string())?;
 
             let mut z = Zval::new();
             z.set_long(data.len() as i64);
@@ -102,8 +100,7 @@ impl AsyncTcpStream {
     pub fn close(&self) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-             let mut lock = stream.try_borrow_mut().map_err(|_| "Resource busy".to_string())?;
-             lock.shutdown().await.map_err(|e| e.to_string())?;
+             stream.get_mut().shutdown().await.map_err(|e| e.to_string())?;
 
              let mut z = Zval::new();
              z.set_bool(true);
@@ -113,18 +110,10 @@ impl AsyncTcpStream {
     }
 
     pub fn peer_addr(&self) -> String {
-        if let Ok(lock) = self.inner.try_borrow() {
-            lock.peer_addr().map(|a| a.to_string()).unwrap_or_default()
-        } else {
-            "".to_string()
-        }
+        self.inner.get_ref().peer_addr().map(|a| a.to_string()).unwrap_or_default()
     }
 
     pub fn set_nodelay(&self, nodelay: bool) -> bool {
-        if let Ok(lock) = self.inner.try_borrow() {
-            lock.set_nodelay(nodelay).is_ok()
-        } else {
-            false
-        }
+        self.inner.get_ref().set_nodelay(nodelay).is_ok()
     }
 }

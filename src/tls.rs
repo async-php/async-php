@@ -8,8 +8,7 @@ use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::TlsConnector;
 use std::sync::Arc;
-use std::rc::Rc;
-use std::cell::RefCell;
+use crate::util::Shared;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::fs::File;
 use std::io::BufReader;
@@ -17,7 +16,7 @@ use std::io::BufReader;
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\TlsStream")]
 pub struct AsyncTlsStream {
-    inner: Rc<RefCell<TlsStream<TcpStream>>>
+    inner: Shared<TlsStream<TcpStream>>
 }
 
 #[php_impl]
@@ -53,7 +52,7 @@ impl AsyncTlsStream {
                      
                      match connector.connect(domain, tcp).await {
                          Ok(stream) => {
-                            let obj = AsyncTlsStream { inner: Rc::new(RefCell::new(stream)) };
+                            let obj = AsyncTlsStream { inner: Shared::new(stream) };
                             ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                          },
                          Err(_) => Zval::new()
@@ -69,29 +68,23 @@ impl AsyncTlsStream {
         let stream = self.inner.clone();
         let future = async move {
             let mut buf = vec![0u8; length];
-            if let Ok(mut lock) = stream.try_borrow_mut() {
-                match lock.read(&mut buf).await {
-                    Ok(0) => {
-                         let mut z = Zval::new();
-                         z.set_string("", false).unwrap();
-                         z
-                    },
-                    Ok(n) => {
-                        buf.truncate(n);
-                        let mut z = Zval::new();
-                        z.set_binary(buf);
-                        z
-                    }
-                    Err(_) => {
-                         let mut z = Zval::new();
-                         z.set_bool(false);
-                         z
-                    }
+            match stream.get_mut().read(&mut buf).await {
+                Ok(0) => {
+                     let mut z = Zval::new();
+                     z.set_string("", false).unwrap();
+                     z
+                },
+                Ok(n) => {
+                    buf.truncate(n);
+                    let mut z = Zval::new();
+                    z.set_binary(buf);
+                    z
                 }
-            } else {
-                 let mut z = Zval::new();
-                 z.set_bool(false);
-                 z
+                Err(_) => {
+                     let mut z = Zval::new();
+                     z.set_bool(false);
+                     z
+                }
             }
         };
         RustFuture::new(future)
@@ -100,23 +93,17 @@ impl AsyncTlsStream {
     pub fn write(&self, data: String) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-            if let Ok(mut lock) = stream.try_borrow_mut() {
-                match lock.write_all(data.as_bytes()).await {
-                    Ok(_) => {
-                        let mut z = Zval::new();
-                        z.set_long(data.len() as i64);
-                        z
-                    },
-                    Err(_) => {
-                         let mut z = Zval::new();
-                         z.set_bool(false);
-                         z
-                    }
+            match stream.get_mut().write_all(data.as_bytes()).await {
+                Ok(_) => {
+                    let mut z = Zval::new();
+                    z.set_long(data.len() as i64);
+                    z
+                },
+                Err(_) => {
+                     let mut z = Zval::new();
+                     z.set_bool(false);
+                     z
                 }
-            } else {
-                 let mut z = Zval::new();
-                 z.set_bool(false);
-                 z
             }
         };
         RustFuture::new(future)
@@ -125,13 +112,9 @@ impl AsyncTlsStream {
     pub fn close(&self) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
+             let _ = stream.get_mut().shutdown().await;
              let mut z = Zval::new();
-             if let Ok(mut lock) = stream.try_borrow_mut() {
-                 let _ = lock.shutdown().await;
-                 z.set_bool(true);
-             } else {
-                 z.set_bool(false);
-             }
+             z.set_bool(true);
              z
         };
         RustFuture::new(future)

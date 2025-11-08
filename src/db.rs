@@ -6,7 +6,7 @@ use sqlx::mysql::{MySqlPool, MySqlRow};
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::{Row, Column, TypeInfo, Transaction, Postgres, MySql};
 use std::rc::Rc;
-use std::cell::RefCell;
+use crate::util::Shared;
 
 // ======================================================================================
 // MySQL Implementation
@@ -88,8 +88,8 @@ impl AsyncMySql {
         let future = async move {
             match pool.begin().await {
                 Ok(tx) => {
-                    let obj = AsyncMySqlTransaction { 
-                        tx: Rc::new(RefCell::new(Some(tx))) 
+                    let obj = AsyncMySqlTransaction {
+                        tx: Shared::new(Some(tx))
                     };
                     ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                 },
@@ -104,7 +104,7 @@ impl AsyncMySql {
 #[php(name = "Async\\Kernel\\DB\\MySql\\Transaction")]
 pub struct AsyncMySqlTransaction {
     // Option because commit/rollback consumes the transaction
-    tx: Rc<RefCell<Option<Transaction<'static, MySql>>>>,
+    tx: Shared<Option<Transaction<'static, MySql>>>,
 }
 
 #[php_impl]
@@ -112,31 +112,26 @@ impl AsyncMySqlTransaction {
     pub fn query(&self, sql: String, params: Option<Vec<String>>) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            // We need to borrow mutably to use the transaction
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.as_mut() {
-                    let mut query = sqlx::query(&sql);
-                    if let Some(args) = params {
-                        for arg in args {
-                            query = query.bind(arg);
+            if let Some(tx) = tx_rc.get_mut().as_mut() {
+                let mut query = sqlx::query(&sql);
+                if let Some(args) = params {
+                    for arg in args {
+                        query = query.bind(arg);
+                    }
+                }
+
+                match query.fetch_all(&mut **tx).await {
+                    Ok(rows) => {
+                        let mut results = ext_php_rs::types::ZendHashTable::new();
+                        for row in rows {
+                            results.push(mysql_row_to_zval(&row)).unwrap();
                         }
-                    }
-                    
-                    match query.fetch_all(&mut **tx).await {
-                        Ok(rows) => {
-                            let mut results = ext_php_rs::types::ZendHashTable::new();
-                            for row in rows {
-                                results.push(mysql_row_to_zval(&row)).unwrap();
-                            }
-                            results.into_zval(false).unwrap_or_else(|_| Zval::new())
-                        },
-                        Err(_) => Zval::new()
-                    }
-                } else {
-                    Zval::new() // Transaction already finished
+                        results.into_zval(false).unwrap_or_else(|_| Zval::new())
+                    },
+                    Err(_) => Zval::new()
                 }
             } else {
-                Zval::new() // Busy
+                Zval::new() // Transaction already finished
             }
         };
         RustFuture::new(future)
@@ -145,25 +140,21 @@ impl AsyncMySqlTransaction {
     pub fn execute(&self, sql: String, params: Option<Vec<String>>) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.as_mut() {
-                    let mut query = sqlx::query(&sql);
-                    if let Some(args) = params {
-                        for arg in args {
-                            query = query.bind(arg);
-                        }
+            if let Some(tx) = tx_rc.get_mut().as_mut() {
+                let mut query = sqlx::query(&sql);
+                if let Some(args) = params {
+                    for arg in args {
+                        query = query.bind(arg);
                     }
+                }
 
-                    match query.execute(&mut **tx).await {
-                        Ok(done) => {
-                            let mut z = Zval::new();
-                            z.set_long(done.rows_affected() as i64);
-                            z
-                        },
-                        Err(_) => Zval::new()
-                    }
-                } else {
-                    Zval::new()
+                match query.execute(&mut **tx).await {
+                    Ok(done) => {
+                        let mut z = Zval::new();
+                        z.set_long(done.rows_affected() as i64);
+                        z
+                    },
+                    Err(_) => Zval::new()
                 }
             } else {
                 Zval::new()
@@ -175,16 +166,10 @@ impl AsyncMySqlTransaction {
     pub fn commit(&self) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.take() {
-                    let mut z = Zval::new();
-                    z.set_bool(tx.commit().await.is_ok());
-                    z
-                } else {
-                    let mut z = Zval::new();
-                    z.set_bool(false); 
-                    z
-                }
+            if let Some(tx) = tx_rc.get_mut().take() {
+                let mut z = Zval::new();
+                z.set_bool(tx.commit().await.is_ok());
+                z
             } else {
                 let mut z = Zval::new();
                 z.set_bool(false);
@@ -197,16 +182,10 @@ impl AsyncMySqlTransaction {
     pub fn rollback(&self) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.take() {
-                    let mut z = Zval::new();
-                    z.set_bool(tx.rollback().await.is_ok());
-                    z
-                } else {
-                    let mut z = Zval::new();
-                    z.set_bool(false); 
-                    z
-                }
+            if let Some(tx) = tx_rc.get_mut().take() {
+                let mut z = Zval::new();
+                z.set_bool(tx.rollback().await.is_ok());
+                z
             } else {
                 let mut z = Zval::new();
                 z.set_bool(false);
@@ -321,8 +300,8 @@ impl AsyncPgSql {
         let future = async move {
             match pool.begin().await {
                 Ok(tx) => {
-                    let obj = AsyncPgSqlTransaction { 
-                        tx: Rc::new(RefCell::new(Some(tx))) 
+                    let obj = AsyncPgSqlTransaction {
+                        tx: Shared::new(Some(tx))
                     };
                     ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                 },
@@ -336,7 +315,7 @@ impl AsyncPgSql {
 #[php_class]
 #[php(name = "Async\\Kernel\\DB\\PgSql\\Transaction")]
 pub struct AsyncPgSqlTransaction {
-    tx: Rc<RefCell<Option<Transaction<'static, Postgres>>>>,
+    tx: Shared<Option<Transaction<'static, Postgres>>>,
 }
 
 #[php_impl]
@@ -344,27 +323,23 @@ impl AsyncPgSqlTransaction {
     pub fn query(&self, sql: String, params: Option<Vec<String>>) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.as_mut() {
-                    let mut query = sqlx::query(&sql);
-                    if let Some(args) = params {
-                        for arg in args {
-                            query = query.bind(arg);
+            if let Some(tx) = tx_rc.get_mut().as_mut() {
+                let mut query = sqlx::query(&sql);
+                if let Some(args) = params {
+                    for arg in args {
+                        query = query.bind(arg);
+                    }
+                }
+
+                match query.fetch_all(&mut **tx).await {
+                    Ok(rows) => {
+                        let mut results = ext_php_rs::types::ZendHashTable::new();
+                        for row in rows {
+                            results.push(pg_row_to_zval(&row)).unwrap();
                         }
-                    }
-                    
-                    match query.fetch_all(&mut **tx).await {
-                        Ok(rows) => {
-                            let mut results = ext_php_rs::types::ZendHashTable::new();
-                            for row in rows {
-                                results.push(pg_row_to_zval(&row)).unwrap();
-                            }
-                            results.into_zval(false).unwrap_or_else(|_| Zval::new())
-                        },
-                        Err(_) => Zval::new()
-                    }
-                } else {
-                    Zval::new()
+                        results.into_zval(false).unwrap_or_else(|_| Zval::new())
+                    },
+                    Err(_) => Zval::new()
                 }
             } else {
                 Zval::new()
@@ -376,25 +351,21 @@ impl AsyncPgSqlTransaction {
     pub fn execute(&self, sql: String, params: Option<Vec<String>>) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.as_mut() {
-                    let mut query = sqlx::query(&sql);
-                    if let Some(args) = params {
-                        for arg in args {
-                            query = query.bind(arg);
-                        }
+            if let Some(tx) = tx_rc.get_mut().as_mut() {
+                let mut query = sqlx::query(&sql);
+                if let Some(args) = params {
+                    for arg in args {
+                        query = query.bind(arg);
                     }
+                }
 
-                    match query.execute(&mut **tx).await {
-                        Ok(done) => {
-                            let mut z = Zval::new();
-                            z.set_long(done.rows_affected() as i64);
-                            z
-                        },
-                        Err(_) => Zval::new()
-                    }
-                } else {
-                    Zval::new()
+                match query.execute(&mut **tx).await {
+                    Ok(done) => {
+                        let mut z = Zval::new();
+                        z.set_long(done.rows_affected() as i64);
+                        z
+                    },
+                    Err(_) => Zval::new()
                 }
             } else {
                 Zval::new()
@@ -406,16 +377,10 @@ impl AsyncPgSqlTransaction {
     pub fn commit(&self) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.take() {
-                    let mut z = Zval::new();
-                    z.set_bool(tx.commit().await.is_ok());
-                    z
-                } else {
-                    let mut z = Zval::new();
-                    z.set_bool(false); 
-                    z
-                }
+            if let Some(tx) = tx_rc.get_mut().take() {
+                let mut z = Zval::new();
+                z.set_bool(tx.commit().await.is_ok());
+                z
             } else {
                 let mut z = Zval::new();
                 z.set_bool(false);
@@ -428,16 +393,10 @@ impl AsyncPgSqlTransaction {
     pub fn rollback(&self) -> RustFuture {
         let tx_rc = self.tx.clone();
         let future = async move {
-            if let Ok(mut cell) = tx_rc.try_borrow_mut() {
-                if let Some(tx) = cell.take() {
-                    let mut z = Zval::new();
-                    z.set_bool(tx.rollback().await.is_ok());
-                    z
-                } else {
-                    let mut z = Zval::new();
-                    z.set_bool(false); 
-                    z
-                }
+            if let Some(tx) = tx_rc.get_mut().take() {
+                let mut z = Zval::new();
+                z.set_bool(tx.rollback().await.is_ok());
+                z
             } else {
                 let mut z = Zval::new();
                 z.set_bool(false);
