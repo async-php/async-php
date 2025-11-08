@@ -16,8 +16,15 @@ pub struct AsyncReader {
 }
 
 impl AsyncReader {
+    /// Create AsyncReader from a Shared-wrapped reader
+    /// This allows multiple AsyncReader instances to share the same underlying reader
+    pub fn from_shared(shared: Shared<Box<dyn AsyncRead + Unpin>>) -> Self {
+        Self { inner: shared }
+    }
+
     /// Create AsyncReader from a tokio AsyncRead type
-    pub fn from_reader<R: AsyncRead + Unpin + 'static>(reader: R) -> Self {
+    /// This wraps the reader in a new Shared container
+    pub fn new<R: AsyncRead + Unpin + 'static>(reader: R) -> Self {
         Self {
             inner: Shared::new(Box::new(reader)),
         }
@@ -67,8 +74,15 @@ pub struct AsyncWriter {
 }
 
 impl AsyncWriter {
+    /// Create AsyncWriter from a Shared-wrapped writer
+    /// This allows multiple AsyncWriter instances to share the same underlying writer
+    pub fn from_shared(shared: Shared<Box<dyn AsyncWrite + Unpin>>) -> Self {
+        Self { inner: shared }
+    }
+
     /// Create AsyncWriter from a tokio AsyncWrite type
-    pub fn from_writer<W: AsyncWrite + Unpin + 'static>(writer: W) -> Self {
+    /// This wraps the writer in a new Shared container
+    pub fn new<W: AsyncWrite + Unpin + 'static>(writer: W) -> Self {
         Self {
             inner: Shared::new(Box::new(writer)),
         }
@@ -126,8 +140,15 @@ pub struct AsyncSeeker {
 }
 
 impl AsyncSeeker {
+    /// Create AsyncSeeker from a Shared-wrapped seeker
+    /// This allows multiple AsyncSeeker instances to share the same underlying seeker
+    pub fn from_shared(shared: Shared<Box<dyn AsyncSeek + Unpin>>) -> Self {
+        Self { inner: shared }
+    }
+
     /// Create AsyncSeeker from a tokio AsyncSeek type
-    pub fn from_seeker<S: AsyncSeek + Unpin + 'static>(seeker: S) -> Self {
+    /// This wraps the seeker in a new Shared container
+    pub fn new<S: AsyncSeek + Unpin + 'static>(seeker: S) -> Self {
         Self {
             inner: Shared::new(Box::new(seeker)),
         }
@@ -177,8 +198,15 @@ pub struct AsyncBufReader {
 }
 
 impl AsyncBufReader {
+    /// Create AsyncBufReader from a Shared-wrapped reader
+    /// This allows multiple AsyncBufReader instances to share the same underlying reader
+    pub fn from_shared(shared: Shared<Box<dyn AsyncBufRead + Unpin>>) -> Self {
+        Self { inner: shared }
+    }
+
     /// Create AsyncBufReader from a tokio AsyncBufRead type
-    pub fn from_buf_reader<B: AsyncBufRead + Unpin + 'static>(reader: B) -> Self {
+    /// This wraps the reader in a new Shared container
+    pub fn new<B: AsyncBufRead + Unpin + 'static>(reader: B) -> Self {
         Self {
             inner: Shared::new(Box::new(reader)),
         }
