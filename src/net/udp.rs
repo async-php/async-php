@@ -35,10 +35,9 @@ impl AsyncUdpSocket {
             let (n, addr) = socket.recv_from(&mut buf).await.map_err(|e| e.to_string())?;
 
             buf.truncate(n);
-            let s = String::from_utf8_lossy(&buf).to_string();
 
             let mut arr = ext_php_rs::types::ZendHashTable::new();
-            arr.push(s).map_err(|e| format!("Failed to push data: {:?}", e))?;
+            arr.push(buf).map_err(|e| format!("Failed to push data: {:?}", e))?;
             arr.push(addr.to_string()).map_err(|e| format!("Failed to push addr: {:?}", e))?;
 
             arr.into_zval(false).map_err(|e| format!("Failed to convert array to Zval: {:?}", e))

@@ -31,10 +31,9 @@ impl AsyncReader {
             }
 
             buf.truncate(n);
-            let s = String::from_utf8_lossy(&buf).to_string();
+            // Use set_binary to preserve all bytes (binary-safe)
             let mut z = Zval::new();
-            z.set_string(&s, false)
-                .map_err(|e| format!("set_string error: {:?}", e))?;
+            z.set_binary(buf);
             Ok(z)
         };
 
@@ -156,10 +155,9 @@ impl AsyncBufReader {
                 return Ok::<Zval, String>(Zval::null());
             }
 
-            let s = String::from_utf8_lossy(&buf).to_string();
+            // Use set_binary to preserve all bytes (binary-safe)
             let mut z = Zval::new();
-            z.set_string(&s, false)
-                .map_err(|e| format!("set_string error: {:?}", e))?;
+            z.set_binary(buf);
             Ok(z)
         };
 

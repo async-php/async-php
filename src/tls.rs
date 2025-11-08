@@ -78,9 +78,8 @@ impl AsyncTlsStream {
                     },
                     Ok(n) => {
                         buf.truncate(n);
-                        let s = String::from_utf8_lossy(&buf).to_string();
                         let mut z = Zval::new();
-                        z.set_string(&s, false).unwrap();
+                        z.set_binary(buf);
                         z
                     }
                     Err(_) => {

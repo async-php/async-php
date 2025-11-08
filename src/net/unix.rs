@@ -78,9 +78,8 @@ impl AsyncUnixStream {
             }
 
             buf.truncate(n);
-            let s = String::from_utf8_lossy(&buf).to_string();
             let mut z = Zval::new();
-            z.set_string(&s, false).map_err(|e| format!("Zval error: {:?}", e))?;
+            z.set_binary(buf);
             Ok::<Zval, String>(z)
         };
         RustFuture::new(future)
