@@ -15,17 +15,15 @@ mod db;
 mod time;
 mod util;
 mod logger;
-mod tls;
 
 use future::RustFuture;
 use io::{AsyncReader, AsyncWriter, AsyncSeeker, AsyncBufReader};
-use net::{AsyncTcpListener, AsyncTcpStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
+use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use logger::AsyncLogger;
-use tls::AsyncTlsStream;
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -157,6 +155,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncUdpSocket>()
         .class::<AsyncUnixListener>()
         .class::<AsyncUnixStream>()
+        .class::<AsyncTlsConfig>()
         .class::<AsyncTlsStream>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
