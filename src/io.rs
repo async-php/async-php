@@ -16,6 +16,25 @@ pub struct AsyncReader {
     inner: Arc<RefCell<Box<dyn AsyncRead + Unpin>>>,
 }
 
+impl AsyncReader {
+    /// Create AsyncReader from a tokio AsyncRead type
+    pub fn from_reader<R: AsyncRead + Unpin + 'static>(reader: R) -> Self {
+        Self {
+            inner: Arc::new(RefCell::new(Box::new(reader))),
+        }
+    }
+
+    /// Get a clone of the inner Arc for direct tokio usage
+    pub fn into_tokio(self) -> Arc<RefCell<Box<dyn AsyncRead + Unpin>>> {
+        self.inner
+    }
+
+    /// Get a clone of the inner Arc without consuming self
+    pub fn as_tokio(&self) -> Arc<RefCell<Box<dyn AsyncRead + Unpin>>> {
+        self.inner.clone()
+    }
+}
+
 #[php_impl]
 impl AsyncReader {
     /// Read up to length bytes
@@ -46,6 +65,25 @@ impl AsyncReader {
 #[php(name = "Async\\Kernel\\IO\\AsyncWriter")]
 pub struct AsyncWriter {
     inner: Arc<RefCell<Box<dyn AsyncWrite + Unpin>>>,
+}
+
+impl AsyncWriter {
+    /// Create AsyncWriter from a tokio AsyncWrite type
+    pub fn from_writer<W: AsyncWrite + Unpin + 'static>(writer: W) -> Self {
+        Self {
+            inner: Arc::new(RefCell::new(Box::new(writer))),
+        }
+    }
+
+    /// Get a clone of the inner Arc for direct tokio usage
+    pub fn into_tokio(self) -> Arc<RefCell<Box<dyn AsyncWrite + Unpin>>> {
+        self.inner
+    }
+
+    /// Get a clone of the inner Arc without consuming self
+    pub fn as_tokio(&self) -> Arc<RefCell<Box<dyn AsyncWrite + Unpin>>> {
+        self.inner.clone()
+    }
 }
 
 #[php_impl]
@@ -88,6 +126,25 @@ pub struct AsyncSeeker {
     inner: Arc<RefCell<Box<dyn AsyncSeek + Unpin>>>,
 }
 
+impl AsyncSeeker {
+    /// Create AsyncSeeker from a tokio AsyncSeek type
+    pub fn from_seeker<S: AsyncSeek + Unpin + 'static>(seeker: S) -> Self {
+        Self {
+            inner: Arc::new(RefCell::new(Box::new(seeker))),
+        }
+    }
+
+    /// Get a clone of the inner Arc for direct tokio usage
+    pub fn into_tokio(self) -> Arc<RefCell<Box<dyn AsyncSeek + Unpin>>> {
+        self.inner
+    }
+
+    /// Get a clone of the inner Arc without consuming self
+    pub fn as_tokio(&self) -> Arc<RefCell<Box<dyn AsyncSeek + Unpin>>> {
+        self.inner.clone()
+    }
+}
+
 #[php_impl]
 impl AsyncSeeker {
     /// Seek to a position
@@ -118,6 +175,25 @@ impl AsyncSeeker {
 #[php(name = "Async\\Kernel\\IO\\AsyncBufReader")]
 pub struct AsyncBufReader {
     inner: Arc<RefCell<Box<dyn AsyncBufRead + Unpin>>>,
+}
+
+impl AsyncBufReader {
+    /// Create AsyncBufReader from a tokio AsyncBufRead type
+    pub fn from_buf_reader<B: AsyncBufRead + Unpin + 'static>(reader: B) -> Self {
+        Self {
+            inner: Arc::new(RefCell::new(Box::new(reader))),
+        }
+    }
+
+    /// Get a clone of the inner Arc for direct tokio usage
+    pub fn into_tokio(self) -> Arc<RefCell<Box<dyn AsyncBufRead + Unpin>>> {
+        self.inner
+    }
+
+    /// Get a clone of the inner Arc without consuming self
+    pub fn as_tokio(&self) -> Arc<RefCell<Box<dyn AsyncBufRead + Unpin>>> {
+        self.inner.clone()
+    }
 }
 
 #[php_impl]
