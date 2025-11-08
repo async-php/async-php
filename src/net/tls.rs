@@ -11,7 +11,7 @@ use tokio_rustls::rustls::pki_types::{ServerName, CertificateDer};
 use tokio_rustls::TlsConnector;
 use std::sync::Arc;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Cursor};
 use webpki_roots;
 
 // --- TLS Configuration Builder ---
@@ -78,6 +78,30 @@ impl AsyncTlsConfig {
         })
     }
 
+    /// Create TLS config with custom CA certificate from PEM string
+    pub fn with_ca_string(ca_pem: String) -> PhpResult<Self> {
+        let mut root_store = RootCertStore::empty();
+
+        let mut reader = Cursor::new(ca_pem.as_bytes());
+
+        let certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse CA certificates from string: {}", e))?;
+
+        for cert in certs {
+            root_store.add(cert)
+                .map_err(|e| format!("Failed to add certificate: {}", e))?;
+        }
+
+        let config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        Ok(Self {
+            inner: Arc::new(config),
+        })
+    }
+
     /// Create TLS config with client certificate authentication
     pub fn with_client_cert(ca_file: Option<String>, cert_file: String, key_file: String) -> PhpResult<Self> {
         let mut root_store = RootCertStore::empty();
@@ -116,6 +140,49 @@ impl AsyncTlsConfig {
         let private_key = rustls_pemfile::private_key(&mut key_reader)
             .map_err(|e| format!("Failed to read private key: {}", e))?
             .ok_or_else(|| "No private key found in file".to_string())?;
+
+        let config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_client_auth_cert(client_certs, private_key)
+            .map_err(|e| format!("Failed to configure client auth: {}", e))?;
+
+        Ok(Self {
+            inner: Arc::new(config),
+        })
+    }
+
+    /// Create TLS config with client certificate authentication from PEM strings
+    pub fn with_client_cert_string(ca_pem: Option<String>, cert_pem: String, key_pem: String) -> PhpResult<Self> {
+        let mut root_store = RootCertStore::empty();
+
+        // Load CA certificates if provided
+        if let Some(ca_content) = ca_pem {
+            let mut reader = Cursor::new(ca_content.as_bytes());
+
+            let certs = rustls_pemfile::certs(&mut reader)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Failed to parse CA certificates from string: {}", e))?;
+
+            for cert in certs {
+                root_store.add(cert)
+                    .map_err(|e| format!("Failed to add CA certificate: {}", e))?;
+            }
+        } else {
+            // Use webpki root certificates
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        }
+
+        // Load client certificate
+        let mut cert_reader = Cursor::new(cert_pem.as_bytes());
+        let client_certs: Vec<CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse client certificate from string: {}", e))?;
+
+        // Load private key
+        let mut key_reader = Cursor::new(key_pem.as_bytes());
+        let private_key = rustls_pemfile::private_key(&mut key_reader)
+            .map_err(|e| format!("Failed to read private key from string: {}", e))?
+            .ok_or_else(|| "No private key found in string".to_string())?;
 
         let config = ClientConfig::builder()
             .with_root_certificates(root_store)
