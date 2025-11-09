@@ -39,7 +39,7 @@ class Socket
     public function close(): bool
     {
         $future = $this->inner->close();
-        return Fiber::suspend($future);
+        return (bool)Fiber::suspend($future);
     }
 
     /**

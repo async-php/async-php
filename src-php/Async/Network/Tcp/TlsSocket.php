@@ -33,6 +33,6 @@ class TlsSocket
 
     public function close(): bool
     {
-        return Fiber::suspend($this->stream->close());
+        return (bool)Fiber::suspend($this->stream->close());
     }
 }
