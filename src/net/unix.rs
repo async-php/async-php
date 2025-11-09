@@ -15,9 +15,10 @@ pub struct AsyncUnixListener {
 
 #[php_impl]
 impl AsyncUnixListener {
+    /// Bind a Unix domain socket listener to the specified path
     pub fn bind(path: String) -> PhpResult<RustFuture> {
         let future = async move {
-            let path_clone = path.clone(); // Clone path for use within the async block
+            let path_clone = path.clone();
             // Remove file if it exists to avoid EADDRINUSE
             let _ = tokio::fs::remove_file(&path_clone).await;
 
@@ -30,6 +31,7 @@ impl AsyncUnixListener {
         Ok(RustFuture::new(future))
     }
 
+    /// Accept a new incoming connection
     pub fn accept(&self) -> RustFuture {
         let listener = self.inner.clone();
         let future = async move {
@@ -40,6 +42,17 @@ impl AsyncUnixListener {
                 .map_err(|e| format!("Failed to convert AsyncUnixStream to Zval: {:?}", e))
         };
         RustFuture::new(future)
+    }
+
+    /// Get the local socket path this listener is bound to
+    pub fn local_addr(&self) -> String {
+        self.inner.get_ref()
+            .local_addr()
+            .ok()
+            .and_then(|addr| {
+                addr.as_pathname().map(|p| p.to_string_lossy().to_string())
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -53,6 +66,7 @@ pub struct AsyncUnixStream {
 
 #[php_impl]
 impl AsyncUnixStream {
+    /// Connect to a Unix domain socket at the specified path
     pub fn connect(path: String) -> PhpResult<RustFuture> {
         let future = async move {
             let stream = tokio::net::UnixStream::connect(&path).await.map_err(|e| e.to_string())?;
@@ -64,6 +78,7 @@ impl AsyncUnixStream {
         Ok(RustFuture::new(future))
     }
 
+    /// Read up to length bytes from the stream
     pub fn read(&self, length: usize) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
@@ -83,6 +98,7 @@ impl AsyncUnixStream {
         RustFuture::new(future)
     }
 
+    /// Write all bytes from data to the stream
     pub fn write(&self, data: String) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
@@ -95,6 +111,7 @@ impl AsyncUnixStream {
         RustFuture::new(future)
     }
 
+    /// Shutdown the connection
     pub fn close(&self) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
@@ -104,5 +121,49 @@ impl AsyncUnixStream {
              Ok::<Zval, String>(z)
         };
         RustFuture::new(future)
+    }
+
+    /// Get the local socket address
+    pub fn local_addr(&self) -> String {
+        self.inner.get_ref()
+            .local_addr()
+            .ok()
+            .and_then(|addr| {
+                addr.as_pathname().map(|p| p.to_string_lossy().to_string())
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get the remote peer socket address
+    pub fn peer_addr(&self) -> String {
+        self.inner.get_ref()
+            .peer_addr()
+            .ok()
+            .and_then(|addr| {
+                addr.as_pathname().map(|p| p.to_string_lossy().to_string())
+            })
+            .unwrap_or_default()
+    }
+
+    /// Get peer credentials (process ID, user ID, group ID) - Linux/macOS only
+    /// Returns an array with keys: pid, uid, gid
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    pub fn peer_cred(&self) -> Zval {
+        match self.inner.get_ref().peer_cred() {
+            Ok(cred) => {
+                let mut map = ext_php_rs::types::ZendHashTable::new();
+                map.insert("pid", cred.pid().unwrap_or(0) as i64).ok();
+                map.insert("uid", cred.uid() as i64).ok();
+                map.insert("gid", cred.gid() as i64).ok();
+                map.into_zval(false).unwrap_or_else(|_| Zval::new())
+            },
+            Err(_) => Zval::new(),
+        }
+    }
+
+    /// Get peer credentials - returns null on unsupported platforms
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd")))]
+    pub fn peer_cred(&self) -> Zval {
+        Zval::new()
     }
 }
