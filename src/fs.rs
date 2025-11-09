@@ -240,7 +240,41 @@ impl AsyncFileHandle {
         };
         RustFuture::new(future)
     }
-    
+
+    /// Flush the file, ensuring all buffered data is written to the OS
+    pub fn flush(&self) -> RustFuture {
+        let file = self.inner.clone();
+        let future = async move {
+            use tokio::io::AsyncWriteExt;
+            let mut z = Zval::new();
+            z.set_bool(file.get_mut().flush().await.is_ok());
+            z
+        };
+        RustFuture::new(future)
+    }
+
+    /// Sync all data and metadata to disk (like fsync)
+    pub fn sync_all(&self) -> RustFuture {
+        let file = self.inner.clone();
+        let future = async move {
+            let mut z = Zval::new();
+            z.set_bool(file.get_mut().sync_all().await.is_ok());
+            z
+        };
+        RustFuture::new(future)
+    }
+
+    /// Sync only data to disk, not metadata (like fdatasync)
+    pub fn sync_data(&self) -> RustFuture {
+        let file = self.inner.clone();
+        let future = async move {
+            let mut z = Zval::new();
+            z.set_bool(file.get_mut().sync_data().await.is_ok());
+            z
+        };
+        RustFuture::new(future)
+    }
+
     pub fn seek(&self, offset: i64, whence: i64) -> RustFuture {
         let file = self.inner.clone();
         let future = async move {

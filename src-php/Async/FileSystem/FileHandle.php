@@ -52,7 +52,26 @@ class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, 
 
     public function flush(): void
     {
-        // Files flush automatically
+        $future = $this->inner->flush();
+        Fiber::suspend($future);
+    }
+
+    /**
+     * Sync all data and metadata to disk (like fsync)
+     */
+    public function syncAll(): bool
+    {
+        $future = $this->inner->sync_all();
+        return (bool)Fiber::suspend($future);
+    }
+
+    /**
+     * Sync only data to disk, not metadata (like fdatasync)
+     */
+    public function syncData(): bool
+    {
+        $future = $this->inner->sync_data();
+        return (bool)Fiber::suspend($future);
     }
 
     public function seek(int $offset, int $whence = self::SEEK_START): int
