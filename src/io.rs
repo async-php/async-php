@@ -30,11 +30,6 @@ impl AsyncReader {
         }
     }
 
-    /// Get a clone of the inner Shared for direct tokio usage
-    pub fn into_tokio(self) -> Shared<Box<dyn AsyncRead + Unpin>> {
-        self.inner
-    }
-
     /// Get a clone of the inner Shared without consuming self
     pub fn as_tokio(&self) -> Shared<Box<dyn AsyncRead + Unpin>> {
         self.inner.clone()
@@ -86,11 +81,6 @@ impl AsyncWriter {
         Self {
             inner: Shared::new(Box::new(writer)),
         }
-    }
-
-    /// Get a clone of the inner Shared for direct tokio usage
-    pub fn into_tokio(self) -> Shared<Box<dyn AsyncWrite + Unpin>> {
-        self.inner
     }
 
     /// Get a clone of the inner Shared without consuming self
@@ -154,11 +144,6 @@ impl AsyncSeeker {
         }
     }
 
-    /// Get a clone of the inner Shared for direct tokio usage
-    pub fn into_tokio(self) -> Shared<Box<dyn AsyncSeek + Unpin>> {
-        self.inner
-    }
-
     /// Get a clone of the inner Shared without consuming self
     pub fn as_tokio(&self) -> Shared<Box<dyn AsyncSeek + Unpin>> {
         self.inner.clone()
@@ -210,11 +195,6 @@ impl AsyncBufReader {
         Self {
             inner: Shared::new(Box::new(reader)),
         }
-    }
-
-    /// Get a clone of the inner Shared for direct tokio usage
-    pub fn into_tokio(self) -> Shared<Box<dyn AsyncBufRead + Unpin>> {
-        self.inner
     }
 
     /// Get a clone of the inner Shared without consuming self
