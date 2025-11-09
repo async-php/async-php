@@ -5,7 +5,6 @@ use crate::future::RustFuture;
 use sqlx::mysql::{MySqlPool, MySqlRow};
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::{Row, Column, TypeInfo, Transaction, Postgres, MySql};
-use std::rc::Rc;
 use crate::util::Shared;
 
 // ======================================================================================
@@ -15,7 +14,7 @@ use crate::util::Shared;
 #[php_class]
 #[php(name = "Async\\Kernel\\DB\\MySql")]
 pub struct AsyncMySql {
-    pool: Rc<MySqlPool>,
+    pool: Shared<MySqlPool>,
 }
 
 #[php_impl]
@@ -28,7 +27,7 @@ impl AsyncMySql {
                 .await 
             {
                 Ok(pool) => {
-                    let obj = AsyncMySql { pool: Rc::new(pool) };
+                    let obj = AsyncMySql { pool: Shared::new(pool) };
                     ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                 },
                 Err(_e) => Zval::new()
@@ -47,7 +46,7 @@ impl AsyncMySql {
                 }
             }
 
-            match query.fetch_all(pool.as_ref()).await {
+            match query.fetch_all(pool.get_ref()).await {
                 Ok(rows) => {
                     let mut results = ext_php_rs::types::ZendHashTable::new();
                     for row in rows {
@@ -71,7 +70,7 @@ impl AsyncMySql {
                 }
             }
 
-            match query.execute(pool.as_ref()).await {
+            match query.execute(pool.get_ref()).await {
                 Ok(done) => {
                     let mut z = Zval::new();
                     z.set_long(done.rows_affected() as i64);
@@ -227,7 +226,7 @@ fn mysql_row_to_zval(row: &MySqlRow) -> Zval {
 #[php_class]
 #[php(name = "Async\\Kernel\\DB\\PgSql")]
 pub struct AsyncPgSql {
-    pool: Rc<PgPool>,
+    pool: Shared<PgPool>,
 }
 
 #[php_impl]
@@ -240,7 +239,7 @@ impl AsyncPgSql {
                 .await 
             {
                 Ok(pool) => {
-                    let obj = AsyncPgSql { pool: Rc::new(pool) };
+                    let obj = AsyncPgSql { pool: Shared::new(pool) };
                     ext_php_rs::types::ZendClassObject::new(obj).into_zval(false).unwrap_or_else(|_| Zval::new())
                 },
                 Err(_) => Zval::new()
@@ -259,7 +258,7 @@ impl AsyncPgSql {
                 }
             }
 
-            match query.fetch_all(pool.as_ref()).await {
+            match query.fetch_all(pool.get_ref()).await {
                 Ok(rows) => {
                     let mut results = ext_php_rs::types::ZendHashTable::new();
                     for row in rows {
@@ -283,7 +282,7 @@ impl AsyncPgSql {
                 }
             }
 
-            match query.execute(pool.as_ref()).await {
+            match query.execute(pool.get_ref()).await {
                 Ok(done) => {
                     let mut z = Zval::new();
                     z.set_long(done.rows_affected() as i64);

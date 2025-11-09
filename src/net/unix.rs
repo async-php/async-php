@@ -4,14 +4,13 @@ use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
 use crate::util::Shared;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::rc::Rc;
 
 // --- Unix Listener ---
 
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\UnixListener")]
 pub struct AsyncUnixListener {
-    inner: Rc<tokio::net::UnixListener>,
+    inner: Shared<tokio::net::UnixListener>,
 }
 
 #[php_impl]
@@ -23,7 +22,7 @@ impl AsyncUnixListener {
             let _ = tokio::fs::remove_file(&path_clone).await;
 
             let listener = tokio::net::UnixListener::bind(&path_clone).map_err(|e| e.to_string())?;
-            let obj = AsyncUnixListener { inner: Rc::new(listener) };
+            let obj = AsyncUnixListener { inner: Shared::new(listener) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert AsyncUnixListener to Zval: {:?}", e))
@@ -34,7 +33,7 @@ impl AsyncUnixListener {
     pub fn accept(&self) -> RustFuture {
         let listener = self.inner.clone();
         let future = async move {
-            let (stream, _addr) = listener.accept().await.map_err(|e| e.to_string())?;
+            let (stream, _addr) = listener.get_ref().accept().await.map_err(|e| e.to_string())?;
             let obj = AsyncUnixStream { inner: Shared::new(stream) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)

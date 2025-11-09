@@ -5,14 +5,13 @@ use crate::future::RustFuture;
 use crate::util::Shared;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::rc::Rc;
 
 // --- TCP Listener ---
 
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\TcpListener")]
 pub struct AsyncTcpListener {
-    inner: Rc<TcpListener>,
+    inner: Shared<TcpListener>,
 }
 
 #[php_impl]
@@ -20,7 +19,7 @@ impl AsyncTcpListener {
     pub fn bind(addr: String) -> PhpResult<RustFuture> {
         let future = async move {
             let listener = TcpListener::bind(addr).await.map_err(|e| e.to_string())?;
-            let obj = AsyncTcpListener { inner: Rc::new(listener) };
+            let obj = AsyncTcpListener { inner: Shared::new(listener) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert AsyncTcpListener to Zval: {:?}", e))
@@ -31,7 +30,7 @@ impl AsyncTcpListener {
     pub fn accept(&self) -> RustFuture {
         let listener = self.inner.clone();
         let future = async move {
-            let (stream, _addr) = listener.accept().await.map_err(|e| e.to_string())?;
+            let (stream, _addr) = listener.get_ref().accept().await.map_err(|e| e.to_string())?;
             let obj = AsyncTcpStream { inner: Shared::new(stream) };
             ext_php_rs::types::ZendClassObject::new(obj)
                 .into_zval(false)
@@ -41,7 +40,7 @@ impl AsyncTcpListener {
     }
 
     pub fn local_addr(&self) -> String {
-        self.inner.local_addr().map(|a| a.to_string()).unwrap_or_default()
+        self.inner.get_ref().local_addr().map(|a| a.to_string()).unwrap_or_default()
     }
 }
 
