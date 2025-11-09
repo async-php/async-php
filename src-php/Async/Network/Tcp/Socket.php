@@ -68,9 +68,64 @@ class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
         return $this->inner->local_addr();
     }
 
+    /**
+     * Peek at incoming data without removing it from the buffer
+     */
+    public function peek(int $length): ?string
+    {
+        $future = $this->inner->peek($length);
+        $result = Fiber::suspend($future);
+        return $result ?: null;
+    }
+
+    /**
+     * Get the value of the TCP_NODELAY option
+     */
+    public function nodelay(): bool
+    {
+        return $this->inner->nodelay();
+    }
+
+    /**
+     * Set the value of the TCP_NODELAY option
+     */
     public function setNodelay(bool $nodelay): bool
     {
         return $this->inner->set_nodelay($nodelay);
+    }
+
+    /**
+     * Get the value of the IP_TTL option
+     */
+    public function ttl(): int
+    {
+        return $this->inner->ttl();
+    }
+
+    /**
+     * Set the value of the IP_TTL option
+     */
+    public function setTtl(int $ttl): bool
+    {
+        return $this->inner->set_ttl($ttl);
+    }
+
+    /**
+     * Get the value of the SO_LINGER option
+     * @return int Linger timeout in seconds, or -1 if disabled
+     */
+    public function linger(): int
+    {
+        return $this->inner->linger();
+    }
+
+    /**
+     * Set the value of the SO_LINGER option
+     * @param int $secs Linger timeout in seconds, or -1 to disable
+     */
+    public function setLinger(int $secs): bool
+    {
+        return $this->inner->set_linger($secs);
     }
 
     /**
