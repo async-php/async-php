@@ -8,42 +8,33 @@ use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-enum ChannelSender {
-    Bounded(mpsc::Sender<Zval>),
-    Unbounded(mpsc::UnboundedSender<Zval>),
-}
-
-enum ChannelReceiver {
-    Bounded(mpsc::Receiver<Zval>),
-    Unbounded(mpsc::UnboundedReceiver<Zval>),
-}
-
 #[php_class]
 #[php(name = "Async\\Kernel\\Channel")]
 pub struct AsyncChannel {
-    sender: Shared<ChannelSender>,
-    receiver: Shared<ChannelReceiver>,
-    capacity: Option<usize>,
+    sender: Shared<mpsc::Sender<Zval>>,
+    receiver: Shared<mpsc::Receiver<Zval>>,
+    capacity: usize,
     current_len: Arc<AtomicUsize>,
     is_closed: Arc<AtomicBool>,
 }
 
 #[php_impl]
 impl AsyncChannel {
-    /// Create a new channel with the specified capacity
+    /// Create a new channel with the specified capacity (Go-style)
     ///
     /// # Arguments
-    /// * `capacity` - Buffer capacity (null for unlimited, positive number for bounded)
+    /// * `capacity` - Buffer capacity (default: 0)
+    ///   - 0: unbuffered channel (fully blocking, like Go's `make(chan T)`)
+    ///   - 1+: buffered channel (like Go's `make(chan T, N)`)
+    ///
+    /// # Examples
+    /// - `new Channel()` - Creates unbuffered channel (default, like Go's `make(chan T)`)
+    /// - `new Channel(1)` - Creates buffered channel with capacity 1
+    /// - `new Channel(10)` - Creates buffered channel with capacity 10 (like Go's `make(chan T, 10)`)
     #[php(optional = "capacity")]
     pub fn __construct(capacity: Option<i64>) -> Self {
-        let (tx, rx, cap) = if let Some(cap_val) = capacity {
-            let cap = cap_val.max(1) as usize;
-            let (tx, rx) = mpsc::channel(cap);
-            (ChannelSender::Bounded(tx), ChannelReceiver::Bounded(rx), Some(cap))
-        } else {
-            let (tx, rx) = mpsc::unbounded_channel();
-            (ChannelSender::Unbounded(tx), ChannelReceiver::Unbounded(rx), None)
-        };
+        let cap = capacity.unwrap_or(0).max(0) as usize;
+        let (tx, rx) = mpsc::channel(cap);
 
         Self {
             sender: Shared::new(tx),
@@ -79,35 +70,23 @@ impl AsyncChannel {
                 return Zval::from(false);
             }
 
-            let result = match tx.get_mut() {
-                ChannelSender::Bounded(sender) => {
-                    if let Some(timeout_secs) = timeout {
-                        let duration = Duration::from_secs_f64(timeout_secs);
-                        match tokio::time::timeout(duration, sender.send(val)).await {
-                            Ok(Ok(_)) => {
-                                current_len.fetch_add(1, Ordering::Relaxed);
-                                true
-                            }
-                            _ => false,
-                        }
-                    } else {
-                        match sender.send(val).await {
-                            Ok(_) => {
-                                current_len.fetch_add(1, Ordering::Relaxed);
-                                true
-                            }
-                            Err(_) => false,
-                        }
+            let sender = tx.get_mut();
+            let result = if let Some(timeout_secs) = timeout {
+                let duration = Duration::from_secs_f64(timeout_secs);
+                match tokio::time::timeout(duration, sender.send(val)).await {
+                    Ok(Ok(_)) => {
+                        current_len.fetch_add(1, Ordering::Relaxed);
+                        true
                     }
+                    _ => false,
                 }
-                ChannelSender::Unbounded(sender) => {
-                    match sender.send(val) {
-                        Ok(_) => {
-                            current_len.fetch_add(1, Ordering::Relaxed);
-                            true
-                        }
-                        Err(_) => false,
+            } else {
+                match sender.send(val).await {
+                    Ok(_) => {
+                        current_len.fetch_add(1, Ordering::Relaxed);
+                        true
                     }
+                    Err(_) => false,
                 }
             };
 
@@ -143,46 +122,23 @@ impl AsyncChannel {
         let current_len = self.current_len.clone();
 
         let future = async move {
-            let result = match rx.get_mut() {
-                ChannelReceiver::Bounded(receiver) => {
-                    if let Some(timeout_secs) = timeout {
-                        let duration = Duration::from_secs_f64(timeout_secs);
-                        match tokio::time::timeout(duration, receiver.recv()).await {
-                            Ok(Some(val)) => {
-                                current_len.fetch_sub(1, Ordering::Relaxed);
-                                val
-                            }
-                            _ => Zval::new(),
-                        }
-                    } else {
-                        match receiver.recv().await {
-                            Some(val) => {
-                                current_len.fetch_sub(1, Ordering::Relaxed);
-                                val
-                            }
-                            None => Zval::new(),
-                        }
+            let receiver = rx.get_mut();
+            let result = if let Some(timeout_secs) = timeout {
+                let duration = Duration::from_secs_f64(timeout_secs);
+                match tokio::time::timeout(duration, receiver.recv()).await {
+                    Ok(Some(val)) => {
+                        current_len.fetch_sub(1, Ordering::Relaxed);
+                        val
                     }
+                    _ => Zval::new(),
                 }
-                ChannelReceiver::Unbounded(receiver) => {
-                    if let Some(timeout_secs) = timeout {
-                        let duration = Duration::from_secs_f64(timeout_secs);
-                        match tokio::time::timeout(duration, receiver.recv()).await {
-                            Ok(Some(val)) => {
-                                current_len.fetch_sub(1, Ordering::Relaxed);
-                                val
-                            }
-                            _ => Zval::new(),
-                        }
-                    } else {
-                        match receiver.recv().await {
-                            Some(val) => {
-                                current_len.fetch_sub(1, Ordering::Relaxed);
-                                val
-                            }
-                            None => Zval::new(),
-                        }
+            } else {
+                match receiver.recv().await {
+                    Some(val) => {
+                        current_len.fetch_sub(1, Ordering::Relaxed);
+                        val
                     }
+                    None => Zval::new(),
                 }
             };
 
@@ -210,11 +166,12 @@ impl AsyncChannel {
     }
 
     /// Check if the channel is full
-    /// Returns false for unbounded channels
     pub fn is_full(&self) -> bool {
-        match self.capacity {
-            Some(cap) => self.current_len.load(Ordering::Relaxed) >= cap,
-            None => false, // Unbounded channels are never full
+        if self.capacity == 0 {
+            // Unbuffered channel is always "full" if no receiver is waiting
+            false
+        } else {
+            self.current_len.load(Ordering::Relaxed) >= self.capacity
         }
     }
 
@@ -236,11 +193,10 @@ impl AsyncChannel {
     }
 
     /// Get channel statistics
-    /// Returns an array with: capacity (or -1 for unlimited), length, is_empty, is_full, is_closed
+    /// Returns an array with: capacity, length, is_empty, is_full, is_closed
     pub fn stat(&self) -> Zval {
         let mut ht = ZendHashTable::new();
-        let capacity_val = self.capacity.map_or(-1i64, |cap| cap as i64);
-        ht.insert("capacity", capacity_val).ok();
+        ht.insert("capacity", self.capacity as i64).ok();
         ht.insert("length", self.length()).ok();
         ht.insert("is_empty", self.is_empty()).ok();
         ht.insert("is_full", self.is_full()).ok();
