@@ -25,6 +25,9 @@ use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use logger::AsyncLogger;
 
+// Export PHP IO bridge types for external use
+pub use io::{PhpReader, PhpWriter, PhpSeeker, PhpBufReader};
+
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
         .try_call_method("start", vec![])

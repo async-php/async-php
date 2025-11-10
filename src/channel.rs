@@ -204,3 +204,15 @@ impl AsyncChannel {
         ht.into_zval(false).unwrap_or_else(|_| Zval::new())
     }
 }
+// Internal Rust API (not exposed to PHP)
+impl AsyncChannel {
+    /// Get a clone of the sender for Rust-side use
+    pub fn get_sender(&self) -> Shared<mpsc::Sender<Zval>> {
+        self.sender.clone()
+    }
+
+    /// Get a clone of the receiver for Rust-side use
+    pub fn get_receiver(&self) -> Shared<mpsc::Receiver<Zval>> {
+        self.receiver.clone()
+    }
+}

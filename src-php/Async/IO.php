@@ -187,4 +187,30 @@ class IO
     {
         return self::asWriterTo($reader, $bufferSize)->writeTo($writer);
     }
+
+    /**
+     * Wraps an IO object into a Channel for asynchronous operations in coroutines
+     *
+     * This method creates a new coroutine to handle IO operations and communicates through a Channel.
+     * It enables non-blocking IO operations by delegating work to a separate coroutine context.
+     *
+     * @param object $io The IO object to be wrapped
+     * @return Channel Returns a Channel for communicating with the IO object
+     */
+    public static function spawnIO($io): Channel
+    {
+        $channel = new Channel();
+        Kernel::spawn(function () use ($io, $channel) {
+            while (true) {
+                $pop = $channel->pop();
+                if (is_null($pop)) {
+                    break;
+                }
+
+                [$name, $args] = $pop;
+                $channel->push($io->$name(...$args));
+            }
+        });
+        return $channel;
+    }
 }

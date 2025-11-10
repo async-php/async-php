@@ -2,11 +2,17 @@
 /// This module provides Rust types that wrap tokio IO traits
 
 use ext_php_rs::prelude::*;
-use ext_php_rs::types::Zval;
+use ext_php_rs::types::{Zval, ZendHashTable};
+use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
 use crate::util::Shared;
+use crate::channel::AsyncChannel;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncSeek, AsyncBufRead, AsyncReadExt, AsyncWriteExt, AsyncSeekExt, AsyncBufReadExt};
-use std::io::SeekFrom;
+use tokio::sync::mpsc;
+use std::io::{SeekFrom, Result as IoResult, Error as IoError, ErrorKind};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::future::Future;
 
 /// AsyncReader wraps Shared<Box<dyn AsyncRead + Unpin>>
 #[php_class]
@@ -245,5 +251,321 @@ impl AsyncBufReader {
         };
 
         RustFuture::new(future)
+    }
+}
+
+// ==================== PHP IO Bridge ====================
+// Bridge PHP async IO objects to Rust tokio traits via channel
+
+/// Helper for bridging PHP IO method calls through a channel
+struct PhpIoBridge {
+    tx: Shared<mpsc::Sender<Zval>>,
+    rx: Shared<mpsc::Receiver<Zval>>,
+}
+
+impl PhpIoBridge {
+    fn new(channel: &AsyncChannel) -> Self {
+        Self {
+            tx: channel.get_sender(),
+            rx: channel.get_receiver(),
+        }
+    }
+
+    async fn call(&self, method: &str, args: Vec<Zval>) -> IoResult<Zval> {
+        // Build args array
+        let mut args_ht = ZendHashTable::new();
+        for (i, arg) in args.into_iter().enumerate() {
+            args_ht.insert(i as i64, arg)
+                .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build args"))?;
+        }
+        let args_zval = args_ht.into_zval(false)
+            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to convert args"))?;
+
+        // Build request: [method, args]
+        let mut request = ZendHashTable::new();
+        request.insert(0i64, method)
+            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to set method"))?;
+        request.insert(1i64, args_zval)
+            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to set args"))?;
+
+        let req_zval = request.into_zval(false)
+            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build request"))?;
+
+        // Send and receive
+        self.tx.get_mut().send(req_zval).await
+            .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Send failed"))?;
+
+        self.rx.get_mut().recv().await
+            .ok_or_else(|| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
+    }
+}
+
+/// PhpReader implements AsyncRead for PHP IO objects
+///
+/// Calls PHP method via channel: ['read', [length]] -> bytes
+pub struct PhpReader {
+    bridge: PhpIoBridge,
+}
+
+impl PhpReader {
+    pub fn new(channel: &AsyncChannel) -> Self {
+        Self { bridge: PhpIoBridge::new(channel) }
+    }
+}
+
+impl AsyncRead for PhpReader {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        let mut len_zval = Zval::new();
+        len_zval.set_long(buf.remaining() as i64);
+
+        let fut = self.bridge.call("read", vec![len_zval]);
+        tokio::pin!(fut);
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(result)) => {
+                if result.is_null() {
+                    return Poll::Ready(Ok(())); // EOF
+                }
+
+                if let Some(bytes) = result.binary() {
+                    buf.put_slice(&bytes);
+                } else if let Some(s) = result.str() {
+                    buf.put_slice(s.as_bytes());
+                } else {
+                    return Poll::Ready(Err(IoError::new(ErrorKind::InvalidData, "Invalid read response")));
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// PhpWriter implements AsyncWrite for PHP IO objects
+///
+/// Calls PHP methods via channel:
+/// - write: ['write', [data]] -> bytes_written
+/// - flush: ['flush', []] -> success
+/// - close: ['close', []] -> success
+pub struct PhpWriter {
+    bridge: PhpIoBridge,
+}
+
+impl PhpWriter {
+    pub fn new(channel: &AsyncChannel) -> Self {
+        Self { bridge: PhpIoBridge::new(channel) }
+    }
+}
+
+impl AsyncWrite for PhpWriter {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<IoResult<usize>> {
+        let mut data_zval = Zval::new();
+        data_zval.set_binary(buf.to_vec());
+
+        let fut = self.bridge.call("write", vec![data_zval]);
+        tokio::pin!(fut);
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(result)) => {
+                if let Some(n) = result.long() {
+                    Poll::Ready(Ok(n as usize))
+                } else {
+                    Poll::Ready(Err(IoError::new(ErrorKind::InvalidData, "Invalid write response")))
+                }
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        let fut = self.bridge.call("flush", vec![]);
+        tokio::pin!(fut);
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        let fut = self.bridge.call("close", vec![]);
+        tokio::pin!(fut);
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(_)) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// PhpSeeker implements AsyncSeek for PHP IO objects
+///
+/// Calls PHP method via channel: ['seek', [offset, whence]] -> new_position
+pub struct PhpSeeker {
+    bridge: PhpIoBridge,
+    pending: Option<SeekFrom>,
+}
+
+impl PhpSeeker {
+    pub fn new(channel: &AsyncChannel) -> Self {
+        Self {
+            bridge: PhpIoBridge::new(channel),
+            pending: None,
+        }
+    }
+}
+
+impl AsyncSeek for PhpSeeker {
+    fn start_seek(mut self: Pin<&mut Self>, pos: SeekFrom) -> IoResult<()> {
+        self.pending = Some(pos);
+        Ok(())
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
+        let seek = match self.pending.take() {
+            Some(s) => s,
+            None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
+        };
+
+        let (offset, whence) = match seek {
+            SeekFrom::Start(pos) => (pos as i64, 0),
+            SeekFrom::Current(off) => (off, 1),
+            SeekFrom::End(off) => (off, 2),
+        };
+
+        let mut offset_zval = Zval::new();
+        offset_zval.set_long(offset);
+        let mut whence_zval = Zval::new();
+        whence_zval.set_long(whence);
+
+        let poll_result = {
+            let fut = self.bridge.call("seek", vec![offset_zval, whence_zval]);
+            tokio::pin!(fut);
+            fut.as_mut().poll(cx)
+        };
+
+        match poll_result {
+            Poll::Ready(Ok(result)) => {
+                if let Some(pos) = result.long() {
+                    Poll::Ready(Ok(pos as u64))
+                } else {
+                    Poll::Ready(Err(IoError::new(ErrorKind::InvalidData, "Invalid seek response")))
+                }
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => {
+                self.pending = Some(seek);
+                Poll::Pending
+            }
+        }
+    }
+}
+
+/// PhpBufReader implements AsyncBufRead for PHP IO objects
+///
+/// Calls PHP methods via channel:
+/// - read_line: ['read_line', []] -> line
+/// - read: ['read', [length]] -> bytes
+pub struct PhpBufReader {
+    bridge: PhpIoBridge,
+    buffer: Vec<u8>,
+}
+
+impl PhpBufReader {
+    pub fn new(channel: &AsyncChannel) -> Self {
+        Self {
+            bridge: PhpIoBridge::new(channel),
+            buffer: Vec::new(),
+        }
+    }
+}
+
+impl AsyncRead for PhpBufReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        // Consume buffer first
+        if !self.buffer.is_empty() {
+            let n = self.buffer.len().min(buf.remaining());
+            buf.put_slice(&self.buffer[..n]);
+            self.buffer.drain(..n);
+            return Poll::Ready(Ok(()));
+        }
+
+        let mut len_zval = Zval::new();
+        len_zval.set_long(buf.remaining() as i64);
+
+        let fut = self.bridge.call("read", vec![len_zval]);
+        tokio::pin!(fut);
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready(Ok(result)) => {
+                if result.is_null() {
+                    return Poll::Ready(Ok(()));
+                }
+
+                if let Some(bytes) = result.binary() {
+                    buf.put_slice(&bytes);
+                } else if let Some(s) = result.str() {
+                    buf.put_slice(s.as_bytes());
+                } else {
+                    return Poll::Ready(Err(IoError::new(ErrorKind::InvalidData, "Invalid read response")));
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncBufRead for PhpBufReader {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<&[u8]>> {
+        let this = self.get_mut();
+
+        if !this.buffer.is_empty() {
+            return Poll::Ready(Ok(&this.buffer));
+        }
+
+        let poll_result = {
+            let fut = this.bridge.call("read_line", vec![]);
+            tokio::pin!(fut);
+            fut.as_mut().poll(cx)
+        };
+
+        match poll_result {
+            Poll::Ready(Ok(result)) => {
+                if result.is_null() {
+                    return Poll::Ready(Ok(&[]));
+                }
+
+                if let Some(bytes) = result.binary() {
+                    this.buffer.extend_from_slice(&bytes);
+                } else if let Some(s) = result.str() {
+                    this.buffer.extend_from_slice(s.as_bytes());
+                } else {
+                    return Poll::Ready(Err(IoError::new(ErrorKind::InvalidData, "Invalid read_line response")));
+                }
+
+                Poll::Ready(Ok(&this.buffer))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn consume(mut self: Pin<&mut Self>, amt: usize) {
+        let n = amt.min(self.buffer.len());
+        self.buffer.drain(..n);
     }
 }
