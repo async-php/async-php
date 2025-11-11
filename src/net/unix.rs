@@ -145,25 +145,22 @@ impl AsyncUnixStream {
             .unwrap_or_default()
     }
 
-    /// Get peer credentials (process ID, user ID, group ID) - Linux/macOS only
-    /// Returns an array with keys: pid, uid, gid
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+    /// Get peer credentials (process ID, user ID, group ID)
+    /// Returns an array with keys: pid, uid, gid, or null if not supported/error
     pub fn peer_cred(&self) -> Zval {
-        match self.inner.get_ref().peer_cred() {
-            Ok(cred) => {
-                let mut map = ext_php_rs::types::ZendHashTable::new();
-                map.insert("pid", cred.pid().unwrap_or(0) as i64).ok();
-                map.insert("uid", cred.uid() as i64).ok();
-                map.insert("gid", cred.gid() as i64).ok();
-                map.into_zval(false).unwrap_or_else(|_| Zval::new())
-            },
-            Err(_) => Zval::new(),
+        #[cfg(unix)]
+        {
+            match self.inner.get_ref().peer_cred() {
+                Ok(cred) => {
+                    let mut map = ext_php_rs::types::ZendHashTable::new();
+                    map.insert("pid", cred.pid().unwrap_or(0) as i64).ok();
+                    map.insert("uid", cred.uid() as i64).ok();
+                    map.insert("gid", cred.gid() as i64).ok();
+                    return map.into_zval(false).unwrap_or_else(|_| Zval::new());
+                },
+                Err(_) => {}
+            }
         }
-    }
-
-    /// Get peer credentials - returns null on unsupported platforms
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd")))]
-    pub fn peer_cred(&self) -> Zval {
         Zval::new()
     }
 }
