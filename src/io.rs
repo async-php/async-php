@@ -298,6 +298,32 @@ impl PhpIoBridge {
         self.rx.get_mut().recv().await
             .ok_or_else(|| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
     }
+
+    /// Send close command to terminate the spawned fiber
+    fn close_sync(&self) {
+        // Build request: ['__close__', []]
+        let args_ht = ZendHashTable::new();
+        let args_zval = match args_ht.into_zval(false) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        let mut request = ZendHashTable::new();
+        if request.insert(0i64, "__close__").is_err() {
+            return;
+        }
+        if request.insert(1i64, args_zval).is_err() {
+            return;
+        }
+
+        let req_zval = match request.into_zval(false) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        // Try to send close command (best effort, ignore errors)
+        let _ = self.tx.get_mut().try_send(req_zval);
+    }
 }
 
 /// PhpReader implements AsyncRead for PHP IO objects
@@ -310,6 +336,12 @@ pub struct PhpReader {
 impl PhpReader {
     pub fn new(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
+    }
+}
+
+impl Drop for PhpReader {
+    fn drop(&mut self) {
+        self.bridge.close_sync();
     }
 }
 
@@ -359,6 +391,12 @@ pub struct PhpWriter {
 impl PhpWriter {
     pub fn new(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
+    }
+}
+
+impl Drop for PhpWriter {
+    fn drop(&mut self) {
+        self.bridge.close_sync();
     }
 }
 
@@ -420,6 +458,12 @@ impl PhpSeeker {
             bridge: PhpIoBridge::new(channel),
             pending: None,
         }
+    }
+}
+
+impl Drop for PhpSeeker {
+    fn drop(&mut self) {
+        self.bridge.close_sync();
     }
 }
 
@@ -485,6 +529,12 @@ impl PhpBufReader {
             bridge: PhpIoBridge::new(channel),
             buffer: Vec::new(),
         }
+    }
+}
+
+impl Drop for PhpBufReader {
+    fn drop(&mut self) {
+        self.bridge.close_sync();
     }
 }
 

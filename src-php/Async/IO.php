@@ -194,6 +194,10 @@ class IO
      * This method creates a new coroutine to handle IO operations and communicates through a Channel.
      * It enables non-blocking IO operations by delegating work to a separate coroutine context.
      *
+     * The spawned fiber will terminate when:
+     * - Channel is closed (pop returns null)
+     * - Receives '__close__' command
+     *
      * @param object $io The IO object to be wrapped
      * @return Channel Returns a Channel for communicating with the IO object
      */
@@ -202,13 +206,27 @@ class IO
         $channel = new Channel();
         Kernel::spawn(function () use ($io, $channel) {
             while (true) {
-                $pop = $channel->pop();
-                if (is_null($pop)) {
+                $request = $channel->pop();
+
+                // Terminate if channel closed
+                if (is_null($request)) {
                     break;
                 }
 
-                [$name, $args] = $pop;
-                $channel->push($io->$name(...$args));
+                [$method, $args] = $request;
+
+                // Terminate on close command
+                if ($method === '__close__') {
+                    $channel->close();
+                    break;
+                }
+
+                $result = $io->$method(...$args);
+
+                // If push fails (channel closed), terminate
+                if (!$channel->push($result)) {
+                    break;
+                }
             }
         });
         return $channel;
