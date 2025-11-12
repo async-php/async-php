@@ -2,8 +2,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
-use tokio::sync::mpsc;
-use crate::util::Shared;
+use flume;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,8 +10,8 @@ use std::time::Duration;
 #[php_class]
 #[php(name = "Async\\Kernel\\Channel")]
 pub struct AsyncChannel {
-    sender: Shared<mpsc::Sender<Zval>>,
-    receiver: Shared<mpsc::Receiver<Zval>>,
+    sender: flume::Sender<Zval>,
+    receiver: flume::Receiver<Zval>,
     capacity: usize,
     current_len: Arc<AtomicUsize>,
     is_closed: Arc<AtomicBool>,
@@ -34,11 +33,11 @@ impl AsyncChannel {
     #[php(optional = "capacity")]
     pub fn __construct(capacity: Option<i64>) -> Self {
         let cap = capacity.unwrap_or(0).max(0) as usize;
-        let (tx, rx) = mpsc::channel(cap);
+        let (tx, rx) = flume::bounded(cap);
 
         Self {
-            sender: Shared::new(tx),
-            receiver: Shared::new(rx),
+            sender: tx,
+            receiver: rx,
             capacity: cap,
             current_len: Arc::new(AtomicUsize::new(0)),
             is_closed: Arc::new(AtomicBool::new(false)),
@@ -70,10 +69,9 @@ impl AsyncChannel {
                 return Zval::from(false);
             }
 
-            let sender = tx.get_mut();
             let result = if let Some(timeout_secs) = timeout {
                 let duration = Duration::from_secs_f64(timeout_secs);
-                match tokio::time::timeout(duration, sender.send(val)).await {
+                match tokio::time::timeout(duration, tx.send_async(val)).await {
                     Ok(Ok(_)) => {
                         current_len.fetch_add(1, Ordering::Relaxed);
                         true
@@ -81,7 +79,7 @@ impl AsyncChannel {
                     _ => false,
                 }
             } else {
-                match sender.send(val).await {
+                match tx.send_async(val).await {
                     Ok(_) => {
                         current_len.fetch_add(1, Ordering::Relaxed);
                         true
@@ -122,23 +120,22 @@ impl AsyncChannel {
         let current_len = self.current_len.clone();
 
         let future = async move {
-            let receiver = rx.get_mut();
             let result = if let Some(timeout_secs) = timeout {
                 let duration = Duration::from_secs_f64(timeout_secs);
-                match tokio::time::timeout(duration, receiver.recv()).await {
-                    Ok(Some(val)) => {
+                match tokio::time::timeout(duration, rx.recv_async()).await {
+                    Ok(Ok(val)) => {
                         current_len.fetch_sub(1, Ordering::Relaxed);
                         val
                     }
                     _ => Zval::new(),
                 }
             } else {
-                match receiver.recv().await {
-                    Some(val) => {
+                match rx.recv_async().await {
+                    Ok(val) => {
                         current_len.fetch_sub(1, Ordering::Relaxed);
                         val
                     }
-                    None => Zval::new(),
+                    Err(_) => Zval::new(),
                 }
             };
 
@@ -207,12 +204,12 @@ impl AsyncChannel {
 // Internal Rust API (not exposed to PHP)
 impl AsyncChannel {
     /// Get a clone of the sender for Rust-side use
-    pub fn get_sender(&self) -> Shared<mpsc::Sender<Zval>> {
+    pub fn get_sender(&self) -> flume::Sender<Zval> {
         self.sender.clone()
     }
 
     /// Get a clone of the receiver for Rust-side use
-    pub fn get_receiver(&self) -> Shared<mpsc::Receiver<Zval>> {
+    pub fn get_receiver(&self) -> flume::Receiver<Zval> {
         self.receiver.clone()
     }
 }

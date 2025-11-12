@@ -8,7 +8,6 @@ use crate::future::RustFuture;
 use crate::util::Shared;
 use crate::channel::AsyncChannel;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncSeek, AsyncBufRead, AsyncReadExt, AsyncWriteExt, AsyncSeekExt, AsyncBufReadExt};
-use tokio::sync::mpsc;
 use std::io::{SeekFrom, Result as IoResult, Error as IoError, ErrorKind};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -259,8 +258,8 @@ impl AsyncBufReader {
 
 /// Helper for bridging PHP IO method calls through a channel
 struct PhpIoBridge {
-    tx: Shared<mpsc::Sender<Zval>>,
-    rx: Shared<mpsc::Receiver<Zval>>,
+    tx: flume::Sender<Zval>,
+    rx: flume::Receiver<Zval>,
 }
 
 impl PhpIoBridge {
@@ -292,11 +291,11 @@ impl PhpIoBridge {
             .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build request"))?;
 
         // Send and receive
-        self.tx.get_mut().send(req_zval).await
+        self.tx.send_async(req_zval).await
             .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Send failed"))?;
 
-        self.rx.get_mut().recv().await
-            .ok_or_else(|| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
+        self.rx.recv_async().await
+            .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
     }
 
     /// Send close command to terminate the spawned fiber
@@ -322,7 +321,7 @@ impl PhpIoBridge {
         };
 
         // Try to send close command (best effort, ignore errors)
-        let _ = self.tx.get_mut().try_send(req_zval);
+        let _ = self.tx.try_send(req_zval);
     }
 }
 
