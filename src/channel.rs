@@ -3,7 +3,7 @@ use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
 use flume;
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +13,6 @@ pub struct AsyncChannel {
     sender: flume::Sender<Zval>,
     receiver: flume::Receiver<Zval>,
     capacity: usize,
-    current_len: Arc<AtomicUsize>,
     is_closed: Arc<AtomicBool>,
 }
 
@@ -39,7 +38,6 @@ impl AsyncChannel {
             sender: tx,
             receiver: rx,
             capacity: cap,
-            current_len: Arc::new(AtomicUsize::new(0)),
             is_closed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -61,7 +59,6 @@ impl AsyncChannel {
 
         let val = value.shallow_clone();
         let tx = self.sender.clone();
-        let current_len = self.current_len.clone();
         let is_closed = self.is_closed.clone();
 
         let future = async move {
@@ -72,20 +69,11 @@ impl AsyncChannel {
             let result = if let Some(timeout_secs) = timeout {
                 let duration = Duration::from_secs_f64(timeout_secs);
                 match tokio::time::timeout(duration, tx.send_async(val)).await {
-                    Ok(Ok(_)) => {
-                        current_len.fetch_add(1, Ordering::Relaxed);
-                        true
-                    }
+                    Ok(Ok(_)) => true,
                     _ => false,
                 }
             } else {
-                match tx.send_async(val).await {
-                    Ok(_) => {
-                        current_len.fetch_add(1, Ordering::Relaxed);
-                        true
-                    }
-                    Err(_) => false,
-                }
+                tx.send_async(val).await.is_ok()
             };
 
             Zval::from(result)
@@ -117,29 +105,17 @@ impl AsyncChannel {
     #[php(optional = "timeout")]
     pub fn recv(&self, timeout: Option<f64>) -> RustFuture {
         let rx = self.receiver.clone();
-        let current_len = self.current_len.clone();
 
         let future = async move {
-            let result = if let Some(timeout_secs) = timeout {
+            if let Some(timeout_secs) = timeout {
                 let duration = Duration::from_secs_f64(timeout_secs);
                 match tokio::time::timeout(duration, rx.recv_async()).await {
-                    Ok(Ok(val)) => {
-                        current_len.fetch_sub(1, Ordering::Relaxed);
-                        val
-                    }
+                    Ok(Ok(val)) => val,
                     _ => Zval::new(),
                 }
             } else {
-                match rx.recv_async().await {
-                    Ok(val) => {
-                        current_len.fetch_sub(1, Ordering::Relaxed);
-                        val
-                    }
-                    Err(_) => Zval::new(),
-                }
-            };
-
-            result
+                rx.recv_async().await.unwrap_or_else(|_| Zval::new())
+            }
         };
 
         RustFuture::new(future)
@@ -159,22 +135,17 @@ impl AsyncChannel {
 
     /// Check if the channel is empty
     pub fn is_empty(&self) -> bool {
-        self.current_len.load(Ordering::Relaxed) == 0
+        self.receiver.is_empty()
     }
 
     /// Check if the channel is full
     pub fn is_full(&self) -> bool {
-        if self.capacity == 0 {
-            // Unbuffered channel is always "full" if no receiver is waiting
-            false
-        } else {
-            self.current_len.load(Ordering::Relaxed) >= self.capacity
-        }
+        self.receiver.is_full()
     }
 
     /// Get the current number of items in the channel
     pub fn length(&self) -> i64 {
-        self.current_len.load(Ordering::Relaxed) as i64
+        self.receiver.len() as i64
     }
 
     /// Close the channel
