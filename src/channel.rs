@@ -66,14 +66,14 @@ impl AsyncChannel {
                 return Zval::from(false);
             }
 
-            let result = if let Some(timeout_secs) = timeout {
-                let duration = Duration::from_secs_f64(timeout_secs);
-                match tokio::time::timeout(duration, tx.send_async(val)).await {
-                    Ok(Ok(_)) => true,
-                    _ => false,
+            let result = match timeout {
+                Some(secs) => {
+                    let duration = Duration::from_secs_f64(secs);
+                    tokio::time::timeout(duration, tx.send_async(val))
+                        .await
+                        .map_or(false, |r| r.is_ok())
                 }
-            } else {
-                tx.send_async(val).await.is_ok()
+                None => tx.send_async(val).await.is_ok(),
             };
 
             Zval::from(result)
@@ -107,14 +107,14 @@ impl AsyncChannel {
         let rx = self.receiver.clone();
 
         let future = async move {
-            if let Some(timeout_secs) = timeout {
-                let duration = Duration::from_secs_f64(timeout_secs);
-                match tokio::time::timeout(duration, rx.recv_async()).await {
-                    Ok(Ok(val)) => val,
-                    _ => Zval::new(),
+            match timeout {
+                Some(secs) => {
+                    let duration = Duration::from_secs_f64(secs);
+                    tokio::time::timeout(duration, rx.recv_async())
+                        .await
+                        .map_or(Zval::new(), |r| r.unwrap_or_else(|_| Zval::new()))
                 }
-            } else {
-                rx.recv_async().await.unwrap_or_else(|_| Zval::new())
+                None => rx.recv_async().await.unwrap_or_else(|_| Zval::new()),
             }
         };
 
