@@ -2,18 +2,16 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
+use crate::util::Shared;
 use flume;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 #[php_class]
 #[php(name = "Async\\Kernel\\Channel")]
 pub struct AsyncChannel {
-    sender: flume::Sender<Zval>,
+    sender: Option<flume::Sender<Zval>>,
     receiver: flume::Receiver<Zval>,
-    capacity: usize,
-    is_closed: Arc<AtomicBool>,
+    capacity: i64,
 }
 
 #[php_impl]
@@ -31,14 +29,17 @@ impl AsyncChannel {
     /// - `new Channel(10)` - Creates buffered channel with capacity 10 (like Go's `make(chan T, 10)`)
     #[php(optional = "capacity")]
     pub fn __construct(capacity: Option<i64>) -> Self {
-        let cap = capacity.unwrap_or(0).max(0) as usize;
-        let (tx, rx) = flume::bounded(cap);
+        let cap = capacity.unwrap_or(0);
+        let (tx, rx) = if cap < 0 {
+            flume::unbounded()
+        } else {
+            flume::bounded(cap as usize)
+        };
 
         Self {
-            sender: tx,
+            sender: Some(tx),
             receiver: rx,
             capacity: cap,
-            is_closed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -51,21 +52,16 @@ impl AsyncChannel {
     /// # Returns
     /// true on success, false on failure (closed or timeout)
     #[php(optional = "timeout")]
-    pub fn send(&self, value: &Zval, timeout: Option<f64>) -> RustFuture {
-        if self.is_closed.load(Ordering::Relaxed) {
-            let future = async { Zval::from(false) };
-            return RustFuture::new(future);
-        }
-
+    pub fn send(&self, value: &Zval, timeout: Option<f64>) -> PhpResult<RustFuture> {
         let val = value.shallow_clone();
-        let tx = self.sender.clone();
-        let is_closed = self.is_closed.clone();
+        let tx = match self.sender.as_ref() {
+            Some(sender) => sender.clone(),
+            None => {
+                return Err(PhpException::default("Cannot send to closed channel".to_string()));
+            }
+        };
 
         let future = async move {
-            if is_closed.load(Ordering::Relaxed) {
-                return Zval::from(false);
-            }
-
             let result = match timeout {
                 Some(secs) => {
                     let duration = Duration::from_secs_f64(secs);
@@ -79,7 +75,7 @@ impl AsyncChannel {
             Zval::from(result)
         };
 
-        RustFuture::new(future)
+        Ok(RustFuture::new(future))
     }
 
     /// Push a value to the channel with optional timeout (alias for send)
@@ -91,7 +87,7 @@ impl AsyncChannel {
     /// # Returns
     /// true on success, false on failure (closed or timeout)
     #[php(optional = "timeout")]
-    pub fn push(&self, value: &Zval, timeout: Option<f64>) -> RustFuture {
+    pub fn push(&self, value: &Zval, timeout: Option<f64>) -> PhpResult<RustFuture> {
         self.send(value, timeout)
     }
 
@@ -150,14 +146,14 @@ impl AsyncChannel {
 
     /// Close the channel
     /// After closing, no more values can be sent
-    pub fn close(&self) -> bool {
-        self.is_closed.store(true, Ordering::Relaxed);
+    pub fn close(&mut self) -> bool {
+        let _ = self.sender.take();
         true
     }
 
     /// Check if the channel is closed
     pub fn is_closed(&self) -> bool {
-        self.is_closed.load(Ordering::Relaxed)
+        self.sender.is_none()
     }
 
     /// Get channel statistics
@@ -175,8 +171,11 @@ impl AsyncChannel {
 // Internal Rust API (not exposed to PHP)
 impl AsyncChannel {
     /// Get a clone of the sender for Rust-side use
+    /// Returns the sender if the channel is not closed
     pub fn get_sender(&self) -> flume::Sender<Zval> {
-        self.sender.clone()
+        self.sender.as_ref()
+            .expect("Cannot get sender: channel is closed")
+            .clone()
     }
 
     /// Get a clone of the receiver for Rust-side use
