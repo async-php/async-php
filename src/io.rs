@@ -5,7 +5,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
-use crate::util::Shared;
+use crate::util::{Shared, tuple2};
 use crate::channel::AsyncChannel;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncSeek, AsyncBufRead, AsyncReadExt, AsyncWriteExt, AsyncSeekExt, AsyncBufReadExt};
 use std::io::{SeekFrom, Result as IoResult, Error as IoError, ErrorKind};
@@ -270,28 +270,24 @@ impl PhpIoBridge {
         }
     }
 
-    async fn call(&self, method: &str, args: Vec<Zval>) -> IoResult<Zval> {
-        // Build args array
+    /// Build args array from Vec<Zval>
+    fn build_args_array(args: Vec<Zval>) -> IoResult<Zval> {
         let mut args_ht = ZendHashTable::new();
         for (i, arg) in args.into_iter().enumerate() {
             args_ht.insert(i as i64, arg)
                 .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build args"))?;
         }
-        let args_zval = args_ht.into_zval(false)
-            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to convert args"))?;
+        args_ht.into_zval(false)
+            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to convert args"))
+    }
 
-        // Build request: [method, args]
-        let mut request = ZendHashTable::new();
-        request.insert(0i64, method)
-            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to set method"))?;
-        request.insert(1i64, args_zval)
-            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to set args"))?;
-
-        let req_zval = request.into_zval(false)
-            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build request"))?;
+    async fn call(&self, method: &str, args: Vec<Zval>) -> IoResult<Zval> {
+        // Build request: [method, args] using tuple2
+        let args_zval = Self::build_args_array(args)?;
+        let request = tuple2(method, args_zval);
 
         // Send and receive
-        self.tx.send_async(req_zval).await
+        self.tx.send_async(request).await
             .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Send failed"))?;
 
         self.rx.recv_async().await
@@ -300,28 +296,12 @@ impl PhpIoBridge {
 
     /// Send close command to terminate the spawned fiber
     fn close_sync(&self) {
-        // Build request: ['__close__', []]
-        let args_ht = ZendHashTable::new();
-        let args_zval = match args_ht.into_zval(false) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-
-        let mut request = ZendHashTable::new();
-        if request.insert(0i64, "__close__").is_err() {
-            return;
-        }
-        if request.insert(1i64, args_zval).is_err() {
-            return;
-        }
-
-        let req_zval = match request.into_zval(false) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
+        // Build request: ['__close__', []] using tuple2
+        let empty_args = ZendHashTable::new().into_zval(false).unwrap_or_else(|_| Zval::new());
+        let request = tuple2("__close__", empty_args);
 
         // Try to send close command (best effort, ignore errors)
-        let _ = self.tx.try_send(req_zval);
+        let _ = self.tx.try_send(request);
     }
 }
 
