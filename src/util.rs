@@ -1,5 +1,5 @@
 use ext_php_rs::exception::PhpException;
-use ext_php_rs::types::Zval;
+use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 
 use std::cell::UnsafeCell;
@@ -21,6 +21,62 @@ where
             Zval::new() // Return null, but exception is pending.
         }
     }
+}
+
+/// Create a PHP tuple (indexed array) from two values.
+///
+/// This enables Go-style multiple return values in PHP via array destructuring:
+///
+/// # Example (PHP side)
+/// ```php
+/// [$value, $ok] = $channel->pop();
+/// if ($ok) {
+///     echo "Received: $value\n";
+/// } else {
+///     echo "Channel closed or timeout\n";
+/// }
+/// ```
+///
+/// # Example (Rust side)
+/// ```rust
+/// use crate::util::tuple2;
+///
+/// // Return [value, true] on success
+/// tuple2(received_value, true)
+///
+/// // Return [null, false] on failure
+/// tuple2(Zval::new(), false)
+/// ```
+pub fn tuple2<T1, T2>(val1: T1, val2: T2) -> Zval
+where
+    T1: IntoZval,
+    T2: IntoZval,
+{
+    let mut ht = ZendHashTable::new();
+    ht.insert(0i64, val1).ok();
+    ht.insert(1i64, val2).ok();
+    ht.into_zval(false).unwrap_or_else(|_| Zval::new())
+}
+
+/// Create a PHP tuple (indexed array) from three values.
+///
+/// Similar to `tuple2` but for three values.
+///
+/// # Example (PHP side)
+/// ```php
+/// [$value, $error, $ok] = $operation->execute();
+/// ```
+pub fn tuple3<T1, T2, T3>(val1: T1, val2: T2, val3: T3) -> Zval
+where
+    T1: IntoZval,
+    T2: IntoZval,
+    T3: IntoZval,
+{
+    let mut ht = ZendHashTable::new();
+    ht.insert(0i64, val1).ok();
+    ht.insert(1i64, val2).ok();
+    ht.insert(2i64, val3).ok();
+    ht.into_zval(false).unwrap_or_else(|_| Zval::new())
 }
 
 /// A shared mutable container that allows multiple clones to access
