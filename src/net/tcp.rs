@@ -196,3 +196,20 @@ impl AsyncTcpStream {
         self.inner.get_ref().set_linger(duration).is_ok()
     }
 }
+
+// Non-PHP methods for fast-path optimization
+impl AsyncTcpStream {
+    /// Extract as AsyncReader (fast path optimization)
+    pub fn as_async_reader(&self) -> Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
+        use crate::io::SharedAsyncRead;
+        let wrapper = SharedAsyncRead::new(self.inner.clone());
+        Shared::new(Box::new(wrapper))
+    }
+
+    /// Extract as AsyncWriter (fast path optimization)
+    pub fn as_async_writer(&self) -> Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> {
+        use crate::io::SharedAsyncWrite;
+        let wrapper = SharedAsyncWrite::new(self.inner.clone());
+        Shared::new(Box::new(wrapper))
+    }
+}

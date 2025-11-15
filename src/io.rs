@@ -13,30 +13,30 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::future::Future;
 
-/// AsyncReader wraps Shared<Box<dyn AsyncRead + Unpin>>
+/// AsyncReader wraps Shared<Box<dyn AsyncRead + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncReader")]
 pub struct AsyncReader {
-    inner: Shared<Box<dyn AsyncRead + Unpin>>,
+    inner: Shared<Box<dyn AsyncRead + Unpin + Send>>,
 }
 
 impl AsyncReader {
     /// Create AsyncReader from a Shared-wrapped reader
     /// This allows multiple AsyncReader instances to share the same underlying reader
-    pub fn from_shared(shared: Shared<Box<dyn AsyncRead + Unpin>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncRead + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
     /// Create AsyncReader from a tokio AsyncRead type
     /// This wraps the reader in a new Shared container
-    pub fn new<R: AsyncRead + Unpin + 'static>(reader: R) -> Self {
+    pub fn new<R: AsyncRead + Unpin + Send + 'static>(reader: R) -> Self {
         Self {
             inner: Shared::new(Box::new(reader)),
         }
     }
 
     /// Get a clone of the inner Shared without consuming self
-    pub fn as_tokio(&self) -> Shared<Box<dyn AsyncRead + Unpin>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncRead + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -66,30 +66,30 @@ impl AsyncReader {
     }
 }
 
-/// AsyncWriter wraps Shared<Box<dyn AsyncWrite + Unpin>>
+/// AsyncWriter wraps Shared<Box<dyn AsyncWrite + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncWriter")]
 pub struct AsyncWriter {
-    inner: Shared<Box<dyn AsyncWrite + Unpin>>,
+    inner: Shared<Box<dyn AsyncWrite + Unpin + Send>>,
 }
 
 impl AsyncWriter {
     /// Create AsyncWriter from a Shared-wrapped writer
     /// This allows multiple AsyncWriter instances to share the same underlying writer
-    pub fn from_shared(shared: Shared<Box<dyn AsyncWrite + Unpin>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncWrite + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
     /// Create AsyncWriter from a tokio AsyncWrite type
     /// This wraps the writer in a new Shared container
-    pub fn new<W: AsyncWrite + Unpin + 'static>(writer: W) -> Self {
+    pub fn new<W: AsyncWrite + Unpin + Send + 'static>(writer: W) -> Self {
         Self {
             inner: Shared::new(Box::new(writer)),
         }
     }
 
     /// Get a clone of the inner Shared without consuming self
-    pub fn as_tokio(&self) -> Shared<Box<dyn AsyncWrite + Unpin>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncWrite + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -127,30 +127,30 @@ impl AsyncWriter {
     }
 }
 
-/// AsyncSeeker wraps Shared<Box<dyn AsyncSeek + Unpin>>
+/// AsyncSeeker wraps Shared<Box<dyn AsyncSeek + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncSeeker")]
 pub struct AsyncSeeker {
-    inner: Shared<Box<dyn AsyncSeek + Unpin>>,
+    inner: Shared<Box<dyn AsyncSeek + Unpin + Send>>,
 }
 
 impl AsyncSeeker {
     /// Create AsyncSeeker from a Shared-wrapped seeker
     /// This allows multiple AsyncSeeker instances to share the same underlying seeker
-    pub fn from_shared(shared: Shared<Box<dyn AsyncSeek + Unpin>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncSeek + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
     /// Create AsyncSeeker from a tokio AsyncSeek type
     /// This wraps the seeker in a new Shared container
-    pub fn new<S: AsyncSeek + Unpin + 'static>(seeker: S) -> Self {
+    pub fn new<S: AsyncSeek + Unpin + Send + 'static>(seeker: S) -> Self {
         Self {
             inner: Shared::new(Box::new(seeker)),
         }
     }
 
     /// Get a clone of the inner Shared without consuming self
-    pub fn as_tokio(&self) -> Shared<Box<dyn AsyncSeek + Unpin>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncSeek + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -203,7 +203,7 @@ impl AsyncBufReader {
     }
 
     /// Get a clone of the inner Shared without consuming self
-    pub fn as_tokio(&self) -> Shared<Box<dyn AsyncBufRead + Unpin>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncBufRead + Unpin>> {
         self.inner.clone()
     }
 }
@@ -251,6 +251,200 @@ impl AsyncBufReader {
 
         RustFuture::new(future)
     }
+}
+
+// ==================== Shared Wrapper for Trait Objects ====================
+// Wrappers to convert Shared<T> into trait objects
+
+/// Wrapper that implements AsyncRead for Shared<T> where T: AsyncRead
+pub struct SharedAsyncRead<T> {
+    inner: Shared<T>,
+}
+
+impl<T> SharedAsyncRead<T> {
+    pub fn new(shared: Shared<T>) -> Self {
+        Self { inner: shared }
+    }
+}
+
+impl<T: AsyncRead + Unpin> AsyncRead for SharedAsyncRead<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_read(cx, buf)
+    }
+}
+
+/// Wrapper that implements AsyncWrite for Shared<T> where T: AsyncWrite
+pub struct SharedAsyncWrite<T> {
+    inner: Shared<T>,
+}
+
+impl<T> SharedAsyncWrite<T> {
+    pub fn new(shared: Shared<T>) -> Self {
+        Self { inner: shared }
+    }
+}
+
+impl<T: AsyncWrite + Unpin> AsyncWrite for SharedAsyncWrite<T> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<IoResult<usize>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_shutdown(cx)
+    }
+}
+
+/// Wrapper that implements AsyncSeek for Shared<T> where T: AsyncSeek
+pub struct SharedAsyncSeek<T> {
+    inner: Shared<T>,
+}
+
+impl<T> SharedAsyncSeek<T> {
+    pub fn new(shared: Shared<T>) -> Self {
+        Self { inner: shared }
+    }
+}
+
+impl<T: AsyncSeek + Unpin> AsyncSeek for SharedAsyncSeek<T> {
+    fn start_seek(self: Pin<&mut Self>, position: SeekFrom) -> IoResult<()> {
+        Pin::new(self.get_mut().inner.get_mut()).start_seek(position)
+    }
+
+    fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_complete(cx)
+    }
+}
+
+/// Wrapper that implements AsyncBufRead for Shared<T> where T: AsyncBufRead
+pub struct SharedAsyncBufRead<T> {
+    inner: Shared<T>,
+}
+
+impl<T> SharedAsyncBufRead<T> {
+    pub fn new(shared: Shared<T>) -> Self {
+        Self { inner: shared }
+    }
+}
+
+impl<T: AsyncBufRead + Unpin> AsyncRead for SharedAsyncBufRead<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_read(cx, buf)
+    }
+}
+
+impl<T: AsyncBufRead + Unpin> AsyncBufRead for SharedAsyncBufRead<T> {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<&[u8]>> {
+        Pin::new(self.get_mut().inner.get_mut()).poll_fill_buf(cx)
+    }
+
+    fn consume(self: Pin<&mut Self>, amt: usize) {
+        Pin::new(self.get_mut().inner.get_mut()).consume(amt)
+    }
+}
+
+// ==================== Fast Path Helpers ====================
+// Extract native Rust IO types from Zval for fast-path optimization
+
+/// Try to extract a native AsyncReader from Zval (fast path)
+///
+/// This checks if the Zval contains a Rust-native IO type (AsyncFileHandle, AsyncTcpStream, etc.)
+/// and extracts its underlying AsyncRead trait object directly, avoiding PHP FFI overhead.
+///
+/// Returns Some(Shared<Box<dyn AsyncRead + Unpin + Send>>) if fast path is available, None otherwise.
+pub fn try_extract_native_reader(zval: &Zval) -> Option<Shared<Box<dyn AsyncRead + Unpin + Send>>> {
+    use ext_php_rs::types::ZendClassObject;
+
+    // Try to extract as AsyncReader first (already a trait object wrapper)
+    if let Some(obj) = zval.extract::<&ZendClassObject<AsyncReader>>() {
+        return Some(obj.get_inner());
+    }
+
+    // Try AsyncFileHandle
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
+        return Some(obj.as_async_reader());
+    }
+
+    // Try AsyncTcpStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTcpStream>>() {
+        return Some(obj.as_async_reader());
+    }
+
+    // Try AsyncUnixStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncUnixStream>>() {
+        return Some(obj.as_async_reader());
+    }
+
+    // Try AsyncTlsStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTlsStream>>() {
+        return Some(obj.as_async_reader());
+    }
+
+    None
+}
+
+/// Try to extract a native AsyncWriter from Zval (fast path)
+pub fn try_extract_native_writer(zval: &Zval) -> Option<Shared<Box<dyn AsyncWrite + Unpin + Send>>> {
+    use ext_php_rs::types::ZendClassObject;
+
+    // Try to extract as AsyncWriter first
+    if let Some(obj) = zval.extract::<&ZendClassObject<AsyncWriter>>() {
+        return Some(obj.get_inner());
+    }
+
+    // Try AsyncFileHandle
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
+        return Some(obj.as_async_writer());
+    }
+
+    // Try AsyncTcpStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTcpStream>>() {
+        return Some(obj.as_async_writer());
+    }
+
+    // Try AsyncUnixStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncUnixStream>>() {
+        return Some(obj.as_async_writer());
+    }
+
+    // Try AsyncTlsStream
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTlsStream>>() {
+        return Some(obj.as_async_writer());
+    }
+
+    None
+}
+
+/// Try to extract a native AsyncSeek from Zval (fast path)
+pub fn try_extract_native_seeker(zval: &Zval) -> Option<Shared<Box<dyn AsyncSeek + Unpin + Send>>> {
+    use ext_php_rs::types::ZendClassObject;
+
+    // Try to extract as AsyncSeeker first
+    if let Some(obj) = zval.extract::<&ZendClassObject<AsyncSeeker>>() {
+        return Some(obj.get_inner());
+    }
+
+    // Try AsyncFileHandle (the only seekable type currently)
+    if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
+        return Some(obj.as_async_seek());
+    }
+
+    None
 }
 
 // ==================== PHP IO Bridge ====================

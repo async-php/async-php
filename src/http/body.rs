@@ -31,7 +31,7 @@ impl HttpResponseBody {
         let stream_reader = tokio_util::io::StreamReader::new(stream);
 
         // Wrap with decompressor if needed
-        let reader: Box<dyn AsyncRead + Unpin> = match content_encoding {
+        let reader: Box<dyn AsyncRead + Unpin + Send> = match content_encoding {
             Some("gzip") => {
                 let buffered = tokio::io::BufReader::new(stream_reader);
                 Box::new(GzipDecoder::new(buffered))
@@ -84,7 +84,7 @@ impl HttpResponseBody {
     /// $allData = await $body->read_all();
     /// ```
     pub fn read_all(&mut self) -> RustFuture {
-        let reader = self.reader.as_tokio();
+        let reader = self.reader.get_inner();
 
         RustFuture::new(async move {
             let mut buf = Vec::new();
@@ -109,57 +109,3 @@ impl HttpResponseBody {
         true
     }
 }
-
-/// Adapter to read from PHP AsyncReader as tokio::io::AsyncRead
-pub struct PhpBodyReader {
-    reader: Zval,
-    chunk_size: usize,
-}
-
-impl PhpBodyReader {
-    pub(crate) fn new(reader: Zval) -> Self {
-        Self {
-            reader,
-            chunk_size: 8192,
-        }
-    }
-}
-
-impl tokio::io::AsyncRead for PhpBodyReader {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        let to_read = std::cmp::min(buf.remaining(), this.chunk_size) as i64;
-
-        let mut length_zval = Zval::new();
-        length_zval.set_long(to_read);
-
-        let data_zval = this
-            .reader
-            .try_call_method("read", vec![&length_zval])
-            .map_err(|e| std::io::Error::other(format!("PHP read failed: {:?}", e)))?;
-
-        if data_zval.is_null() {
-            return std::task::Poll::Ready(Ok(()));
-        }
-
-        if let Some(bytes) = data_zval.binary() {
-            buf.put_slice(&bytes);
-        } else if let Some(s) = data_zval.str() {
-            buf.put_slice(s.as_bytes());
-        } else {
-            return std::task::Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Read did not return string or binary",
-            )));
-        }
-
-        std::task::Poll::Ready(Ok(()))
-    }
-}
-
-unsafe impl Send for PhpBodyReader {}
-unsafe impl Sync for PhpBodyReader {}

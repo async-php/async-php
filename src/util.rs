@@ -66,6 +66,7 @@ where
 /// ```php
 /// [$value, $error, $ok] = $operation->execute();
 /// ```
+#[allow(dead_code)]
 pub fn tuple3<T1, T2, T3>(val1: T1, val2: T2, val3: T3) -> Zval
 where
     T1: IntoZval,

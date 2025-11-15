@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::future::RustFuture;
-use crate::http::body::PhpBodyReader;
 use crate::util::Shared;
 
 /// HTTP Request Builder
@@ -175,24 +174,34 @@ impl HttpRequest {
     /// Set streaming body from AsyncReader
     ///
     /// The reader must implement the AsyncReader interface from io.rs
+    ///
+    /// NOTE: This method uses fast-path optimization when the reader is a Rust-native type
+    /// (AsyncFileHandle, AsyncTcpStream, etc.), avoiding PHP FFI overhead.
     #[php]
     pub fn body_stream(&mut self, reader: &Zval, _content_length: Option<i64>) -> PhpResult<()> {
         use tokio_util::io::ReaderStream;
         use reqwest::Body;
+        use crate::io::try_extract_native_reader;
 
-        // Wrap PHP reader in AsyncRead adapter
-        let php_reader = PhpBodyReader::new(reader.shallow_clone());
-        let stream = ReaderStream::new(php_reader);
+        // Try fast path: extract native Rust IO type directly
+        if let Some(native_reader) = try_extract_native_reader(reader) {
+            // Fast path: use native Rust async reader without going through PHP FFI
+            // We need to create a wrapper that implements AsyncRead and owns the Shared
+            use crate::io::SharedAsyncRead;
+            let wrapper = SharedAsyncRead::new(native_reader);
+            let stream = ReaderStream::new(wrapper);
+            let body = Body::wrap_stream(stream);
 
-        // Note: reqwest::Body::wrap_stream doesn't support with_length
-        // Content-Length must be set via header if needed
-        let body = Body::wrap_stream(stream);
-
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.body(body));
+            let builder_ref = self.builder.get_mut();
+            if let Some(builder) = builder_ref.take() {
+                *builder_ref = Some(builder.body(body));
+            }
+            return Ok(());
         }
-        Ok(())
+
+        // Slow path: PHP custom implementation (TODO: implement using channel + fiber)
+        // For now, return an error
+        Err(PhpException::default("Streaming body is only supported for native Rust IO types (AsyncFileHandle, AsyncTcpStream, etc.)".to_string()))
     }
 
     /// Send the request and return a Future that resolves to HttpResponse
