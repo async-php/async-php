@@ -6,16 +6,15 @@ pub mod types;
 pub mod request;
 pub mod response;
 pub mod body;
-pub mod client;
-pub mod auth;
-pub mod cookies;
-pub mod retry;
-pub mod metrics;
+pub mod message;
+pub mod transport;
 
 // Re-export main types
 
 pub use body::HttpResponseBody;
-pub(crate) use body::PhpReaderAdapter;
-pub use client::HttpClient;
+// AsyncReadBody is public for potential future use but not currently exported
+#[allow(unused_imports)]
+pub(crate) use body::AsyncReadBody;
+pub use transport::HttpTransport;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
