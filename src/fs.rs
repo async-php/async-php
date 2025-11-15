@@ -309,26 +309,38 @@ impl AsyncFileHandle {
     }
 }
 
-// Non-PHP methods for fast-path optimization
+#[php_impl]
 impl AsyncFileHandle {
-    /// Extract as AsyncReader (fast path optimization)
-    pub fn as_async_reader(&self) -> Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
-        use crate::io::SharedAsyncRead;
+    /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
+    ///
+    /// This allows using a FileHandle anywhere an AsyncReader is accepted,
+    /// enabling zero-overhead streaming without creating a new fiber.
+    #[php]
+    pub fn as_reader(&self) -> crate::io::AsyncReader {
+        use crate::io::{AsyncReader, SharedAsyncRead};
         let wrapper = SharedAsyncRead::new(self.inner.clone());
-        Shared::new(Box::new(wrapper))
+        let trait_object: Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> =
+            Shared::new(Box::new(wrapper));
+        AsyncReader::from_shared(trait_object)
     }
 
-    /// Extract as AsyncWriter (fast path optimization)
-    pub fn as_async_writer(&self) -> Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> {
-        use crate::io::SharedAsyncWrite;
+    /// Extract as AsyncWriter (returns \Async\Kernel\IO\AsyncWriter)
+    #[php]
+    pub fn as_writer(&self) -> crate::io::AsyncWriter {
+        use crate::io::{AsyncWriter, SharedAsyncWrite};
         let wrapper = SharedAsyncWrite::new(self.inner.clone());
-        Shared::new(Box::new(wrapper))
+        let trait_object: Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> =
+            Shared::new(Box::new(wrapper));
+        AsyncWriter::from_shared(trait_object)
     }
 
-    /// Extract as AsyncSeek (fast path optimization)
-    pub fn as_async_seek(&self) -> Shared<Box<dyn tokio::io::AsyncSeek + Unpin + Send>> {
-        use crate::io::SharedAsyncSeek;
+    /// Extract as AsyncSeeker (returns \Async\Kernel\IO\AsyncSeeker)
+    #[php]
+    pub fn as_seeker(&self) -> crate::io::AsyncSeeker {
+        use crate::io::{AsyncSeeker, SharedAsyncSeek};
         let wrapper = SharedAsyncSeek::new(self.inner.clone());
-        Shared::new(Box::new(wrapper))
+        let trait_object: Shared<Box<dyn tokio::io::AsyncSeek + Unpin + Send>> =
+            Shared::new(Box::new(wrapper));
+        AsyncSeeker::from_shared(trait_object)
     }
 }

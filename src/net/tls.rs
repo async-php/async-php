@@ -439,19 +439,27 @@ impl AsyncTlsStream {
     }
 }
 
-// Non-PHP methods for fast-path optimization (after #[php_impl] block)
+#[php_impl]
 impl AsyncTlsStream {
-    /// Extract as AsyncReader (fast path optimization)
-    pub fn as_async_reader(&self) -> crate::util::Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
-        use crate::io::SharedAsyncRead;
+    /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
+    #[php]
+    pub fn as_reader(&self) -> crate::io::AsyncReader {
+        use crate::io::{AsyncReader, SharedAsyncRead};
+        use crate::util::Shared;
         let wrapper = SharedAsyncRead::new(self.inner.clone());
-        crate::util::Shared::new(Box::new(wrapper))
+        let trait_object: Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> =
+            Shared::new(Box::new(wrapper));
+        AsyncReader::from_shared(trait_object)
     }
 
-    /// Extract as AsyncWriter (fast path optimization)
-    pub fn as_async_writer(&self) -> crate::util::Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> {
-        use crate::io::SharedAsyncWrite;
+    /// Extract as AsyncWriter (returns \Async\Kernel\IO\AsyncWriter)
+    #[php]
+    pub fn as_writer(&self) -> crate::io::AsyncWriter {
+        use crate::io::{AsyncWriter, SharedAsyncWrite};
+        use crate::util::Shared;
         let wrapper = SharedAsyncWrite::new(self.inner.clone());
-        crate::util::Shared::new(Box::new(wrapper))
+        let trait_object: Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> =
+            Shared::new(Box::new(wrapper));
+        AsyncWriter::from_shared(trait_object)
     }
 }
