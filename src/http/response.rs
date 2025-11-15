@@ -11,10 +11,10 @@ use ext_php_rs::types::Zval;
 
 use reqwest::Response;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use crate::future::RustFuture;
 use crate::http::HttpResponseBody;
+use crate::util::Shared;
 
 /// HTTP Response
 ///
@@ -25,8 +25,8 @@ use crate::http::HttpResponseBody;
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
-    // Store response in Arc<Mutex> to allow multiple method calls
-    response: Arc<Mutex<Option<Response>>>,
+    // Store response in Shared to allow multiple method calls
+    response: Shared<Option<Response>>,
     // Cache status and headers on creation
     status_code: u16,
     headers: HashMap<String, String>,
@@ -51,7 +51,7 @@ impl HttpResponse {
         }
 
         Self {
-            response: Arc::new(Mutex::new(Some(response))),
+            response: Shared::new(Some(response)),
             status_code,
             headers,
             version,
@@ -122,10 +122,7 @@ impl HttpResponse {
     /// Note: This consumes the response body.
     #[php]
     pub fn text(&self) -> RustFuture {
-        let response_opt = {
-            let mut guard = self.response.lock().unwrap();
-            guard.take()
-        };
+        let response_opt = self.response.get_mut().take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -149,10 +146,7 @@ impl HttpResponse {
     /// Note: This consumes the response body.
     #[php]
     pub fn json(&self) -> RustFuture {
-        let response_opt = {
-            let mut guard = self.response.lock().unwrap();
-            guard.take()
-        };
+        let response_opt = self.response.get_mut().take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -179,10 +173,7 @@ impl HttpResponse {
     /// Note: This consumes the response body.
     #[php]
     pub fn bytes(&self) -> RustFuture {
-        let response_opt = {
-            let mut guard = self.response.lock().unwrap();
-            guard.take()
-        };
+        let response_opt = self.response.get_mut().take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -206,10 +197,7 @@ impl HttpResponse {
     /// Note: This consumes the response.
     #[php]
     pub fn stream(&self) -> PhpResult<HttpResponseBody> {
-        let response_opt = {
-            let mut guard = self.response.lock().unwrap();
-            guard.take()
-        };
+        let response_opt = self.response.get_mut().take();
 
         let response = response_opt
             .ok_or_else(|| "Response body already consumed".to_string())?;

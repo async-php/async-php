@@ -13,10 +13,11 @@ use ext_php_rs::convert::IntoZval;
 
 use reqwest::{Method, RequestBuilder};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::future::RustFuture;
+use crate::http::body::PhpBodyReader;
+use crate::util::Shared;
 
 /// HTTP Request Builder
 ///
@@ -25,7 +26,7 @@ use crate::future::RustFuture;
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpRequest")]
 pub struct HttpRequest {
-    builder: Arc<Mutex<Option<RequestBuilder>>>,
+    builder: Shared<Option<RequestBuilder>>,
 }
 
 unsafe impl Send for HttpRequest {}
@@ -33,11 +34,11 @@ unsafe impl Sync for HttpRequest {}
 
 impl HttpRequest {
     /// Internal constructor
-    pub(crate) fn new(client: Arc<reqwest::Client>, method: &str, url: String) -> Self {
+    pub(crate) fn new(client: std::sync::Arc<reqwest::Client>, method: &str, url: String) -> Self {
         let method = method.parse::<Method>().unwrap_or(Method::GET);
         let builder = client.request(method, url);
         Self {
-            builder: Arc::new(Mutex::new(Some(builder))),
+            builder: Shared::new(Some(builder)),
         }
     }
 }
@@ -47,9 +48,9 @@ impl HttpRequest {
     /// Set a header
     #[php]
     pub fn header(&mut self, name: String, value: String) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.header(name, value));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.header(name, value));
         }
         Ok(())
     }
@@ -57,12 +58,12 @@ impl HttpRequest {
     /// Set multiple headers
     #[php]
     pub fn headers(&mut self, headers: HashMap<String, String>) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(mut builder) = guard.take() {
+        let builder_ref = self.builder.get_mut();
+        if let Some(mut builder) = builder_ref.take() {
             for (key, value) in headers {
                 builder = builder.header(key, value);
             }
-            *guard = Some(builder);
+            *builder_ref = Some(builder);
         }
         Ok(())
     }
@@ -70,9 +71,9 @@ impl HttpRequest {
     /// Add a query parameter
     #[php]
     pub fn query(&mut self, name: String, value: String) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.query(&[(name, value)]));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.query(&[(name, value)]));
         }
         Ok(())
     }
@@ -80,9 +81,9 @@ impl HttpRequest {
     /// Add multiple query parameters
     #[php]
     pub fn query_params(&mut self, params: HashMap<String, String>) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.query(&params));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.query(&params));
         }
         Ok(())
     }
@@ -90,9 +91,9 @@ impl HttpRequest {
     /// Set Basic Authentication
     #[php]
     pub fn basic_auth(&mut self, username: String, password: Option<String>) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.basic_auth(username, password));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.basic_auth(username, password));
         }
         Ok(())
     }
@@ -100,9 +101,9 @@ impl HttpRequest {
     /// Set Bearer token authentication
     #[php]
     pub fn bearer_auth(&mut self, token: String) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.bearer_auth(token));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.bearer_auth(token));
         }
         Ok(())
     }
@@ -110,9 +111,9 @@ impl HttpRequest {
     /// Set request timeout (overrides client timeout)
     #[php]
     pub fn timeout(&mut self, seconds: f64) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.timeout(Duration::from_secs_f64(seconds)));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.timeout(Duration::from_secs_f64(seconds)));
         }
         Ok(())
     }
@@ -120,12 +121,12 @@ impl HttpRequest {
     /// Set text body with optional content type
     #[php]
     pub fn body_text(&mut self, text: String, content_type: Option<String>) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(mut builder) = guard.take() {
+        let builder_ref = self.builder.get_mut();
+        if let Some(mut builder) = builder_ref.take() {
             if let Some(ct) = content_type {
                 builder = builder.header("Content-Type", ct);
             }
-            *guard = Some(builder.body(text));
+            *builder_ref = Some(builder.body(text));
         }
         Ok(())
     }
@@ -136,9 +137,9 @@ impl HttpRequest {
         let json_value: serde_json::Value = serde_json::from_str(&json)
             .map_err(|e| format!("Invalid JSON: {}", e))?;
 
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.json(&json_value));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.json(&json_value));
         }
         Ok(())
     }
@@ -146,9 +147,9 @@ impl HttpRequest {
     /// Set form body (application/x-www-form-urlencoded)
     #[php]
     pub fn body_form(&mut self, form: HashMap<String, String>) -> PhpResult<()> {
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.form(&form));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.form(&form));
         }
         Ok(())
     }
@@ -164,9 +165,9 @@ impl HttpRequest {
             return Err(PhpException::default("Body must be string or binary".to_string()));
         };
 
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.body(bytes));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.body(bytes));
         }
         Ok(())
     }
@@ -187,9 +188,9 @@ impl HttpRequest {
         // Content-Length must be set via header if needed
         let body = Body::wrap_stream(stream);
 
-        let mut guard = self.builder.lock().unwrap();
-        if let Some(builder) = guard.take() {
-            *guard = Some(builder.body(body));
+        let builder_ref = self.builder.get_mut();
+        if let Some(builder) = builder_ref.take() {
+            *builder_ref = Some(builder.body(body));
         }
         Ok(())
     }
@@ -197,10 +198,7 @@ impl HttpRequest {
     /// Send the request and return a Future that resolves to HttpResponse
     #[php]
     pub fn send(&mut self) -> RustFuture {
-        let builder_opt = {
-            let mut guard = self.builder.lock().unwrap();
-            guard.take()
-        };
+        let builder_opt = self.builder.get_mut().take();
 
         RustFuture::new(async move {
             let builder = builder_opt
@@ -218,59 +216,3 @@ impl HttpRequest {
         })
     }
 }
-
-// ==================== Internal Adapters ====================
-
-/// Adapter to read from PHP AsyncReader as tokio::io::AsyncRead
-struct PhpBodyReader {
-    reader: Zval,
-    chunk_size: usize,
-}
-
-impl PhpBodyReader {
-    fn new(reader: Zval) -> Self {
-        Self {
-            reader,
-            chunk_size: 8192,
-        }
-    }
-}
-
-impl tokio::io::AsyncRead for PhpBodyReader {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        let to_read = std::cmp::min(buf.remaining(), this.chunk_size) as i64;
-
-        let mut length_zval = Zval::new();
-        length_zval.set_long(to_read);
-
-        let data_zval = this
-            .reader
-            .try_call_method("read", vec![&length_zval])
-            .map_err(|e| std::io::Error::other(format!("PHP read failed: {:?}", e)))?;
-
-        if data_zval.is_null() {
-            return std::task::Poll::Ready(Ok(()));
-        }
-
-        if let Some(bytes) = data_zval.binary() {
-            buf.put_slice(&bytes);
-        } else if let Some(s) = data_zval.str() {
-            buf.put_slice(s.as_bytes());
-        } else {
-            return std::task::Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Read did not return string or binary",
-            )));
-        }
-
-        std::task::Poll::Ready(Ok(()))
-    }
-}
-
-unsafe impl Send for PhpBodyReader {}
-unsafe impl Sync for PhpBodyReader {}
