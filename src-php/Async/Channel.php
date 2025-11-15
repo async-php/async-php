@@ -25,9 +25,9 @@ class Channel
      *
      * @param mixed $data The value to push
      * @param float|null $timeout Timeout in seconds (null for blocking wait)
-     * @return bool True on success, false on failure
+     * @return array{0: null, 1: bool} Returns [null, true] on success, [null, false] on failure
      */
-    public function push(mixed $data, ?float $timeout = null): bool
+    public function push(mixed $data, ?float $timeout = null): array
     {
         $future = $this->inner->send($data, $timeout);
         return Fiber::suspend($future);
@@ -37,9 +37,9 @@ class Channel
      * Pop a value from the channel
      *
      * @param float|null $timeout Timeout in seconds (null for blocking wait)
-     * @return mixed The received value, or null on failure
+     * @return array{0: mixed, 1: bool} Returns [value, true] on success, [null, false] on failure
      */
-    public function pop(?float $timeout = null): mixed
+    public function pop(?float $timeout = null): array
     {
         $future = $this->inner->recv($timeout);
         return Fiber::suspend($future);

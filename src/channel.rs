@@ -2,7 +2,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
-use crate::util::Shared;
+use crate::util::tuple2;
 use flume;
 use std::time::Duration;
 
@@ -50,19 +50,21 @@ impl AsyncChannel {
     /// * `timeout` - Timeout in seconds (null for blocking wait)
     ///
     /// # Returns
-    /// true on success, false on failure (closed or timeout)
+    /// [null, bool] - Returns [null, true] on success, [null, false] on failure
     #[php(optional = "timeout")]
-    pub fn send(&self, value: &Zval, timeout: Option<f64>) -> PhpResult<RustFuture> {
+    pub fn send(&self, value: &Zval, timeout: Option<f64>) -> RustFuture {
         let val = value.shallow_clone();
         let tx = match self.sender.as_ref() {
             Some(sender) => sender.clone(),
             None => {
-                return Err(PhpException::default("Cannot send to closed channel".to_string()));
+                // Channel closed: return [null, false]
+                let future = async { tuple2(Zval::new(), false) };
+                return RustFuture::new(future);
             }
         };
 
         let future = async move {
-            let result = match timeout {
+            let ok = match timeout {
                 Some(secs) => {
                     let duration = Duration::from_secs_f64(secs);
                     tokio::time::timeout(duration, tx.send_async(val))
@@ -72,10 +74,10 @@ impl AsyncChannel {
                 None => tx.send_async(val).await.is_ok(),
             };
 
-            Zval::from(result)
+            tuple2(Zval::new(), ok)
         };
 
-        Ok(RustFuture::new(future))
+        RustFuture::new(future)
     }
 
     /// Push a value to the channel with optional timeout (alias for send)
@@ -85,9 +87,9 @@ impl AsyncChannel {
     /// * `timeout` - Timeout in seconds (null for blocking wait)
     ///
     /// # Returns
-    /// true on success, false on failure (closed or timeout)
+    /// [null, bool] - Returns [null, true] on success, [null, false] on failure
     #[php(optional = "timeout")]
-    pub fn push(&self, value: &Zval, timeout: Option<f64>) -> PhpResult<RustFuture> {
+    pub fn push(&self, value: &Zval, timeout: Option<f64>) -> RustFuture {
         self.send(value, timeout)
     }
 
@@ -97,7 +99,7 @@ impl AsyncChannel {
     /// * `timeout` - Timeout in seconds (null for blocking wait)
     ///
     /// # Returns
-    /// The received value, or null on failure (closed or timeout)
+    /// [value, bool] - Returns [value, true] on success, [null, false] on failure (closed or timeout)
     #[php(optional = "timeout")]
     pub fn recv(&self, timeout: Option<f64>) -> RustFuture {
         let rx = self.receiver.clone();
@@ -106,11 +108,17 @@ impl AsyncChannel {
             match timeout {
                 Some(secs) => {
                     let duration = Duration::from_secs_f64(secs);
-                    tokio::time::timeout(duration, rx.recv_async())
-                        .await
-                        .map_or(Zval::new(), |r| r.unwrap_or_else(|_| Zval::new()))
+                    match tokio::time::timeout(duration, rx.recv_async()).await {
+                        Ok(Ok(val)) => tuple2(val, true),
+                        _ => tuple2(Zval::new(), false),
+                    }
                 }
-                None => rx.recv_async().await.unwrap_or_else(|_| Zval::new()),
+                None => {
+                    match rx.recv_async().await {
+                        Ok(val) => tuple2(val, true),
+                        Err(_) => tuple2(Zval::new(), false),
+                    }
+                }
             }
         };
 
@@ -123,7 +131,7 @@ impl AsyncChannel {
     /// * `timeout` - Timeout in seconds (null for blocking wait)
     ///
     /// # Returns
-    /// The received value, or null on failure (closed or timeout)
+    /// [value, bool] - Returns [value, true] on success, [null, false] on failure (closed or timeout)
     #[php(optional = "timeout")]
     pub fn pop(&self, timeout: Option<f64>) -> RustFuture {
         self.recv(timeout)
