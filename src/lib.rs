@@ -163,6 +163,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
         .class::<http::HttpClient>()
+        .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
         .class::<http::HttpResponseBody>()
         .class::<AsyncChannel>()

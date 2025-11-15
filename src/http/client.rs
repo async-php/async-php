@@ -1,110 +1,38 @@
-/// Minimal HTTP Client - directly exposes hyper-util capabilities
-/// Business logic (redirect, retry, auth, cookies) implemented in PHP layer
+/// HTTP Client - wraps reqwest::Client with full feature exposure
+///
+/// This module exposes all reqwest capabilities to PHP:
+/// - Connection pooling (automatic)
+/// - Timeout configuration
+/// - Redirect handling
+/// - Cookie management
+/// - Proxy support
+/// - Custom TLS/SSL configuration
+/// - HTTP/1.1 and HTTP/2 support
 
 use ext_php_rs::prelude::*;
-use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 
-use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::client::legacy::Client;
-use rustls::RootCertStore;
+use reqwest::tls::Version as TlsVersion;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashMap;
-
-use bytes::Bytes;
-use futures::StreamExt;
-use http_body_util::BodyExt;
-use http_body_util::StreamBody;
-use hyper::body::Frame;
 
 use crate::future::RustFuture;
-use crate::http::{HttpResponse, HttpResponseBody};
+use crate::http::HttpRequest;
 
-type HyperClient = Client<
-    hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
-    http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>,
->;
-
-/// Local executor for single-threaded async runtime
-#[derive(Clone, Copy)]
-struct LocalExecutor;
-
-impl<F> hyper::rt::Executor<F> for LocalExecutor
-where
-    F: std::future::Future + 'static,
-{
-    fn execute(&self, fut: F) {
-        tokio::task::spawn_local(fut);
-    }
-}
-
-/// Internal adapter for PHP Reader interface (for request bodies)
-struct PhpBodyReader {
-    reader: Zval,
-    chunk_size: usize,
-}
-
-unsafe impl Send for PhpBodyReader {}
-unsafe impl Sync for PhpBodyReader {}
-
-impl PhpBodyReader {
-    fn new(reader: Zval) -> Self {
-        Self {
-            reader,
-            chunk_size: 8192,
-        }
-    }
-}
-
-impl tokio::io::AsyncRead for PhpBodyReader {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        let to_read = std::cmp::min(buf.remaining(), this.chunk_size) as i64;
-
-        let mut length_zval = Zval::new();
-        length_zval.set_long(to_read);
-
-        let data_zval = this
-            .reader
-            .try_call_method("read", vec![&length_zval])
-            .map_err(|e| std::io::Error::other(format!("PHP read failed: {:?}", e)))?;
-
-        if data_zval.is_null() {
-            return std::task::Poll::Ready(Ok(()));
-        }
-
-        if let Some(bytes) = data_zval.binary() {
-            buf.put_slice(&bytes);
-        } else if let Some(s) = data_zval.str() {
-            buf.put_slice(s.as_bytes());
-        } else {
-            return std::task::Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Read did not return string or binary",
-            )));
-        }
-
-        std::task::Poll::Ready(Ok(()))
-    }
-}
-
-/// Minimal HTTP Client - executes HTTP requests
+/// HTTP Client - full-featured HTTP client based on reqwest
 ///
-/// This client ONLY handles the HTTP protocol layer.
-/// All application logic should be implemented in PHP:
-/// - Redirects (follow Location headers)
-/// - Retries (handle timeouts/errors)
-/// - Authentication (add Authorization headers)
-/// - Cookies (manage Cookie/Set-Cookie headers)
+/// This client exposes all reqwest capabilities including:
+/// - Automatic connection pooling
+/// - Configurable timeouts (connect, read, request)
+/// - Redirect policy control
+/// - Cookie jar integration
+/// - Proxy configuration
+/// - Custom TLS certificates and client auth
+/// - HTTP/2 support
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpClient")]
 pub struct HttpClient {
-    client: Arc<HyperClient>,
+    client: Arc<reqwest::Client>,
 }
 
 unsafe impl Send for HttpClient {}
@@ -112,223 +40,206 @@ unsafe impl Sync for HttpClient {}
 
 #[php_impl]
 impl HttpClient {
-    /// Create a new HTTP client
+    /// Create a new HTTP client with builder options
     ///
     /// # Arguments (all optional)
-    /// * `ca_cert` - PEM-encoded CA certificate for custom root trust
-    /// * `client_cert` - PEM-encoded client certificate for mTLS
-    /// * `client_key` - PEM-encoded private key for mTLS
+    /// * `timeout_secs` - Total request timeout in seconds
+    /// * `connect_timeout_secs` - Connection timeout in seconds
+    /// * `pool_idle_timeout_secs` - Connection pool idle timeout
+    /// * `pool_max_idle_per_host` - Max idle connections per host
+    /// * `max_redirects` - Maximum number of redirects (0 = no redirects)
+    /// * `enable_cookies` - Enable automatic cookie handling
+    /// * `enable_http2` - Enable HTTP/2 protocol
+    /// * `ca_cert_pem` - Custom CA certificate in PEM format
+    /// * `client_cert_pem` - Client certificate for mTLS
+    /// * `client_key_pem` - Client private key for mTLS
+    /// * `min_tls_version` - Minimum TLS version ("1.0", "1.1", "1.2", "1.3")
+    /// * `accept_invalid_certs` - Accept invalid/self-signed certificates (DANGEROUS)
     #[php(constructor)]
     pub fn __construct(
-        ca_cert: Option<String>,
-        client_cert: Option<String>,
-        client_key: Option<String>,
+        timeout_secs: Option<f64>,
+        connect_timeout_secs: Option<f64>,
+        pool_idle_timeout_secs: Option<f64>,
+        pool_max_idle_per_host: Option<i64>,
+        max_redirects: Option<i64>,
+        enable_cookies: Option<bool>,
+        enable_http2: Option<bool>,
+        ca_cert_pem: Option<String>,
+        client_cert_pem: Option<String>,
+        client_key_pem: Option<String>,
+        min_tls_version: Option<String>,
+        accept_invalid_certs: Option<bool>,
     ) -> PhpResult<Self> {
-        let client = Self::build_client(
-            ca_cert.as_deref(),
-            client_cert.as_deref(),
-            client_key.as_deref(),
-        )
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+        let mut builder = reqwest::Client::builder();
+
+        // Timeouts
+        if let Some(secs) = timeout_secs {
+            builder = builder.timeout(Duration::from_secs_f64(secs));
+        }
+        if let Some(secs) = connect_timeout_secs {
+            builder = builder.connect_timeout(Duration::from_secs_f64(secs));
+        }
+
+        // Connection pool
+        if let Some(secs) = pool_idle_timeout_secs {
+            builder = builder.pool_idle_timeout(Duration::from_secs_f64(secs));
+        }
+        if let Some(max) = pool_max_idle_per_host {
+            builder = builder.pool_max_idle_per_host(max as usize);
+        }
+
+        // Redirects
+        if let Some(max) = max_redirects {
+            if max == 0 {
+                builder = builder.redirect(reqwest::redirect::Policy::none());
+            } else {
+                builder = builder.redirect(reqwest::redirect::Policy::limited(max as usize));
+            }
+        }
+
+        // Cookies
+        if enable_cookies.unwrap_or(false) {
+            builder = builder.cookie_store(true);
+        }
+
+        // HTTP/2 is enabled by default in reqwest
+        // Set http1_only if user explicitly disabled HTTP/2
+        if let Some(h2) = enable_http2 {
+            if !h2 {
+                builder = builder.http1_only();
+            }
+        }
+
+        // TLS configuration
+        if let Some(min_ver) = min_tls_version {
+            let tls_ver = match min_ver.as_str() {
+                "1.0" => TlsVersion::TLS_1_0,
+                "1.1" => TlsVersion::TLS_1_1,
+                "1.2" => TlsVersion::TLS_1_2,
+                "1.3" => TlsVersion::TLS_1_3,
+                _ => return Err(PhpException::default(format!("Invalid TLS version: {}", min_ver))),
+            };
+            builder = builder.min_tls_version(tls_ver);
+        }
+
+        if accept_invalid_certs.unwrap_or(false) {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+
+        // Custom CA certificate
+        if let Some(ca_pem) = ca_cert_pem {
+            let cert = reqwest::Certificate::from_pem(ca_pem.as_bytes())
+                .map_err(|e| format!("Failed to parse CA certificate: {}", e))?;
+            builder = builder.add_root_certificate(cert);
+        }
+
+        // Client certificate (mTLS)
+        if let (Some(cert_pem), Some(key_pem)) = (client_cert_pem, client_key_pem) {
+            // Combine cert and key for reqwest
+            let combined_pem = format!("{}{}", cert_pem, key_pem);
+            let identity = reqwest::Identity::from_pem(combined_pem.as_bytes())
+                .map_err(|e| format!("Failed to create client identity: {}", e))?;
+            builder = builder.identity(identity);
+        }
+
+        // Build client
+        let client = builder
+            .build()
+            .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
         Ok(Self {
             client: Arc::new(client),
         })
     }
 
-    /// Execute a single HTTP request
-    ///
-    /// This method ONLY executes the request. It does NOT:
-    /// - Follow redirects (check status code and Location header in PHP)
-    /// - Retry on failures (handle errors in PHP)
-    /// - Add authentication (pass Authorization header explicitly)
-    /// - Manage cookies (pass Cookie header and parse Set-Cookie in PHP)
-    ///
-    /// # Arguments
-    /// * `method` - HTTP method (GET, POST, PUT, DELETE, etc.)
-    /// * `uri` - Full URI (https://example.com/path?query)
-    /// * `headers` - Associative array of headers
-    /// * `body` - Request body (null, string, or AsyncReader object)
-    /// * `timeout` - Optional timeout in seconds (null = no timeout)
-    ///
-    /// # Returns
-    /// Future that resolves to HttpResponse
+    /// Create a simple HTTP client with default settings
     #[php]
-    pub fn request(
-        &self,
-        method: String,
-        uri: String,
-        headers: HashMap<String, String>,
-        body: Option<&Zval>,
-        timeout: Option<f64>,
-    ) -> RustFuture {
-        let client = self.client.clone();
-        let body_zval = body.map(|z| z.shallow_clone());
-        let timeout_duration = timeout.map(Duration::from_secs_f64);
-
-        RustFuture::new(async move {
-            // Parse method and URI
-            let http_method = method
-                .parse::<hyper::Method>()
-                .map_err(|e| format!("Invalid HTTP method '{}': {}", method, e))?;
-            let http_uri = uri
-                .parse::<hyper::Uri>()
-                .map_err(|e| format!("Invalid URI '{}': {}", uri, e))?;
-
-            // Build request with headers
-            let mut req_builder = hyper::Request::builder()
-                .method(http_method)
-                .uri(http_uri);
-
-            for (key, value) in headers {
-                req_builder = req_builder.header(key, value);
-            }
-
-            // Build body
-            let hyper_body = if body_zval.as_ref().map_or(true, |z| z.is_null()) {
-                // Empty body
-                BodyExt::boxed(
-                    http_body_util::Empty::<Bytes>::new()
-                        .map_err(|never| match never {}),
-                )
-            } else if let Some(zval) = body_zval.as_ref().filter(|z| z.is_string()) {
-                // String body
-                let bytes = if let Some(bin) = zval.binary() {
-                    Bytes::from(bin)
-                } else if let Some(s) = zval.str() {
-                    Bytes::from(s.as_bytes().to_vec())
-                } else {
-                    Bytes::new()
-                };
-                BodyExt::boxed(
-                    http_body_util::Full::new(bytes)
-                        .map_err(|never| match never {}),
-                )
-            } else if let Some(zval) = body_zval {
-                // AsyncReader body
-                let php_reader = PhpBodyReader::new(zval);
-                let stream = tokio_util::io::ReaderStream::new(php_reader).map(|result| {
-                    result
-                        .map(Frame::data)
-                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
-                });
-                BodyExt::boxed(StreamBody::new(stream))
-            } else {
-                // Fallback empty
-                BodyExt::boxed(
-                    http_body_util::Empty::<Bytes>::new()
-                        .map_err(|never| match never {}),
-                )
-            };
-
-            let hyper_request = req_builder
-                .body(hyper_body)
-                .map_err(|e| format!("Failed to build request: {}", e))?;
-
-            // Execute request with optional timeout
-            let response = if let Some(duration) = timeout_duration {
-                tokio::time::timeout(duration, client.request(hyper_request))
-                    .await
-                    .map_err(|_| "Request timeout".to_string())?
-                    .map_err(|e| format!("Request failed: {}", e))?
-            } else {
-                client
-                    .request(hyper_request)
-                    .await
-                    .map_err(|e| format!("Request failed: {}", e))?
-            };
-
-            // Convert to HttpResponse and return as Zval
-            Self::convert_response(response).await
+    pub fn create_simple() -> PhpResult<Self> {
+        let client = reqwest::Client::new();
+        Ok(Self {
+            client: Arc::new(client),
         })
     }
-}
 
-// Internal implementation
-impl HttpClient {
-    /// Build hyper client with optional custom certificates
-    fn build_client(
-        ca_cert: Option<&str>,
-        client_cert: Option<&str>,
-        client_key: Option<&str>,
-    ) -> Result<HyperClient, String> {
-        let mut root_store = RootCertStore::empty();
-
-        // Add custom CA certificates if provided
-        if let Some(ca_pem) = ca_cert {
-            let mut cursor = std::io::Cursor::new(ca_pem.as_bytes());
-            let certs = rustls_pemfile::certs(&mut cursor)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("Failed to parse CA certificates: {}", e))?;
-
-            for cert in certs {
-                root_store
-                    .add(cert)
-                    .map_err(|e| format!("Failed to add CA certificate: {}", e))?;
-            }
-        } else {
-            // Use native system certificates
-            root_store = webpki_roots::TLS_SERVER_ROOTS
-                .iter()
-                .map(|ta| ta.to_owned())
-                .collect();
-        }
-
-        let config_builder = rustls::ClientConfig::builder().with_root_certificates(root_store);
-
-        // Add client certificate if provided (mTLS)
-        let config = if let (Some(cert_pem), Some(key_pem)) = (client_cert, client_key) {
-            let mut cert_cursor = std::io::Cursor::new(cert_pem.as_bytes());
-            let certs = rustls_pemfile::certs(&mut cert_cursor)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("Failed to parse client certificate: {}", e))?;
-
-            let mut key_cursor = std::io::Cursor::new(key_pem.as_bytes());
-            let key = rustls_pemfile::private_key(&mut key_cursor)
-                .map_err(|e| format!("Failed to parse private key: {}", e))?
-                .ok_or_else(|| "No private key found in PEM".to_string())?;
-
-            config_builder
-                .with_client_auth_cert(certs, key)
-                .map_err(|e| format!("Failed to configure client certificate: {}", e))?
-        } else {
-            config_builder.with_no_client_auth()
-        };
-
-        let https = HttpsConnectorBuilder::new()
-            .with_tls_config(config)
-            .https_or_http()
-            .enable_http1()
-            .build();
-
-        Ok(Client::builder(LocalExecutor).build(https))
+    /// Start building a GET request
+    #[php]
+    pub fn get(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "GET", url))
     }
 
-    /// Convert hyper response to HttpResponse (Zval)
-    async fn convert_response(
-        response: hyper::Response<hyper::body::Incoming>,
-    ) -> Result<Zval, String> {
-        let (parts, body) = response.into_parts();
+    /// Start building a POST request
+    #[php]
+    pub fn post(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "POST", url))
+    }
 
-        // Get Content-Encoding for automatic decompression
-        let content_encoding = parts
-            .headers
-            .get("content-encoding")
-            .and_then(|v| v.to_str().ok());
+    /// Start building a PUT request
+    #[php]
+    pub fn put(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "PUT", url))
+    }
 
-        // Create response body with optional decompression
-        let response_body = HttpResponseBody::new_internal(body, content_encoding);
+    /// Start building a PATCH request
+    #[php]
+    pub fn patch(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "PATCH", url))
+    }
 
-        // Create HttpResponse
-        let response_obj = HttpResponse::new_internal(
-            parts.status.as_u16(),
-            parts.version,
-            parts.headers,
-            response_body,
-        );
+    /// Start building a DELETE request
+    #[php]
+    pub fn delete(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "DELETE", url))
+    }
 
-        response_obj
-            .into_zval(false)
-            .map_err(|e| format!("Failed to convert response to Zval: {:?}", e))
+    /// Start building a HEAD request
+    #[php]
+    pub fn head(&self, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), "HEAD", url))
+    }
+
+    /// Start building a request with custom method
+    #[php]
+    pub fn request(&self, method: String, url: String) -> PhpResult<HttpRequest> {
+        Ok(HttpRequest::new(self.client.clone(), &method, url))
+    }
+
+    /// Execute a simple GET request (convenience method)
+    #[php]
+    pub fn quick_get(&self, url: String) -> RustFuture {
+        let client = self.client.clone();
+        RustFuture::new(async move {
+            let response = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("Request failed: {}", e))?;
+
+            let response_obj = crate::http::HttpResponse::new_internal(response);
+            response_obj
+                .into_zval(false)
+                .map_err(|e| format!("Failed to convert response: {:?}", e))
+        })
+    }
+
+    /// Execute a simple POST request with JSON body (convenience method)
+    #[php]
+    pub fn quick_post_json(&self, url: String, json: String) -> RustFuture {
+        let client = self.client.clone();
+        RustFuture::new(async move {
+            let json_value: serde_json::Value = serde_json::from_str(&json)
+                .map_err(|e| format!("Invalid JSON: {}", e))?;
+
+            let response = client
+                .post(&url)
+                .json(&json_value)
+                .send()
+                .await
+                .map_err(|e| format!("Request failed: {}", e))?;
+
+            let response_obj = crate::http::HttpResponse::new_internal(response);
+            response_obj
+                .into_zval(false)
+                .map_err(|e| format!("Failed to convert response: {:?}", e))
+        })
     }
 }

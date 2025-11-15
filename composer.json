@@ -11,5 +11,9 @@
             "src-php/Async/functions.php"
         ]
     },
-    "require": {}
+    "require": {
+        "psr/http-message": "^2.0",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.1"
+    }
 }

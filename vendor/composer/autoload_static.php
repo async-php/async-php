@@ -11,6 +11,11 @@ class ComposerStaticInit92d916dea917a74e4d27f1891deb36c9
     );
 
     public static $prefixLengthsPsr4 = array (
+        'P' => 
+        array (
+            'Psr\\Http\\Message\\' => 17,
+            'Psr\\Http\\Client\\' => 16,
+        ),
         'A' => 
         array (
             'Async\\' => 6,
@@ -18,6 +23,15 @@ class ComposerStaticInit92d916dea917a74e4d27f1891deb36c9
     );
 
     public static $prefixDirsPsr4 = array (
+        'Psr\\Http\\Message\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-factory/src',
+            1 => __DIR__ . '/..' . '/psr/http-message/src',
+        ),
+        'Psr\\Http\\Client\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-client/src',
+        ),
         'Async\\' => 
         array (
             0 => __DIR__ . '/../..' . '/src-php/Async',

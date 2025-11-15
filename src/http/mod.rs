@@ -1,13 +1,21 @@
-/// Minimal HTTP module
+/// HTTP Module - Full-featured HTTP client based on reqwest
 ///
-/// This module provides a thin Rust wrapper around hyper-util.
-/// All business logic (redirects, retries, auth, cookies) should be
-/// implemented in PHP for maximum flexibility.
+/// This module provides a complete HTTP client implementation with:
+/// - Automatic connection pooling
+/// - Redirect handling
+/// - Cookie management
+/// - TLS/SSL configuration
+/// - Streaming request/response bodies
+/// - JSON support
+/// - Form data
+/// - Multipart uploads
 
-mod body;
-mod response;
 mod client;
+mod request;
+mod response;
+mod body;
 
-pub use body::HttpResponseBody;
-pub use response::HttpResponse;
 pub use client::HttpClient;
+pub use request::HttpRequest;
+pub use response::HttpResponse;
+pub use body::HttpResponseBody;
