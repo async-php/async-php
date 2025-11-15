@@ -1,172 +1,96 @@
-use crate::http::metrics::RequestMetrics;
-use crate::http::types::StatusCodes;
+/// Minimal HTTP Response - wraps hyper response
+
 use ext_php_rs::prelude::*;
+use ext_php_rs::convert::IntoZval;
 use ext_php_rs::types::Zval;
 use std::collections::HashMap;
 
-/// HTTP Response structure
+use crate::http::HttpResponseBody;
+
+/// HTTP Response
+///
+/// Simple wrapper around HTTP response data from hyper.
+/// All response processing logic should be in PHP.
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
-    /// HTTP status code
-    status_code: i32,
-    /// Reason phrase (e.g., "OK" for status 200)
-    reason_phrase: String,
-    /// HTTP version
+    /// HTTP status code (e.g., 200, 404, 500)
+    status_code: u16,
+    /// HTTP version (e.g., HTTP/1.1, HTTP/2)
     version: String,
-    /// Response headers
+    /// Response headers (lowercase keys)
     headers: HashMap<String, String>,
-    /// Response body as an IO ReadCloser (allows streaming)
+    /// Response body (HttpResponseBody with optional decompression)
     body: Zval,
-    /// Performance metrics (optional)
-    metrics: Option<RequestMetrics>,
 }
 
-// SAFETY: Safe because runtime is single-threaded
 unsafe impl Send for HttpResponse {}
 unsafe impl Sync for HttpResponse {}
 
 #[php_impl]
 impl HttpResponse {
-    /// Create a new HTTP response
-    #[php(constructor)]
-    pub fn __construct(status_code: i32) -> Self {
-        let reason = StatusCodes::get_default_reason_phrase(status_code);
-        Self {
-            status_code,
-            reason_phrase: reason,
-            version: "1.1".to_string(),
-            headers: HashMap::new(),
-            body: Zval::null(),
-            metrics: None,
-        }
-    }
-
-    /// Create a new response with a body
-    pub fn create(status_code: i32, body: &Zval) -> PhpResult<Self> {
-        let reason = StatusCodes::get_default_reason_phrase(status_code);
-        Ok(Self {
-            status_code,
-            reason_phrase: reason,
-            version: "1.1".to_string(),
-            headers: HashMap::new(),
-            body: body.shallow_clone(),
-            metrics: None,
-        })
-    }
-
-    /// Get the status code
-    pub fn get_status_code(&self) -> i32 {
+    /// Get the HTTP status code
+    pub fn get_status(&self) -> u16 {
         self.status_code
     }
 
-    /// Set the status code
-    pub fn set_status_code(&mut self, status_code: i32) {
-        self.status_code = status_code;
-        self.reason_phrase = StatusCodes::get_default_reason_phrase(status_code);
-    }
-
-    /// Get the reason phrase
-    pub fn get_reason_phrase(&self) -> String {
-        self.reason_phrase.clone()
-    }
-
-    /// Set a custom reason phrase
-    pub fn set_reason_phrase(&mut self, reason_phrase: String) {
-        self.reason_phrase = reason_phrase;
-    }
-
-    /// Get the HTTP version
+    /// Get the HTTP version string
     pub fn get_version(&self) -> String {
         self.version.clone()
     }
 
-    /// Set the HTTP version
-    pub fn set_version(&mut self, version: String) {
-        self.version = version;
-    }
-
-    /// Get all headers
+    /// Get all response headers
     pub fn get_headers(&self) -> HashMap<String, String> {
         self.headers.clone()
     }
 
-    /// Get a specific header
+    /// Get a specific header value (case-insensitive)
     pub fn get_header(&self, name: String) -> Option<String> {
-        self.headers.iter()
-            .find(|(key, _)| key.to_lowercase() == name.to_lowercase())
-            .map(|(_, value)| value.clone())
-    }
-
-    /// Set a header (replaces if exists)
-    pub fn set_header(&mut self, name: String, value: String) {
-        self.headers.insert(name, value);
-    }
-
-    /// Remove a header
-    pub fn remove_header(&mut self, name: String) {
-        self.headers.remove(&name);
+        let name_lower = name.to_lowercase();
+        self.headers.get(&name_lower).cloned()
     }
 
     /// Get the response body
     pub fn get_body(&self) -> Zval {
         self.body.shallow_clone()
     }
-
-    /// Set the response body
-    pub fn set_body(&mut self, body: &Zval) -> PhpResult<()> {
-        self.body = body.shallow_clone();
-        Ok(())
-    }
-
-    /// Clone the response
-    pub fn clone(&self) -> Self {
-        Self {
-            status_code: self.status_code,
-            reason_phrase: self.reason_phrase.clone(),
-            version: self.version.clone(),
-            headers: self.headers.clone(),
-            body: Zval::null(),
-            metrics: self.metrics.clone(),
-        }
-    }
-
-    /// Get performance metrics if available
-    #[php]
-    pub fn get_metrics(&self) -> Option<RequestMetrics> {
-        self.metrics.clone()
-    }
-
-    /// Check if the response is successful (2xx)
-    pub fn is_success(&self) -> bool {
-        StatusCodes::is_success(self.status_code)
-    }
-
-    /// Check if the response is a redirect (3xx)
-    pub fn is_redirect(&self) -> bool {
-        StatusCodes::is_redirect(self.status_code)
-    }
-
-    /// Check if the response is a client error (4xx)
-    pub fn is_client_error(&self) -> bool {
-        StatusCodes::is_client_error(self.status_code)
-    }
-
-    /// Check if the response is a server error (5xx)
-    pub fn is_server_error(&self) -> bool {
-        StatusCodes::is_server_error(self.status_code)
-    }
-
-    /// Check if the response is an error (4xx or 5xx)
-    pub fn is_error(&self) -> bool {
-        StatusCodes::is_error(self.status_code)
-    }
 }
 
-// Internal methods not exposed to PHP
+// Internal constructor (used by HttpClient)
 impl HttpResponse {
-    /// Set performance metrics (internal only)
-    pub(crate) fn set_metrics(&mut self, metrics: RequestMetrics) {
-        self.metrics = Some(metrics);
+    pub(crate) fn new_internal(
+        status_code: u16,
+        version: hyper::Version,
+        headers: hyper::HeaderMap,
+        body: HttpResponseBody,
+    ) -> Self {
+        // Convert version
+        let version_str = match version {
+            hyper::Version::HTTP_09 => "HTTP/0.9",
+            hyper::Version::HTTP_10 => "HTTP/1.0",
+            hyper::Version::HTTP_11 => "HTTP/1.1",
+            hyper::Version::HTTP_2 => "HTTP/2",
+            hyper::Version::HTTP_3 => "HTTP/3",
+            _ => "HTTP/1.1",
+        }
+        .to_string();
+
+        // Convert headers (normalize to lowercase keys)
+        let mut headers_map = HashMap::new();
+        for (name, value) in headers.iter() {
+            if let Ok(value_str) = value.to_str() {
+                headers_map.insert(name.as_str().to_lowercase(), value_str.to_string());
+            }
+        }
+
+        // Convert body to Zval
+        let body_zval = body.into_zval(false).unwrap_or_else(|_| Zval::null());
+
+        Self {
+            status_code,
+            version: version_str,
+            headers: headers_map,
+            body: body_zval,
+        }
     }
 }

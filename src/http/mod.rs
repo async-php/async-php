@@ -1,20 +1,13 @@
-/// HTTP module for async-php runtime
-/// Provides HTTP client and server implementations with support for
-/// HTTP/1.1, HTTP/2 and HTTP/3 protocols
+/// Minimal HTTP module
+///
+/// This module provides a thin Rust wrapper around hyper-util.
+/// All business logic (redirects, retries, auth, cookies) should be
+/// implemented in PHP for maximum flexibility.
 
-pub mod types;
-pub mod request;
-pub mod response;
-pub mod body;
-pub mod message;
-pub mod transport;
-
-// Re-export main types
+mod body;
+mod response;
+mod client;
 
 pub use body::HttpResponseBody;
-// AsyncReadBody is public for potential future use but not currently exported
-#[allow(unused_imports)]
-pub(crate) use body::AsyncReadBody;
-pub use transport::HttpTransport;
-pub use request::HttpRequest;
 pub use response::HttpResponse;
+pub use client::HttpClient;
