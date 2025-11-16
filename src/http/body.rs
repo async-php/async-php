@@ -1,17 +1,18 @@
 /// HTTP Response Body implementation using io.rs abstractions
-/// This module provides streaming HTTP body handling with automatic decompression
+///
+/// Note: reqwest automatically decompresses gzip/deflate/brotli responses by default,
+/// so we don't need to handle decompression manually.
 
 use crate::io::AsyncReader;
 use crate::future::RustFuture;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use tokio::io::{AsyncRead, AsyncReadExt};
-use async_compression::tokio::bufread::{GzipDecoder, DeflateDecoder};
+use tokio::io::AsyncReadExt;
 
 /// HTTP Response Body wrapper for streaming response data
 ///
 /// This class wraps an HTTP response body and provides async methods to read data.
-/// It automatically handles decompression for gzip and deflate encodings.
+/// Decompression is handled automatically by reqwest.
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponseBody")]
 pub struct HttpResponseBody {
@@ -20,31 +21,22 @@ pub struct HttpResponseBody {
 
 impl HttpResponseBody {
     /// Create response body from reqwest Response
-    pub fn from_reqwest(response: reqwest::Response, content_encoding: Option<&str>) -> Self {
+    ///
+    /// Note: reqwest's bytes_stream() already returns decompressed data
+    /// when automatic decompression is enabled (which is the default).
+    pub fn from_reqwest(response: reqwest::Response) -> Self {
         use futures::StreamExt;
 
         // Convert reqwest body stream to bytes stream
+        // reqwest automatically decompresses the stream, so we just need to convert it to AsyncRead
         let stream = response.bytes_stream().map(|result| {
             result.map_err(std::io::Error::other)
         });
 
         let stream_reader = tokio_util::io::StreamReader::new(stream);
 
-        // Wrap with decompressor if needed
-        let reader: Box<dyn AsyncRead + Unpin + Send> = match content_encoding {
-            Some("gzip") => {
-                let buffered = tokio::io::BufReader::new(stream_reader);
-                Box::new(GzipDecoder::new(buffered))
-            }
-            Some("deflate") => {
-                let buffered = tokio::io::BufReader::new(stream_reader);
-                Box::new(DeflateDecoder::new(buffered))
-            }
-            _ => Box::new(stream_reader),
-        };
-
         Self {
-            reader: AsyncReader::new(reader),
+            reader: AsyncReader::new(Box::new(stream_reader)),
         }
     }
 

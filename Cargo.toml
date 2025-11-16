@@ -22,7 +22,6 @@ reqwest = { version = "0.12", features = ["json", "stream", "cookies", "gzip", "
 http = "1.4.0"
 bytes = "1.11.0"
 url = "2.5"
-async-compression = { version = "0.4", features = ["tokio", "gzip", "deflate"] }
 rustls = { version = "0.23.35", features = ["ring"] }
 rustls-pemfile = "2.2.0"
 rustls-pki-types = "1.10"

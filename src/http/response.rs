@@ -14,7 +14,6 @@ use std::collections::HashMap;
 
 use crate::future::RustFuture;
 use crate::http::HttpResponseBody;
-use crate::util::Shared;
 
 /// HTTP Response
 ///
@@ -26,7 +25,7 @@ use crate::util::Shared;
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
     // Store response in Shared to allow multiple method calls
-    response: Shared<Option<Response>>,
+    response: Option<Response>,
     // Cache status and headers on creation
     status_code: u16,
     headers: HashMap<String, String>,
@@ -51,7 +50,7 @@ impl HttpResponse {
         }
 
         Self {
-            response: Shared::new(Some(response)),
+            response: Some(response),
             status_code,
             headers,
             version,
@@ -121,8 +120,8 @@ impl HttpResponse {
     /// Returns a Future that resolves to the text string.
     /// Note: This consumes the response body.
     #[php]
-    pub fn text(&self) -> RustFuture {
-        let response_opt = self.response.get_mut().take();
+    pub fn text(&mut self) -> RustFuture {
+        let response_opt = self.response.take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -145,8 +144,8 @@ impl HttpResponse {
     /// Returns a Future that resolves to the parsed JSON string.
     /// Note: This consumes the response body.
     #[php]
-    pub fn json(&self) -> RustFuture {
-        let response_opt = self.response.get_mut().take();
+    pub fn json(&mut self) -> RustFuture {
+        let response_opt = self.response.take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -172,8 +171,8 @@ impl HttpResponse {
     /// Returns a Future that resolves to binary data.
     /// Note: This consumes the response body.
     #[php]
-    pub fn bytes(&self) -> RustFuture {
-        let response_opt = self.response.get_mut().take();
+    pub fn bytes(&mut self) -> RustFuture {
+        let response_opt = self.response.take();
 
         RustFuture::new(async move {
             let response = response_opt
@@ -195,21 +194,14 @@ impl HttpResponse {
     /// Returns HttpResponseBody which implements AsyncReader interface.
     /// This is the best option for large responses or streaming data.
     /// Note: This consumes the response.
+    ///
+    /// Decompression (gzip/deflate/brotli) is handled automatically by reqwest.
     #[php]
-    pub fn stream(&self) -> PhpResult<HttpResponseBody> {
-        let response_opt = self.response.get_mut().take();
-
-        let response = response_opt
+    pub fn stream(&mut self) -> PhpResult<HttpResponseBody> {
+        let response = self.response.take()
             .ok_or_else(|| "Response body already consumed".to_string())?;
 
-        // Get content encoding first (before moving response)
-        let content_encoding = response
-            .headers()
-            .get("content-encoding")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        // Convert reqwest response to streaming body
-        Ok(HttpResponseBody::from_reqwest(response, content_encoding.as_deref()))
+        // reqwest automatically decompresses the stream
+        Ok(HttpResponseBody::from_reqwest(response))
     }
 }

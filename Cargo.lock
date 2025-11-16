@@ -82,7 +82,6 @@ name = "async-php"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "async-compression",
  "bytes",
  "ext-php-rs",
  "flume",
