@@ -7,6 +7,7 @@ use futures::FutureExt;
 
 mod future;
 mod io;
+mod bytes;
 mod net;
 mod fs;
 mod http;
@@ -18,6 +19,7 @@ mod logger;
 
 use future::RustFuture;
 use io::{AsyncReader, AsyncWriter, AsyncSeeker, AsyncBufReader};
+use bytes::{BytesReader, BytesWriter};
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use channel::AsyncChannel;
@@ -177,6 +179,8 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncWriter>()
         .class::<AsyncSeeker>()
         .class::<AsyncBufReader>()
+        .class::<BytesReader>() // In-memory IO
+        .class::<BytesWriter>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }
