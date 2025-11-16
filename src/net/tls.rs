@@ -441,22 +441,20 @@ impl AsyncTlsStream {
     /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
     #[php]
     pub fn as_reader(&self) -> crate::io::AsyncReader {
-        use crate::io::{AsyncReader, SharedAsyncRead};
+        use crate::io::AsyncReader;
         use crate::util::Shared;
-        let wrapper = SharedAsyncRead::new(self.inner.clone());
         let trait_object: Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> =
-            Shared::new(Box::new(wrapper));
+            Shared::new(Box::new(self.inner.clone()));
         AsyncReader::from_shared(trait_object)
     }
 
     /// Extract as AsyncWriter (returns \Async\Kernel\IO\AsyncWriter)
     #[php]
     pub fn as_writer(&self) -> crate::io::AsyncWriter {
-        use crate::io::{AsyncWriter, SharedAsyncWrite};
+        use crate::io::AsyncWriter;
         use crate::util::Shared;
-        let wrapper = SharedAsyncWrite::new(self.inner.clone());
         let trait_object: Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> =
-            Shared::new(Box::new(wrapper));
+            Shared::new(Box::new(self.inner.clone()));
         AsyncWriter::from_shared(trait_object)
     }
 }

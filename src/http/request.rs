@@ -187,9 +187,7 @@ impl HttpRequest {
         if let Some(async_reader) = try_extract_native_reader(reader) {
             // Fast path: use native Rust async reader without going through PHP FFI
             // The async_reader is already an AsyncReader PHP class wrapping the Shared trait object
-            use crate::io::SharedAsyncRead;
-            let wrapper = SharedAsyncRead::new(async_reader.get_inner());
-            let stream = ReaderStream::new(wrapper);
+            let stream = ReaderStream::new(async_reader.get_inner());
             let body = Body::wrap_stream(stream);
 
             let builder_ref = self.builder.get_mut();

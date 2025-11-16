@@ -253,108 +253,47 @@ impl AsyncBufReader {
     }
 }
 
-// ==================== Shared Wrapper for Trait Objects ====================
-// Wrappers to convert Shared<T> into trait objects
+// ==================== AsyncRead/AsyncWrite/AsyncSeek Implementations for Shared<T> ====================
+// Directly implement tokio IO traits for Shared<T> to avoid unnecessary wrapper types
 
-/// Wrapper that implements AsyncRead for Shared<T> where T: AsyncRead
-pub struct SharedAsyncRead<T> {
-    inner: Shared<T>,
-}
-
-impl<T> SharedAsyncRead<T> {
-    pub fn new(shared: Shared<T>) -> Self {
-        Self { inner: shared }
-    }
-}
-
-impl<T: AsyncRead + Unpin> AsyncRead for SharedAsyncRead<T> {
+/// Implement AsyncRead for Shared<T> where T: AsyncRead + Unpin
+impl<T: AsyncRead + Unpin> AsyncRead for Shared<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<IoResult<()>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_read(cx, buf)
+        Pin::new(self.get_mut().get_mut()).poll_read(cx, buf)
     }
 }
 
-/// Wrapper that implements AsyncWrite for Shared<T> where T: AsyncWrite
-pub struct SharedAsyncWrite<T> {
-    inner: Shared<T>,
-}
-
-impl<T> SharedAsyncWrite<T> {
-    pub fn new(shared: Shared<T>) -> Self {
-        Self { inner: shared }
-    }
-}
-
-impl<T: AsyncWrite + Unpin> AsyncWrite for SharedAsyncWrite<T> {
+/// Implement AsyncWrite for Shared<T> where T: AsyncWrite + Unpin
+impl<T: AsyncWrite + Unpin> AsyncWrite for Shared<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<IoResult<usize>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_write(cx, buf)
+        Pin::new(self.get_mut().get_mut()).poll_write(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_flush(cx)
+        Pin::new(self.get_mut().get_mut()).poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_shutdown(cx)
+        Pin::new(self.get_mut().get_mut()).poll_shutdown(cx)
     }
 }
 
-/// Wrapper that implements AsyncSeek for Shared<T> where T: AsyncSeek
-pub struct SharedAsyncSeek<T> {
-    inner: Shared<T>,
-}
-
-impl<T> SharedAsyncSeek<T> {
-    pub fn new(shared: Shared<T>) -> Self {
-        Self { inner: shared }
-    }
-}
-
-impl<T: AsyncSeek + Unpin> AsyncSeek for SharedAsyncSeek<T> {
+/// Implement AsyncSeek for Shared<T> where T: AsyncSeek + Unpin
+impl<T: AsyncSeek + Unpin> AsyncSeek for Shared<T> {
     fn start_seek(self: Pin<&mut Self>, position: SeekFrom) -> IoResult<()> {
-        Pin::new(self.get_mut().inner.get_mut()).start_seek(position)
+        Pin::new(self.get_mut().get_mut()).start_seek(position)
     }
 
     fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_complete(cx)
-    }
-}
-
-/// Wrapper that implements AsyncBufRead for Shared<T> where T: AsyncBufRead
-pub struct SharedAsyncBufRead<T> {
-    inner: Shared<T>,
-}
-
-impl<T> SharedAsyncBufRead<T> {
-    pub fn new(shared: Shared<T>) -> Self {
-        Self { inner: shared }
-    }
-}
-
-impl<T: AsyncBufRead + Unpin> AsyncRead for SharedAsyncBufRead<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> Poll<IoResult<()>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_read(cx, buf)
-    }
-}
-
-impl<T: AsyncBufRead + Unpin> AsyncBufRead for SharedAsyncBufRead<T> {
-    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<&[u8]>> {
-        Pin::new(self.get_mut().inner.get_mut()).poll_fill_buf(cx)
-    }
-
-    fn consume(self: Pin<&mut Self>, amt: usize) {
-        Pin::new(self.get_mut().inner.get_mut()).consume(amt)
+        Pin::new(self.get_mut().get_mut()).poll_complete(cx)
     }
 }
 

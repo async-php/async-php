@@ -314,30 +314,27 @@ impl AsyncFileHandle {
     /// enabling zero-overhead streaming without creating a new fiber.
     #[php]
     pub fn as_reader(&self) -> crate::io::AsyncReader {
-        use crate::io::{AsyncReader, SharedAsyncRead};
-        let wrapper = SharedAsyncRead::new(self.inner.clone());
+        use crate::io::AsyncReader;
         let trait_object: Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> =
-            Shared::new(Box::new(wrapper));
+            Shared::new(Box::new(self.inner.clone()));
         AsyncReader::from_shared(trait_object)
     }
 
     /// Extract as AsyncWriter (returns \Async\Kernel\IO\AsyncWriter)
     #[php]
     pub fn as_writer(&self) -> crate::io::AsyncWriter {
-        use crate::io::{AsyncWriter, SharedAsyncWrite};
-        let wrapper = SharedAsyncWrite::new(self.inner.clone());
+        use crate::io::AsyncWriter;
         let trait_object: Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> =
-            Shared::new(Box::new(wrapper));
+            Shared::new(Box::new(self.inner.clone()));
         AsyncWriter::from_shared(trait_object)
     }
 
     /// Extract as AsyncSeeker (returns \Async\Kernel\IO\AsyncSeeker)
     #[php]
     pub fn as_seeker(&self) -> crate::io::AsyncSeeker {
-        use crate::io::{AsyncSeeker, SharedAsyncSeek};
-        let wrapper = SharedAsyncSeek::new(self.inner.clone());
+        use crate::io::AsyncSeeker;
         let trait_object: Shared<Box<dyn tokio::io::AsyncSeek + Unpin + Send>> =
-            Shared::new(Box::new(wrapper));
+            Shared::new(Box::new(self.inner.clone()));
         AsyncSeeker::from_shared(trait_object)
     }
 }
