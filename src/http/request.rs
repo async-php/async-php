@@ -184,11 +184,11 @@ impl HttpRequest {
         use crate::io::try_extract_native_reader;
 
         // Try fast path: extract native Rust IO type directly
-        if let Some(native_reader) = try_extract_native_reader(reader) {
+        if let Some(async_reader) = try_extract_native_reader(reader) {
             // Fast path: use native Rust async reader without going through PHP FFI
-            // We need to create a wrapper that implements AsyncRead and owns the Shared
+            // The async_reader is already an AsyncReader PHP class wrapping the Shared trait object
             use crate::io::SharedAsyncRead;
-            let wrapper = SharedAsyncRead::new(native_reader);
+            let wrapper = SharedAsyncRead::new(async_reader.get_inner());
             let stream = ReaderStream::new(wrapper);
             let body = Body::wrap_stream(stream);
 

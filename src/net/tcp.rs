@@ -195,10 +195,7 @@ impl AsyncTcpStream {
         };
         self.inner.get_ref().set_linger(duration).is_ok()
     }
-}
 
-#[php_impl]
-impl AsyncTcpStream {
     /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
     #[php]
     pub fn as_reader(&self) -> crate::io::AsyncReader {

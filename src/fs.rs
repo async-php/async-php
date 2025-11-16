@@ -307,10 +307,7 @@ impl AsyncFileHandle {
         };
         RustFuture::new(future)
     }
-}
 
-#[php_impl]
-impl AsyncFileHandle {
     /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
     ///
     /// This allows using a FileHandle anywhere an AsyncReader is accepted,

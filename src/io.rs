@@ -366,82 +366,82 @@ impl<T: AsyncBufRead + Unpin> AsyncBufRead for SharedAsyncBufRead<T> {
 /// This checks if the Zval contains a Rust-native IO type (AsyncFileHandle, AsyncTcpStream, etc.)
 /// and extracts its underlying AsyncRead trait object directly, avoiding PHP FFI overhead.
 ///
-/// Returns Some(Shared<Box<dyn AsyncRead + Unpin + Send>>) if fast path is available, None otherwise.
-pub fn try_extract_native_reader(zval: &Zval) -> Option<Shared<Box<dyn AsyncRead + Unpin + Send>>> {
+/// Returns Some(AsyncReader) if fast path is available, None otherwise.
+pub fn try_extract_native_reader(zval: &Zval) -> Option<AsyncReader> {
     use ext_php_rs::types::ZendClassObject;
 
     // Try to extract as AsyncReader first (already a trait object wrapper)
     if let Some(obj) = zval.extract::<&ZendClassObject<AsyncReader>>() {
-        return Some(obj.get_inner());
+        return Some(AsyncReader::from_shared(obj.get_inner()));
     }
 
-    // Try AsyncFileHandle
+    // Try AsyncFileHandle - call as_reader() PHP method
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
-        return Some(obj.as_async_reader());
+        return Some(obj.as_reader());
     }
 
     // Try AsyncTcpStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTcpStream>>() {
-        return Some(obj.as_async_reader());
+        return Some(obj.as_reader());
     }
 
     // Try AsyncUnixStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncUnixStream>>() {
-        return Some(obj.as_async_reader());
+        return Some(obj.as_reader());
     }
 
     // Try AsyncTlsStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTlsStream>>() {
-        return Some(obj.as_async_reader());
+        return Some(obj.as_reader());
     }
 
     None
 }
 
 /// Try to extract a native AsyncWriter from Zval (fast path)
-pub fn try_extract_native_writer(zval: &Zval) -> Option<Shared<Box<dyn AsyncWrite + Unpin + Send>>> {
+pub fn try_extract_native_writer(zval: &Zval) -> Option<AsyncWriter> {
     use ext_php_rs::types::ZendClassObject;
 
     // Try to extract as AsyncWriter first
     if let Some(obj) = zval.extract::<&ZendClassObject<AsyncWriter>>() {
-        return Some(obj.get_inner());
+        return Some(AsyncWriter::from_shared(obj.get_inner()));
     }
 
     // Try AsyncFileHandle
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
-        return Some(obj.as_async_writer());
+        return Some(obj.as_writer());
     }
 
     // Try AsyncTcpStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTcpStream>>() {
-        return Some(obj.as_async_writer());
+        return Some(obj.as_writer());
     }
 
     // Try AsyncUnixStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncUnixStream>>() {
-        return Some(obj.as_async_writer());
+        return Some(obj.as_writer());
     }
 
     // Try AsyncTlsStream
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::AsyncTlsStream>>() {
-        return Some(obj.as_async_writer());
+        return Some(obj.as_writer());
     }
 
     None
 }
 
-/// Try to extract a native AsyncSeek from Zval (fast path)
-pub fn try_extract_native_seeker(zval: &Zval) -> Option<Shared<Box<dyn AsyncSeek + Unpin + Send>>> {
+/// Try to extract a native AsyncSeeker from Zval (fast path)
+pub fn try_extract_native_seeker(zval: &Zval) -> Option<AsyncSeeker> {
     use ext_php_rs::types::ZendClassObject;
 
     // Try to extract as AsyncSeeker first
     if let Some(obj) = zval.extract::<&ZendClassObject<AsyncSeeker>>() {
-        return Some(obj.get_inner());
+        return Some(AsyncSeeker::from_shared(obj.get_inner()));
     }
 
     // Try AsyncFileHandle (the only seekable type currently)
     if let Some(obj) = zval.extract::<&ZendClassObject<crate::fs::AsyncFileHandle>>() {
-        return Some(obj.as_async_seek());
+        return Some(obj.as_seeker());
     }
 
     None

@@ -437,10 +437,7 @@ impl AsyncTlsStream {
             .map(|p| String::from_utf8_lossy(p).to_string())
             .unwrap_or_default()
     }
-}
 
-#[php_impl]
-impl AsyncTlsStream {
     /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
     #[php]
     pub fn as_reader(&self) -> crate::io::AsyncReader {

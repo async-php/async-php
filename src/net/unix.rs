@@ -163,10 +163,7 @@ impl AsyncUnixStream {
         }
         Zval::new()
     }
-}
 
-#[php_impl]
-impl AsyncUnixStream {
     /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
     #[php]
     pub fn as_reader(&self) -> crate::io::AsyncReader {
