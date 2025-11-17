@@ -41,8 +41,8 @@ impl HttpResponseBody {
     }
 
     /// Get the underlying AsyncReader for internal use
-    pub fn as_reader(&self) -> &AsyncReader {
-        &self.reader
+    pub fn as_reader(&self) -> AsyncReader {
+        AsyncReader::new(self.reader.get_inner())
     }
 }
 

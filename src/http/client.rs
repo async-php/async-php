@@ -72,11 +72,13 @@ impl HttpClient {
     ) -> PhpResult<Self> {
         let mut builder = reqwest::Client::builder();
 
-        // Timeouts (with reasonable defaults for both release and debug builds)
-        // Default total timeout: 30 seconds
-        // Default connect timeout: 10 seconds
-        builder = builder.timeout(Duration::from_secs_f64(timeout_secs.unwrap_or(30.0)));
-        builder = builder.connect_timeout(Duration::from_secs_f64(connect_timeout_secs.unwrap_or(10.0)));
+        // Timeouts
+        if let Some(secs) = timeout_secs {
+            builder = builder.timeout(Duration::from_secs_f64(secs));
+        }
+        if let Some(secs) = connect_timeout_secs {
+            builder = builder.connect_timeout(Duration::from_secs_f64(secs));
+        }
 
         // Connection pool
         if let Some(secs) = pool_idle_timeout_secs {

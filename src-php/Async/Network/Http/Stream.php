@@ -3,23 +3,29 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
+use Async\Kernel\Network\Http\HttpResponseBody;
 use Psr\Http\Message\StreamInterface;
 use Fiber;
 
 /**
  * PSR-7 Stream implementation for HTTP response bodies
  *
- * This wraps the kernel HttpResponse and provides lazy body reading.
- * The body is read from the kernel response on first access.
+ * This implementation supports two modes:
+ * 1. Streaming mode (default): Reads data on-demand without buffering entire response
+ * 2. Seekable mode: Buffers entire response to support seek operations
+ *
+ * For large responses, streaming mode is much more memory-efficient.
+ * Seekable mode is activated automatically when seek() is called.
  */
 class Stream implements StreamInterface
 {
     private KernelResponse $kernelResponse;
-    private ?string $contents = null;
+    private ?HttpResponseBody $streamBody = null;
+    private ?string $bufferedContents = null;
     private int $position = 0;
-    private bool $seekable = true;
     private bool $readable = true;
     private bool $writable = false;
+    private bool $eof = false;
 
     public function __construct(KernelResponse $kernelResponse)
     {
@@ -27,24 +33,55 @@ class Stream implements StreamInterface
     }
 
     /**
-     * Reads body from kernel response if not already cached
+     * Get the streaming body (lazy initialization)
      */
-    private function ensureContents(): void
+    private function getStreamBody(): ?HttpResponseBody
     {
-        if ($this->contents !== null) {
+        if ($this->streamBody === null && $this->bufferedContents === null) {
+            try {
+                $this->streamBody = $this->kernelResponse->stream();
+            } catch (\Throwable $e) {
+                // Body already consumed or error
+                $this->eof = true;
+                return null;
+            }
+        }
+        return $this->streamBody;
+    }
+
+    /**
+     * Reads and buffers entire body (required for seek operations)
+     */
+    private function ensureBuffered(): void
+    {
+        if ($this->bufferedContents !== null) {
             return;
         }
 
-        // Read body as text from kernel response
-        $future = $this->kernelResponse->text();
-        $this->contents = Fiber::suspend($future);
+        // If we have a stream body, read all from it
+        if ($this->streamBody !== null) {
+            $future = $this->streamBody->readAll();
+            $this->bufferedContents = Fiber::suspend($future) ?? '';
+            $this->streamBody = null; // Release stream
+            return;
+        }
+
+        // Otherwise, read from kernel response
+        try {
+            $future = $this->kernelResponse->text();
+            $this->bufferedContents = Fiber::suspend($future) ?? '';
+        } catch (\Throwable $e) {
+            $this->bufferedContents = '';
+            $this->eof = true;
+        }
     }
 
     public function __toString(): string
     {
         try {
-            $this->ensureContents();
-            return $this->contents ?? '';
+            // For __toString we need the full contents
+            $this->ensureBuffered();
+            return $this->bufferedContents ?? '';
         } catch (\Throwable $e) {
             return '';
         }
@@ -52,21 +89,34 @@ class Stream implements StreamInterface
 
     public function close(): void
     {
-        // No-op: kernel manages the underlying connection
+        $this->streamBody = null;
+        $this->bufferedContents = null;
+        $this->readable = false;
     }
 
     public function detach()
     {
-        $this->contents = null;
+        $this->streamBody = null;
+        $this->bufferedContents = null;
         $this->readable = false;
-        $this->seekable = false;
         return null;
     }
 
     public function getSize(): ?int
     {
-        $this->ensureContents();
-        return $this->contents !== null ? strlen($this->contents) : null;
+        // Try to get Content-Length from response headers without reading body
+        $contentLength = $this->kernelResponse->contentLength();
+        if ($contentLength !== null) {
+            return (int)$contentLength;
+        }
+
+        // If buffered, return buffered size
+        if ($this->bufferedContents !== null) {
+            return strlen($this->bufferedContents);
+        }
+
+        // Unknown size for streaming responses
+        return null;
     }
 
     public function tell(): int
@@ -76,23 +126,27 @@ class Stream implements StreamInterface
 
     public function eof(): bool
     {
-        $this->ensureContents();
-        return $this->position >= strlen($this->contents ?? '');
+        // If buffered, check against buffered content
+        if ($this->bufferedContents !== null) {
+            return $this->position >= strlen($this->bufferedContents);
+        }
+
+        // If streaming, EOF is tracked by read operations
+        return $this->eof;
     }
 
     public function isSeekable(): bool
     {
-        return $this->seekable;
+        // Seekable only if we've buffered the content
+        return $this->bufferedContents !== null;
     }
 
     public function seek($offset, $whence = SEEK_SET): void
     {
-        if (!$this->seekable) {
-            throw new \RuntimeException('Stream is not seekable');
-        }
+        // Seeking requires buffering the entire response
+        $this->ensureBuffered();
 
-        $this->ensureContents();
-        $length = strlen($this->contents ?? '');
+        $length = strlen($this->bufferedContents ?? '');
 
         switch ($whence) {
             case SEEK_SET:
@@ -141,10 +195,39 @@ class Stream implements StreamInterface
             throw new \RuntimeException('Stream is not readable');
         }
 
-        $this->ensureContents();
-        $data = substr($this->contents ?? '', $this->position, $length);
-        $this->position += strlen($data);
-        return $data;
+        if ($length <= 0) {
+            return '';
+        }
+
+        // If buffered, read from buffer
+        if ($this->bufferedContents !== null) {
+            $data = substr($this->bufferedContents, $this->position, $length);
+            $this->position += strlen($data);
+            return $data;
+        }
+
+        // Streaming mode: read from stream body
+        $streamBody = $this->getStreamBody();
+        if ($streamBody === null) {
+            $this->eof = true;
+            return '';
+        }
+
+        try {
+            $future = $streamBody->read($length);
+            $data = Fiber::suspend($future);
+
+            if ($data === null || $data === '') {
+                $this->eof = true;
+                return '';
+            }
+
+            $this->position += strlen($data);
+            return $data;
+        } catch (\Throwable $e) {
+            $this->eof = true;
+            return '';
+        }
     }
 
     public function getContents(): string
@@ -153,18 +236,39 @@ class Stream implements StreamInterface
             throw new \RuntimeException('Stream is not readable');
         }
 
-        $this->ensureContents();
-        $data = substr($this->contents ?? '', $this->position);
-        $this->position = strlen($this->contents ?? '');
-        return $data;
+        // If buffered, return remaining buffered content
+        if ($this->bufferedContents !== null) {
+            $data = substr($this->bufferedContents, $this->position);
+            $this->position = strlen($this->bufferedContents);
+            return $data;
+        }
+
+        // Streaming mode: read all remaining from stream
+        $streamBody = $this->getStreamBody();
+        if ($streamBody === null) {
+            $this->eof = true;
+            return '';
+        }
+
+        try {
+            $future = $streamBody->readAll();
+            $data = Fiber::suspend($future) ?? '';
+            $this->position += strlen($data);
+            $this->eof = true;
+            return $data;
+        } catch (\Throwable $e) {
+            $this->eof = true;
+            return '';
+        }
     }
 
     public function getMetadata($key = null)
     {
         $metadata = [
-            'seekable' => $this->seekable,
+            'seekable' => $this->isSeekable(),
             'readable' => $this->readable,
             'writable' => $this->writable,
+            'mode' => $this->bufferedContents !== null ? 'buffered' : 'streaming',
         ];
 
         if ($key === null) {

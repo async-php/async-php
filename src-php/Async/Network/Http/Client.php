@@ -15,13 +15,6 @@ use Fiber;
  * This client wraps the reqwest-based kernel client and provides
  * a convenient PHP API with fluent method chaining.
  *
- * @method KernelRequest get(string $url) Create a GET request
- * @method KernelRequest post(string $url) Create a POST request
- * @method KernelRequest put(string $url) Create a PUT request
- * @method KernelRequest patch(string $url) Create a PATCH request
- * @method KernelRequest delete(string $url) Create a DELETE request
- * @method KernelRequest head(string $url) Create a HEAD request
- * @method KernelRequest request(string $method, string $url) Create a custom request
  */
 class Client implements ClientInterface
 {
@@ -63,28 +56,146 @@ class Client implements ClientInterface
     }
 
     /**
-     * Magic method to forward calls to kernel client
+     * Send a GET request
      *
-     * Supported methods:
-     * - get(string $url): KernelRequest
-     * - post(string $url): KernelRequest
-     * - put(string $url): KernelRequest
-     * - patch(string $url): KernelRequest
-     * - delete(string $url): KernelRequest
-     * - head(string $url): KernelRequest
-     * - request(string $method, string $url): KernelRequest
-     *
-     * @param string $method
-     * @param array $arguments
-     * @return KernelRequest
+     * @param string $url
+     * @return ResponseInterface
      */
-    public function __call(string $method, array $arguments): KernelRequest
+    public function get(string $url): ResponseInterface
     {
-        if (!method_exists($this->kernel, $method)) {
-            throw new \BadMethodCallException("Method {$method} does not exist on HttpClient");
+        $kernelRequest = $this->kernel->get($url);
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Send a POST request
+     *
+     * @param string $url
+     * @param mixed $body Optional request body
+     * @param array $headers Optional headers
+     * @return ResponseInterface
+     */
+    public function post(string $url, $body = null, array $headers = []): ResponseInterface
+    {
+        $kernelRequest = $this->kernel->post($url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
         }
 
-        return $this->kernel->{$method}(...$arguments);
+        if ($body !== null) {
+            if (is_array($body)) {
+                $kernelRequest->bodyJson(json_encode($body));
+            } elseif (is_string($body)) {
+                $kernelRequest->bodyText($body);
+            }
+        }
+
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Send a PUT request
+     *
+     * @param string $url
+     * @param mixed $body Optional request body
+     * @param array $headers Optional headers
+     * @return ResponseInterface
+     */
+    public function put(string $url, $body = null, array $headers = []): ResponseInterface
+    {
+        $kernelRequest = $this->kernel->put($url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
+        }
+
+        if ($body !== null) {
+            if (is_array($body)) {
+                $kernelRequest->bodyJson(json_encode($body));
+            } elseif (is_string($body)) {
+                $kernelRequest->bodyText($body);
+            }
+        }
+
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Send a PATCH request
+     *
+     * @param string $url
+     * @param mixed $body Optional request body
+     * @param array $headers Optional headers
+     * @return ResponseInterface
+     */
+    public function patch(string $url, $body = null, array $headers = []): ResponseInterface
+    {
+        $kernelRequest = $this->kernel->patch($url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
+        }
+
+        if ($body !== null) {
+            if (is_array($body)) {
+                $kernelRequest->bodyJson(json_encode($body));
+            } elseif (is_string($body)) {
+                $kernelRequest->bodyText($body);
+            }
+        }
+
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Send a DELETE request
+     *
+     * @param string $url
+     * @return ResponseInterface
+     */
+    public function delete(string $url): ResponseInterface
+    {
+        $kernelRequest = $this->kernel->delete($url);
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Send a HEAD request
+     *
+     * @param string $url
+     * @return ResponseInterface
+     */
+    public function head(string $url): ResponseInterface
+    {
+        $kernelRequest = $this->kernel->head($url);
+        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        return new Psr7Response($kernelResponse);
+    }
+
+    /**
+     * Create a request builder for advanced configuration
+     *
+     * Use this when you need to configure the request before sending:
+     * ```php
+     * $response = $client->request('POST', '/api/data')
+     *     ->header('X-Custom', 'value')
+     *     ->bodyJson(['key' => 'value'])
+     *     ->send();
+     * ```
+     *
+     * @param string $method
+     * @param string $url
+     * @return KernelRequest
+     */
+    public function request(string $method, string $url): KernelRequest
+    {
+        return $this->kernel->request($method, $url);
     }
 
     /**
