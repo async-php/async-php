@@ -22,6 +22,7 @@
 //! ```
 
 use ext_php_rs::prelude::*;
+use ext_php_rs::types::Zval;
 
 use std::io::{Cursor, Read, Write, Seek, SeekFrom};
 use std::pin::Pin;
@@ -133,17 +134,19 @@ unsafe impl Sync for BytesReader {}
 impl BytesReader {
     /// Create a new BytesReader from a byte string (binary-safe)
     #[php]
-    pub fn from_bytes(data: String) -> Self {
-        // PHP strings are binary-safe, so we can safely convert to Vec<u8>
-        Self {
-            inner: Shared::new(BytesCursor::new(data.into_bytes())),
-        }
+    pub fn from_bytes(data: &Zval) -> PhpResult<Self> {
+        let bytes = data.binary().ok_or("Expected binary string")?;
+        Ok(Self {
+            inner: Shared::new(BytesCursor::new(bytes.to_vec())),
+        })
     }
 
     /// Create a new BytesReader from a UTF-8 string
     #[php]
     pub fn from_string(s: String) -> Self {
-        Self::from_bytes(s)
+        Self {
+            inner: Shared::new(BytesCursor::new(s.into_bytes())),
+        }
     }
 
     /// Get the total length of the underlying data

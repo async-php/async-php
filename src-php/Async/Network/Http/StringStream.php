@@ -2,53 +2,79 @@
 
 namespace Async\Network\Http;
 
+use Async\Kernel\IO\BytesReader;
 use Psr\Http\Message\StreamInterface;
+use Fiber;
 
 /**
- * Simple string-based stream implementation
+ * String-based stream implementation backed by Rust BytesReader
  *
- * Wraps a string in a PSR-7 StreamInterface for use in requests.
+ * This implementation uses the Rust-level BytesReader for efficient
+ * in-memory operations and unified IO handling.
+ *
+ * Benefits over pure PHP implementation:
+ * - Consistent behavior with other Rust-backed streams
+ * - Efficient memory management at Rust level
+ * - Seekable by default (no buffering needed)
  */
 class StringStream implements StreamInterface
 {
-    private string $contents;
-    private int $position = 0;
+    private BytesReader $reader;
+    private int $size;
 
     public function __construct(string $contents = '')
     {
-        $this->contents = $contents;
+        // Use fromBytes() since PHP strings are binary-safe
+        $this->reader = BytesReader::fromBytes($contents);
+        $this->size = strlen($contents);
     }
 
     public function __toString(): string
     {
-        return $this->contents;
+        try {
+            // Save current position
+            $currentPos = $this->reader->position();
+
+            // Reset to beginning and read all
+            $this->reader->reset();
+            $future = $this->reader->asReader()->read($this->size);
+            $contents = Fiber::suspend($future) ?? '';
+
+            // Restore position
+            $seeker = $this->reader->asSeeker();
+            $future = $seeker->seek($currentPos, SEEK_SET);
+            Fiber::suspend($future);
+
+            return $contents;
+        } catch (\Throwable $e) {
+            return '';
+        }
     }
 
     public function close(): void
     {
-        // No-op for string streams
+        // No-op: Rust manages the memory
     }
 
     public function detach()
     {
-        $this->contents = '';
-        $this->position = 0;
+        // Can't really detach from Rust-backed reader
         return null;
     }
 
     public function getSize(): ?int
     {
-        return strlen($this->contents);
+        return $this->size;
     }
 
     public function tell(): int
     {
-        return $this->position;
+        return $this->reader->position();
     }
 
     public function eof(): bool
     {
-        return $this->position >= strlen($this->contents);
+        return $this->reader->remaining() === 0;
     }
 
     public function isSeekable(): bool
@@ -58,32 +84,14 @@ class StringStream implements StreamInterface
 
     public function seek($offset, $whence = SEEK_SET): void
     {
-        $length = strlen($this->contents);
-
-        switch ($whence) {
-            case SEEK_SET:
-                $newPosition = $offset;
-                break;
-            case SEEK_CUR:
-                $newPosition = $this->position + $offset;
-                break;
-            case SEEK_END:
-                $newPosition = $length + $offset;
-                break;
-            default:
-                throw new \InvalidArgumentException('Invalid whence value');
-        }
-
-        if ($newPosition < 0 || $newPosition > $length) {
-            throw new \RuntimeException('Invalid seek position');
-        }
-
-        $this->position = $newPosition;
+        $seeker = $this->reader->asSeeker();
+        $future = $seeker->seek($offset, $whence);
+        Fiber::suspend($future);
     }
 
     public function rewind(): void
     {
-        $this->position = 0;
+        $this->reader->reset();
     }
 
     public function isWritable(): bool
@@ -103,16 +111,25 @@ class StringStream implements StreamInterface
 
     public function read($length): string
     {
-        $data = substr($this->contents, $this->position, $length);
-        $this->position += strlen($data);
-        return $data;
+        if ($length <= 0) {
+            return '';
+        }
+
+        $asyncReader = $this->reader->asReader();
+        $future = $asyncReader->read($length);
+        $data = Fiber::suspend($future);
+
+        return $data ?? '';
     }
 
     public function getContents(): string
     {
-        $data = substr($this->contents, $this->position);
-        $this->position = strlen($this->contents);
-        return $data;
+        $remaining = $this->reader->remaining();
+        if ($remaining === 0) {
+            return '';
+        }
+
+        return $this->read($remaining);
     }
 
     public function getMetadata($key = null)
@@ -121,6 +138,8 @@ class StringStream implements StreamInterface
             'seekable' => true,
             'readable' => true,
             'writable' => false,
+            'mode' => 'rust-backed',
+            'type' => 'BytesReader',
         ];
 
         if ($key === null) {
