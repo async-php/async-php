@@ -251,4 +251,16 @@ class Client implements ClientInterface
     {
         return $this->kernel;
     }
+
+    /**
+     * proxy to kernel method
+     *
+     * @param string $method
+     * @param array $args
+     * @return mixed
+     */
+    public function __call(string $method, array $args)
+    {
+        return $this->kernel->$method(...$args);
+    }
 }
