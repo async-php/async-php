@@ -206,25 +206,26 @@ class IO
         $channel = new Channel();
         Kernel::spawn(function () use ($io, $channel) {
             while (true) {
-                $request = $channel->pop();
-
-                // Terminate if channel closed
-                if (is_null($request)) {
+                [$request, $ok] = $channel->pop();
+                if (!$ok) {
                     break;
+                }
+
+                if (!is_array($request) || count($request) !== 2) {
+                    throw new \InvalidArgumentException('Request must be [$method, $args] tuple');
                 }
 
                 [$method, $args] = $request;
 
                 // Terminate on close command
                 if ($method === '__close__') {
-                    $channel->close();
                     break;
                 }
 
                 $result = $io->$method(...$args);
 
-                // If push fails (channel closed), terminate
-                if (!$channel->push($result)) {
+                [, $ok] = $channel->push($result);
+                if (!$ok) {
                     break;
                 }
             }
