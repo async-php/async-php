@@ -181,6 +181,10 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncBufReader>()
         .class::<BytesReader>() // In-memory IO
         .class::<BytesWriter>()
+        .class::<PhpReader>() // PHP IO bridges
+        .class::<PhpWriter>()
+        .class::<PhpSeeker>()
+        .class::<PhpBufReader>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }

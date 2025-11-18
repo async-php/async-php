@@ -352,12 +352,20 @@ impl PhpIoBridge {
 /// PhpReader implements AsyncRead for PHP IO objects
 ///
 /// Calls PHP method via channel: ['read', [length]] -> bytes
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpReader")]
 pub struct PhpReader {
     bridge: PhpIoBridge,
 }
 
+unsafe impl Send for PhpReader {}
+unsafe impl Sync for PhpReader {}
+
+#[php_impl]
 impl PhpReader {
-    pub fn new(channel: &AsyncChannel) -> Self {
+    /// Create a PhpReader from a Channel
+    #[php(constructor)]
+    pub fn __construct(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
     }
 }
@@ -407,12 +415,20 @@ impl AsyncRead for PhpReader {
 /// - write: ['write', [data]] -> bytes_written
 /// - flush: ['flush', []] -> success
 /// - close: ['close', []] -> success
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpWriter")]
 pub struct PhpWriter {
     bridge: PhpIoBridge,
 }
 
+unsafe impl Send for PhpWriter {}
+unsafe impl Sync for PhpWriter {}
+
+#[php_impl]
 impl PhpWriter {
-    pub fn new(channel: &AsyncChannel) -> Self {
+    /// Create a PhpWriter from a Channel
+    #[php(constructor)]
+    pub fn __construct(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
     }
 }
@@ -470,13 +486,21 @@ impl AsyncWrite for PhpWriter {
 /// PhpSeeker implements AsyncSeek for PHP IO objects
 ///
 /// Calls PHP method via channel: ['seek', [offset, whence]] -> new_position
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpSeeker")]
 pub struct PhpSeeker {
     bridge: PhpIoBridge,
     pending: Option<SeekFrom>,
 }
 
+unsafe impl Send for PhpSeeker {}
+unsafe impl Sync for PhpSeeker {}
+
+#[php_impl]
 impl PhpSeeker {
-    pub fn new(channel: &AsyncChannel) -> Self {
+    /// Create a PhpSeeker from a Channel
+    #[php(constructor)]
+    pub fn __construct(channel: &AsyncChannel) -> Self {
         Self {
             bridge: PhpIoBridge::new(channel),
             pending: None,
@@ -541,13 +565,21 @@ impl AsyncSeek for PhpSeeker {
 /// Calls PHP methods via channel:
 /// - read_line: ['read_line', []] -> line
 /// - read: ['read', [length]] -> bytes
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpBufReader")]
 pub struct PhpBufReader {
     bridge: PhpIoBridge,
     buffer: Vec<u8>,
 }
 
+unsafe impl Send for PhpBufReader {}
+unsafe impl Sync for PhpBufReader {}
+
+#[php_impl]
 impl PhpBufReader {
-    pub fn new(channel: &AsyncChannel) -> Self {
+    /// Create a PhpBufReader from a Channel
+    #[php(constructor)]
+    pub fn __construct(channel: &AsyncChannel) -> Self {
         Self {
             bridge: PhpIoBridge::new(channel),
             buffer: Vec::new(),
