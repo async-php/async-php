@@ -67,4 +67,12 @@ class Socket
     {
         return $this->inner->peer_cred() ?: null;
     }
+
+    /**
+     * Call any method on the underlying kernel stream
+     */
+    public function __call(string $name, array $arguments)
+    {
+        return $this->inner->$name(...$arguments);
+    }
 }

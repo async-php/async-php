@@ -68,7 +68,7 @@ Kernel::run(function () {
     echo "AsyncReader type: " . get_class($asyncReader) . "\n";
 
     echo "\n6. Building HTTP request\n";
-    $request = $client->post('https://httpbin.org/post');
+    $request = $client->post('https://baidu.com/post');
     $request->header('Content-Type', 'application/json');
     $request->header('Content-Length', (string)strlen($jsonData));
 

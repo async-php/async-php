@@ -300,18 +300,18 @@ impl<T: AsyncSeek + Unpin> AsyncSeek for Shared<T> {
 // ==================== PHP IO Bridge ====================
 // Bridge PHP async IO objects to Rust tokio traits via channel
 
-/// Helper for bridging PHP IO method calls through a channel
+/// Helper for bridging PHP IO method calls through dual channels
 #[derive(Clone)]
 struct PhpIoBridge {
-    tx: flume::Sender<Zval>,
-    rx: flume::Receiver<Zval>,
+    request_tx: flume::Sender<Zval>,
+    response_rx: flume::Receiver<Zval>,
 }
 
 impl PhpIoBridge {
-    fn new(channel: &AsyncChannel) -> Self {
+    fn new(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
         Self {
-            tx: channel.get_sender(),
-            rx: channel.get_receiver(),
+            request_tx: request_channel.get_sender(),
+            response_rx: response_channel.get_receiver(),
         }
     }
 
@@ -331,11 +331,12 @@ impl PhpIoBridge {
         let args_zval = Self::build_args_array(args)?;
         let request = tuple2(method, args_zval);
 
-        // Send and receive
-        self.tx.send_async(request).await
+        // Send request through request channel
+        self.request_tx.send_async(request).await
             .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Send failed"))?;
 
-        self.rx.recv_async().await
+        // Receive response from response channel
+        self.response_rx.recv_async().await
             .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
     }
 
@@ -346,7 +347,7 @@ impl PhpIoBridge {
         let request = tuple2("__close__", empty_args);
 
         // Try to send close command (best effort, ignore errors)
-        let _ = self.tx.try_send(request);
+        let _ = self.request_tx.try_send(request);
     }
 }
 
@@ -364,10 +365,10 @@ unsafe impl Sync for PhpReader {}
 
 #[php_impl]
 impl PhpReader {
-    /// Create a PhpReader from a Channel
+    /// Create a PhpReader from dual channels
     #[php(constructor)]
-    pub fn __construct(channel: &AsyncChannel) -> Self {
-        Self { bridge: PhpIoBridge::new(channel) }
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self { bridge: PhpIoBridge::new(request_channel, response_channel) }
     }
 
     /// Convert to AsyncReader for use in async operations
@@ -440,10 +441,10 @@ unsafe impl Sync for PhpWriter {}
 
 #[php_impl]
 impl PhpWriter {
-    /// Create a PhpWriter from a Channel
+    /// Create a PhpWriter from dual channels
     #[php(constructor)]
-    pub fn __construct(channel: &AsyncChannel) -> Self {
-        Self { bridge: PhpIoBridge::new(channel) }
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self { bridge: PhpIoBridge::new(request_channel, response_channel) }
     }
 
     /// Convert to AsyncWriter for use in async operations
@@ -524,11 +525,11 @@ unsafe impl Sync for PhpSeeker {}
 
 #[php_impl]
 impl PhpSeeker {
-    /// Create a PhpSeeker from a Channel
+    /// Create a PhpSeeker from dual channels
     #[php(constructor)]
-    pub fn __construct(channel: &AsyncChannel) -> Self {
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
         Self {
-            bridge: PhpIoBridge::new(channel),
+            bridge: PhpIoBridge::new(request_channel, response_channel),
             pending: None,
         }
     }
@@ -616,11 +617,11 @@ unsafe impl Sync for PhpBufReader {}
 
 #[php_impl]
 impl PhpBufReader {
-    /// Create a PhpBufReader from a Channel
+    /// Create a PhpBufReader from dual channels
     #[php(constructor)]
-    pub fn __construct(channel: &AsyncChannel) -> Self {
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
         Self {
-            bridge: PhpIoBridge::new(channel),
+            bridge: PhpIoBridge::new(request_channel, response_channel),
             buffer: Vec::new(),
         }
     }

@@ -198,8 +198,8 @@ class IO
      */
     public static function wrapPhpReader($reader): \Async\Kernel\IO\PhpReader
     {
-        $channel = self::spawnIO($reader)->unwrap();
-        return new \Async\Kernel\IO\PhpReader($channel);
+        [$requestChannel, $responseChannel] = self::spawnIO($reader);
+        return new \Async\Kernel\IO\PhpReader($requestChannel->unwrap(), $responseChannel->unwrap());
     }
 
     /**
@@ -212,8 +212,8 @@ class IO
      */
     public static function wrapPhpWriter($writer): \Async\Kernel\IO\PhpWriter
     {
-        $channel = self::spawnIO($writer)->unwrap();
-        return new \Async\Kernel\IO\PhpWriter($channel);
+        [$requestChannel, $responseChannel] = self::spawnIO($writer);
+        return new \Async\Kernel\IO\PhpWriter($requestChannel->unwrap(), $responseChannel->unwrap());
     }
 
     /**
@@ -226,8 +226,8 @@ class IO
      */
     public static function wrapPhpSeeker($seeker): \Async\Kernel\IO\PhpSeeker
     {
-        $channel = self::spawnIO($seeker)->unwrap();
-        return new \Async\Kernel\IO\PhpSeeker($channel);
+        [$requestChannel, $responseChannel] = self::spawnIO($seeker);
+        return new \Async\Kernel\IO\PhpSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
     }
 
     /**
@@ -240,31 +240,34 @@ class IO
      */
     public static function wrapPhpBufReader($reader): \Async\Kernel\IO\PhpBufReader
     {
-        $channel = self::spawnIO($reader)->unwrap();
-        return new \Async\Kernel\IO\PhpBufReader($channel);
+        [$requestChannel, $responseChannel] = self::spawnIO($reader);
+        return new \Async\Kernel\IO\PhpBufReader($requestChannel->unwrap(), $responseChannel->unwrap());
     }
 
     /**
-     * Wraps an IO object into a Channel for asynchronous operations in coroutines
+     * Wraps an IO object into dual Channels for asynchronous operations in coroutines
      *
-     * This method creates a new coroutine to handle IO operations and communicates through a Channel.
+     * This method creates a new coroutine to handle IO operations and communicates through two Channels:
+     * - Request channel: for sending method calls to the spawned fiber
+     * - Response channel: for receiving results from the spawned fiber
+     *
      * It enables non-blocking IO operations by delegating work to a separate coroutine context.
      *
      * The spawned fiber will terminate when:
-     * - Channel is closed (pop returns null)
+     * - Request channel is closed (pop returns null)
      * - Receives '__close__' command
      *
      * @param object $io The IO object to be wrapped
-     * @return Channel Returns a Channel for communicating with the IO object
+     * @return array Returns [requestChannel, responseChannel]
      */
-    public static function spawnIO($io): Channel
+    private static function spawnIO($io): array
     {
-        $channel = new Channel();
-        Kernel::spawn(function () use ($io, $channel) {
+        $requestChannel = new Channel();
+        $responseChannel = new Channel();
+
+        Kernel::spawn(function () use ($io, $requestChannel, $responseChannel) {
             while (true) {
-                var_dump("spawnIO");
-                [$request, $ok] = $channel->pop();
-                var_dump($request, $ok);
+                [$request, $ok] = $requestChannel->pop();
                 if (!$ok) {
                     break;
                 }
@@ -282,12 +285,13 @@ class IO
 
                 $result = $io->$method(...$args);
 
-                [, $ok] = $channel->push($result);
+                $ok = $responseChannel->push($result);
                 if (!$ok) {
                     break;
                 }
             }
         });
-        return $channel;
+
+        return [$requestChannel, $responseChannel];
     }
 }

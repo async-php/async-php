@@ -179,7 +179,7 @@ impl HttpRequest {
     /// # Example (PHP)
     /// ```php
     /// $file = AsyncFileHandle::open('large-file.bin', 'r');
-    /// $request->body_stream($file->as_reader());
+    /// $request->bodyStream($file->as_reader());
     /// ```
     #[php]
     pub fn body_stream(&mut self, reader: &crate::io::AsyncReader) -> PhpResult<()> {

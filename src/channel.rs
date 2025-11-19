@@ -11,7 +11,7 @@ use std::time::Duration;
 pub struct AsyncChannel {
     sender: Option<flume::Sender<Zval>>,
     receiver: flume::Receiver<Zval>,
-    capacity: i64,
+    capacity: usize,
 }
 
 #[php_impl]
@@ -29,11 +29,11 @@ impl AsyncChannel {
     /// - `new Channel(10)` - Creates buffered channel with capacity 10 (like Go's `make(chan T, 10)`)
     #[php(optional = "capacity")]
     pub fn __construct(capacity: Option<i64>) -> Self {
-        let cap = capacity.unwrap_or(0);
-        let (tx, rx) = if cap < 0 {
+        let cap = capacity.unwrap_or(0).max(0) as usize;
+        let (tx, rx) = if cap == 0 {
             flume::unbounded()
         } else {
-            flume::bounded(cap as usize)
+            flume::bounded(cap)
         };
 
         Self {
@@ -49,17 +49,15 @@ impl AsyncChannel {
     /// * `value` - The value to send
     /// * `timeout` - Timeout in seconds (null for blocking wait)
     ///
-    /// # Returns
-    /// [null, bool] - Returns [null, true] on success, [null, false] on failure
+    /// Returns true on success, false on failure
     #[php(optional = "timeout")]
     pub fn send(&self, value: &Zval, timeout: Option<f64>) -> RustFuture {
         let val = value.shallow_clone();
+
         let tx = match self.sender.as_ref() {
             Some(sender) => sender.clone(),
             None => {
-                // Channel closed: return [null, false]
-                let future = async { tuple2(Zval::new(), false) };
-                return RustFuture::new(future);
+                return RustFuture::new(async { false.into_zval(false) });
             }
         };
 
@@ -71,10 +69,12 @@ impl AsyncChannel {
                         .await
                         .map_or(false, |r| r.is_ok())
                 }
-                None => tx.send_async(val).await.is_ok(),
+                None => {
+                    tx.send_async(val).await.is_ok()
+                },
             };
 
-            tuple2(Zval::new(), ok)
+            return ok.into_zval(ok);
         };
 
         RustFuture::new(future)
