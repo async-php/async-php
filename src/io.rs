@@ -301,6 +301,7 @@ impl<T: AsyncSeek + Unpin> AsyncSeek for Shared<T> {
 // Bridge PHP async IO objects to Rust tokio traits via channel
 
 /// Helper for bridging PHP IO method calls through a channel
+#[derive(Clone)]
 struct PhpIoBridge {
     tx: flume::Sender<Zval>,
     rx: flume::Receiver<Zval>,
@@ -368,6 +369,19 @@ impl PhpReader {
     pub fn __construct(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
     }
+
+    /// Convert to AsyncReader for use in async operations
+    #[php]
+    pub fn as_reader(&self) -> AsyncReader {
+        // Create a clone of self wrapped as AsyncRead
+        let reader = PhpReader {
+            bridge: self.bridge.clone(),
+        };
+
+        let trait_object: Shared<Box<dyn AsyncRead + Unpin + Send>> =
+            Shared::new(Box::new(reader));
+        AsyncReader::from_shared(trait_object)
+    }
 }
 
 impl Drop for PhpReader {
@@ -430,6 +444,18 @@ impl PhpWriter {
     #[php(constructor)]
     pub fn __construct(channel: &AsyncChannel) -> Self {
         Self { bridge: PhpIoBridge::new(channel) }
+    }
+
+    /// Convert to AsyncWriter for use in async operations
+    #[php]
+    pub fn as_writer(&self) -> AsyncWriter {
+        let writer = PhpWriter {
+            bridge: self.bridge.clone(),
+        };
+
+        let trait_object: Shared<Box<dyn AsyncWrite + Unpin + Send>> =
+            Shared::new(Box::new(writer));
+        AsyncWriter::from_shared(trait_object)
     }
 }
 
@@ -505,6 +531,19 @@ impl PhpSeeker {
             bridge: PhpIoBridge::new(channel),
             pending: None,
         }
+    }
+
+    /// Convert to AsyncSeeker for use in async operations
+    #[php]
+    pub fn as_seeker(&self) -> AsyncSeeker {
+        let seeker = PhpSeeker {
+            bridge: self.bridge.clone(),
+            pending: None,
+        };
+
+        let trait_object: Shared<Box<dyn AsyncSeek + Unpin + Send>> =
+            Shared::new(Box::new(seeker));
+        AsyncSeeker::from_shared(trait_object)
     }
 }
 
@@ -584,6 +623,19 @@ impl PhpBufReader {
             bridge: PhpIoBridge::new(channel),
             buffer: Vec::new(),
         }
+    }
+
+    /// Convert to AsyncBufReader for use in async operations
+    #[php]
+    pub fn as_buf_reader(&self) -> AsyncBufReader {
+        let reader = PhpBufReader {
+            bridge: self.bridge.clone(),
+            buffer: Vec::new(),
+        };
+
+        let trait_object: Shared<Box<dyn AsyncBufRead + Unpin>> =
+            Shared::new(Box::new(reader));
+        AsyncBufReader::from_shared(trait_object)
     }
 }
 
