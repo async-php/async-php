@@ -26,14 +26,11 @@ class StringReader implements Reader
     public function read(int $length): ?string
     {
         if ($this->position >= strlen($this->data)) {
-            echo "[StringReader] EOF reached\n";
             return null; // EOF
         }
 
         $chunk = substr($this->data, $this->position, $length);
         $this->position += strlen($chunk);
-
-        echo "[StringReader] read({$length}) -> " . strlen($chunk) . " bytes (pos: {$this->position})\n";
 
         return $chunk;
     }
@@ -68,7 +65,7 @@ Kernel::run(function () {
     echo "AsyncReader type: " . get_class($asyncReader) . "\n";
 
     echo "\n6. Building HTTP request\n";
-    $request = $client->post('https://baidu.com/post');
+    $request = $client->post('http://localhost:1080/post');
     $request->header('Content-Type', 'application/json');
     $request->header('Content-Length', (string)strlen($jsonData));
 
