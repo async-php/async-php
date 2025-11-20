@@ -63,8 +63,8 @@ class Client implements ClientInterface
      */
     public function get(string $url): ResponseInterface
     {
-        $kernelRequest = $this->kernel->get($url);
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelRequest = new KernelRequest('GET', $url);
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -78,7 +78,7 @@ class Client implements ClientInterface
      */
     public function post(string $url, $body = null, array $headers = []): ResponseInterface
     {
-        $kernelRequest = $this->kernel->post($url);
+        $kernelRequest = new KernelRequest('POST', $url);
 
         foreach ($headers as $name => $value) {
             $kernelRequest->header($name, $value);
@@ -92,7 +92,7 @@ class Client implements ClientInterface
             }
         }
 
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -106,7 +106,7 @@ class Client implements ClientInterface
      */
     public function put(string $url, $body = null, array $headers = []): ResponseInterface
     {
-        $kernelRequest = $this->kernel->put($url);
+        $kernelRequest = new KernelRequest('PUT', $url);
 
         foreach ($headers as $name => $value) {
             $kernelRequest->header($name, $value);
@@ -120,7 +120,7 @@ class Client implements ClientInterface
             }
         }
 
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -134,7 +134,7 @@ class Client implements ClientInterface
      */
     public function patch(string $url, $body = null, array $headers = []): ResponseInterface
     {
-        $kernelRequest = $this->kernel->patch($url);
+        $kernelRequest = new KernelRequest('PATCH', $url);
 
         foreach ($headers as $name => $value) {
             $kernelRequest->header($name, $value);
@@ -148,7 +148,7 @@ class Client implements ClientInterface
             }
         }
 
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -160,8 +160,8 @@ class Client implements ClientInterface
      */
     public function delete(string $url): ResponseInterface
     {
-        $kernelRequest = $this->kernel->delete($url);
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelRequest = new KernelRequest('DELETE', $url);
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -173,8 +173,8 @@ class Client implements ClientInterface
      */
     public function head(string $url): ResponseInterface
     {
-        $kernelRequest = $this->kernel->head($url);
-        $kernelResponse = Fiber::suspend($kernelRequest->send());
+        $kernelRequest = new KernelRequest('HEAD', $url);
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
 
@@ -195,7 +195,7 @@ class Client implements ClientInterface
      */
     public function request(string $method, string $url): KernelRequest
     {
-        return $this->kernel->request($method, $url);
+        return new KernelRequest($method, $url);
     }
 
     /**
@@ -209,7 +209,7 @@ class Client implements ClientInterface
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
         // Create kernel request from PSR-7 request
-        $kernelRequest = $this->kernel->request(
+        $kernelRequest = new KernelRequest(
             $request->getMethod(),
             (string)$request->getUri()
         );
@@ -235,7 +235,7 @@ class Client implements ClientInterface
         }
 
         // Send and await response
-        $future = $kernelRequest->send();
+        $future = $this->kernel->send($kernelRequest);
         $kernelResponse = Fiber::suspend($future);
 
         // Convert to PSR-7 response

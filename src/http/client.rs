@@ -11,13 +11,17 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::convert::IntoZval;
+use ext_php_rs::types::Zval;
 
 use reqwest::tls::Version as TlsVersion;
 use std::sync::Arc;
 use std::time::Duration;
+use url::Url;
 
 use crate::future::RustFuture;
 use crate::http::HttpRequest;
+use crate::http::HttpResponse;
+use super::request::{RequestSent, RequestTimeout};
 
 /// HTTP Client - full-featured HTTP client based on reqwest
 ///
@@ -161,82 +165,62 @@ impl HttpClient {
         })
     }
 
-    /// Start building a GET request
+    /// Send a prepared HttpRequest and return a Future that resolves to HttpResponse
     #[php]
-    pub fn get(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "GET", url))
-    }
+    pub fn send(&self, request: &mut HttpRequest) -> RustFuture {
+        use futures::TryStreamExt;
+        use http_body_util::BodyExt;
+        use std::io;
 
-    /// Start building a POST request
-    #[php]
-    pub fn post(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "POST", url))
-    }
-
-    /// Start building a PUT request
-    #[php]
-    pub fn put(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "PUT", url))
-    }
-
-    /// Start building a PATCH request
-    #[php]
-    pub fn patch(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "PATCH", url))
-    }
-
-    /// Start building a DELETE request
-    #[php]
-    pub fn delete(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "DELETE", url))
-    }
-
-    /// Start building a HEAD request
-    #[php]
-    pub fn head(&self, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), "HEAD", url))
-    }
-
-    /// Start building a request with custom method
-    #[php]
-    pub fn request(&self, method: String, url: String) -> PhpResult<HttpRequest> {
-        Ok(HttpRequest::new(self.client.clone(), &method, url))
-    }
-
-    /// Execute a simple GET request (convenience method)
-    #[php]
-    pub fn quick_get(&self, url: String) -> RustFuture {
         let client = self.client.clone();
+
+        // Extract request data (and consume the body) before entering async.
+        let (method, uri, headers, timeout, body) = {
+            let req = request.inner.get_mut();
+
+            if req.extensions().get::<RequestSent>().is_some() {
+                return RustFuture::new(async move {
+                    Err::<Zval, String>("Request already sent or invalidated".to_string())
+                });
+            }
+            req.extensions_mut().insert(RequestSent);
+
+            let timeout = req.extensions().get::<RequestTimeout>().copied();
+
+            let body = std::mem::replace(req.body_mut(), super::request::empty_body());
+
+            (
+                req.method().clone(),
+                req.uri().clone(),
+                req.headers().clone(),
+                timeout,
+                body,
+            )
+        };
+
         RustFuture::new(async move {
-            let response = client
-                .get(&url)
+            let url = Url::parse(&uri.to_string())
+                .map_err(|e| format!("Invalid URL: {e}"))?;
+            let method = reqwest::Method::from_bytes(method.as_str().as_bytes())
+                .map_err(|e| format!("Invalid HTTP method: {e}"))?;
+
+            let mut builder = client.request(method, url).headers(headers);
+
+            if let Some(RequestTimeout(timeout)) = timeout {
+                builder = builder.timeout(timeout);
+            }
+
+            let stream = body
+                .into_data_stream()
+                .map_err(|e| io::Error::other(e.to_string()));
+            builder = builder.body(reqwest::Body::wrap_stream(stream));
+
+            let response = builder
                 .send()
                 .await
-                .map_err(|e| format!("Request failed: {}", e))?;
+                .map_err(|e| format!("Request failed: {e}"))?;
 
-            let response_obj = crate::http::HttpResponse::new_internal(response);
-            response_obj
-                .into_zval(false)
-                .map_err(|e| format!("Failed to convert response: {:?}", e))
-        })
-    }
-
-    /// Execute a simple POST request with JSON body (convenience method)
-    #[php]
-    pub fn quick_post_json(&self, url: String, json: String) -> RustFuture {
-        let client = self.client.clone();
-        RustFuture::new(async move {
-            let json_value: serde_json::Value = serde_json::from_str(&json)
-                .map_err(|e| format!("Invalid JSON: {}", e))?;
-
-            let response = client
-                .post(&url)
-                .json(&json_value)
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
-
-            let response_obj = crate::http::HttpResponse::new_internal(response);
+            let response_obj = HttpResponse::from_reqwest(response);
             response_obj
                 .into_zval(false)
                 .map_err(|e| format!("Failed to convert response: {:?}", e))

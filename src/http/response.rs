@@ -1,136 +1,149 @@
-/// HTTP Response - wraps reqwest::Response
-///
-/// Provides multiple ways to read response data:
-/// - Text (UTF-8 string)
-/// - JSON (parsed automatically)
-/// - Bytes (raw binary)
-/// - Stream (via HttpResponseBody for chunked reading)
-
+use bytes::Bytes;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-
-use reqwest::Response;
+use http::Response;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Empty};
 use std::collections::HashMap;
+use std::convert::Infallible;
+use std::error::Error;
 
 use crate::future::RustFuture;
-use crate::http::HttpResponseBody;
+use crate::io::AsyncReader;
+use crate::util::Shared;
 
-/// HTTP Response
-///
-/// Wraps reqwest::Response and provides methods to:
-/// - Access status code, headers, version
-/// - Read body in various formats
-/// - Stream body data
+#[derive(Clone, Copy, Debug)]
+struct BodyConsumed;
+
+fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
+    Empty::<Bytes>::new()
+        .map_err(|err: Infallible| match err {})
+        .boxed()
+}
+
+/// HTTP Response (protocol-level)
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
-    // Store response in Shared to allow multiple method calls
-    response: Option<Response>,
-    // Cache status and headers on creation
-    status_code: u16,
-    headers: HashMap<String, String>,
-    version: String,
+    pub(crate) inner: Shared<Response<BoxBody<Bytes, Box<dyn Error + Send>>>>,
 }
 
 unsafe impl Send for HttpResponse {}
 unsafe impl Sync for HttpResponse {}
 
 impl HttpResponse {
-    /// Internal constructor from reqwest::Response
-    pub(crate) fn new_internal(response: Response) -> Self {
-        let status_code = response.status().as_u16();
-        let version = format!("{:?}", response.version());
-
-        // Extract headers (convert to HashMap)
-        let mut headers = HashMap::new();
-        for (name, value) in response.headers() {
-            if let Ok(value_str) = value.to_str() {
-                headers.insert(name.as_str().to_lowercase(), value_str.to_string());
-            }
-        }
-
+    pub(crate) fn new_internal(response: Response<BoxBody<Bytes, Box<dyn Error + Send>>>) -> Self {
         Self {
-            response: Some(response),
-            status_code,
-            headers,
-            version,
+            inner: Shared::new(response),
         }
+    }
+
+    pub(crate) fn from_reqwest(response: reqwest::Response) -> Self {
+        use futures::TryStreamExt;
+        use http_body::Frame;
+        use http_body_util::StreamBody;
+        use sync_wrapper::SyncStream;
+
+        let status = response.status();
+        let version = response.version();
+        let headers = response.headers().clone();
+
+        let stream = response
+            .bytes_stream()
+            .map_ok(Frame::data)
+            .map_err(|e| Box::new(e) as Box<dyn Error + Send>);
+        let body = StreamBody::new(SyncStream::new(stream)).boxed();
+
+        let mut http_response = Response::new(body);
+        *http_response.status_mut() = status;
+        *http_response.version_mut() = version;
+        *http_response.headers_mut() = headers;
+
+        Self::new_internal(http_response)
+    }
+
+    fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send>>, String> {
+        let resp = self.inner.get_mut();
+        if resp.extensions().get::<BodyConsumed>().is_some() {
+            return Err("Response body already consumed".to_string());
+        }
+        resp.extensions_mut().insert(BodyConsumed);
+        Ok(std::mem::replace(resp.body_mut(), empty_body()))
     }
 }
 
 #[php_impl]
 impl HttpResponse {
-    /// Get HTTP status code (e.g., 200, 404, 500)
     #[php]
     pub fn status(&self) -> u16 {
-        self.status_code
+        self.inner.get_ref().status().as_u16()
     }
 
-    /// Check if status is 2xx (success)
     #[php]
     pub fn is_success(&self) -> bool {
-        self.status_code >= 200 && self.status_code < 300
+        self.inner.get_ref().status().is_success()
     }
 
-    /// Check if status is 4xx (client error)
     #[php]
     pub fn is_client_error(&self) -> bool {
-        self.status_code >= 400 && self.status_code < 500
+        self.inner.get_ref().status().is_client_error()
     }
 
-    /// Check if status is 5xx (server error)
     #[php]
     pub fn is_server_error(&self) -> bool {
-        self.status_code >= 500 && self.status_code < 600
+        self.inner.get_ref().status().is_server_error()
     }
 
-    /// Get HTTP version string (e.g., "HTTP/1.1", "HTTP/2.0")
     #[php]
     pub fn version(&self) -> String {
-        self.version.clone()
+        format!("{:?}", self.inner.get_ref().version())
     }
 
-    /// Get all response headers as associative array
     #[php]
     pub fn headers(&self) -> HashMap<String, String> {
-        self.headers.clone()
+        let mut headers = HashMap::new();
+        for (name, value) in self.inner.get_ref().headers() {
+            if let Ok(value_str) = value.to_str() {
+                headers.insert(name.as_str().to_lowercase(), value_str.to_string());
+            }
+        }
+        headers
     }
 
-    /// Get a specific header value (case-insensitive)
     #[php]
     pub fn header(&self, name: String) -> Option<String> {
-        self.headers.get(&name.to_lowercase()).cloned()
+        let name = name.to_lowercase();
+        self.inner
+            .get_ref()
+            .headers()
+            .get(name.as_str())
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
     }
 
-    /// Get Content-Type header
     #[php]
     pub fn content_type(&self) -> Option<String> {
         self.header("content-type".to_string())
     }
 
-    /// Get Content-Length header
     #[php]
     pub fn content_length(&self) -> Option<i64> {
         self.header("content-length".to_string())
             .and_then(|s| s.parse().ok())
     }
 
-    /// Read entire response body as text (UTF-8)
-    ///
-    /// Returns a Future that resolves to the text string.
-    /// Note: This consumes the response body.
     #[php]
     pub fn text(&mut self) -> RustFuture {
-        let response_opt = self.response.take();
+        let body = match self.take_body() {
+            Ok(b) => b,
+            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
+        };
 
         RustFuture::new(async move {
-            let response = response_opt
-                .ok_or_else(|| "Response body already consumed".to_string())?;
-
-            let text = response
-                .text()
-                .await
-                .map_err(|e| format!("Failed to read text: {}", e))?;
+            let collected = body.collect().await.map_err(|e| e.to_string())?;
+            let bytes = collected.to_bytes();
+            let text = String::from_utf8(bytes.to_vec())
+                .map_err(|e| format!("Failed to decode UTF-8: {e}"))?;
 
             let mut zval = Zval::new();
             zval.set_string(&text, false)
@@ -139,25 +152,20 @@ impl HttpResponse {
         })
     }
 
-    /// Read entire response body as JSON and parse it
-    ///
-    /// Returns a Future that resolves to the parsed JSON string.
-    /// Note: This consumes the response body.
     #[php]
     pub fn json(&mut self) -> RustFuture {
-        let response_opt = self.response.take();
+        let body = match self.take_body() {
+            Ok(b) => b,
+            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
+        };
 
         RustFuture::new(async move {
-            let response = response_opt
-                .ok_or_else(|| "Response body already consumed".to_string())?;
-
-            let json_value: serde_json::Value = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?;
-
+            let collected = body.collect().await.map_err(|e| e.to_string())?;
+            let bytes = collected.to_bytes();
+            let json_value: serde_json::Value = serde_json::from_slice(&bytes)
+                .map_err(|e| format!("Failed to parse JSON: {e}"))?;
             let json_str = serde_json::to_string(&json_value)
-                .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+                .map_err(|e| format!("Failed to serialize JSON: {e}"))?;
 
             let mut zval = Zval::new();
             zval.set_string(&json_str, false)
@@ -166,22 +174,16 @@ impl HttpResponse {
         })
     }
 
-    /// Read entire response body as bytes
-    ///
-    /// Returns a Future that resolves to binary data.
-    /// Note: This consumes the response body.
     #[php]
     pub fn bytes(&mut self) -> RustFuture {
-        let response_opt = self.response.take();
+        let body = match self.take_body() {
+            Ok(b) => b,
+            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
+        };
 
         RustFuture::new(async move {
-            let response = response_opt
-                .ok_or_else(|| "Response body already consumed".to_string())?;
-
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(|e| format!("Failed to read bytes: {}", e))?;
+            let collected = body.collect().await.map_err(|e| e.to_string())?;
+            let bytes = collected.to_bytes();
 
             let mut zval = Zval::new();
             zval.set_binary(bytes.to_vec());
@@ -189,19 +191,17 @@ impl HttpResponse {
         })
     }
 
-    /// Get streaming body reader for chunked reading
-    ///
-    /// Returns HttpResponseBody which implements AsyncReader interface.
-    /// This is the best option for large responses or streaming data.
-    /// Note: This consumes the response.
-    ///
-    /// Decompression (gzip/deflate/brotli) is handled automatically by reqwest.
     #[php]
-    pub fn stream(&mut self) -> PhpResult<HttpResponseBody> {
-        let response = self.response.take()
-            .ok_or_else(|| "Response body already consumed".to_string())?;
+    pub fn stream(&mut self) -> PhpResult<AsyncReader> {
+        let body = self.take_body()?;
+        use std::io;
+        use futures::StreamExt;
 
-        // reqwest automatically decompresses the stream
-        Ok(HttpResponseBody::from_reqwest(response))
+        let stream = body
+            .into_data_stream()
+            .map(|result| result.map_err(|e| io::Error::other(e.to_string())));
+        let reader = tokio_util::io::StreamReader::new(stream);
+
+        Ok(AsyncReader::new(reader))
     }
 }

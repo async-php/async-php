@@ -3,7 +3,7 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
-use Async\Kernel\Network\Http\HttpResponseBody;
+use Async\Kernel\IO\AsyncReader;
 use Psr\Http\Message\StreamInterface;
 use Fiber;
 
@@ -20,7 +20,7 @@ use Fiber;
 class Stream implements StreamInterface
 {
     private KernelResponse $kernelResponse;
-    private ?HttpResponseBody $streamBody = null;
+    private ?AsyncReader $streamReader = null;
     private ?string $bufferedContents = null;
     private int $position = 0;
     private bool $readable = true;
@@ -33,20 +33,20 @@ class Stream implements StreamInterface
     }
 
     /**
-     * Get the streaming body (lazy initialization)
+     * Get the streaming reader (lazy initialization)
      */
-    private function getStreamBody(): ?HttpResponseBody
+    private function getStreamReader(): ?AsyncReader
     {
-        if ($this->streamBody === null && $this->bufferedContents === null) {
+        if ($this->streamReader === null && $this->bufferedContents === null) {
             try {
-                $this->streamBody = $this->kernelResponse->stream();
+                $this->streamReader = $this->kernelResponse->stream();
             } catch (\Throwable $e) {
                 // Body already consumed or error
                 $this->eof = true;
                 return null;
             }
         }
-        return $this->streamBody;
+        return $this->streamReader;
     }
 
     /**
@@ -58,11 +58,10 @@ class Stream implements StreamInterface
             return;
         }
 
-        // If we have a stream body, read all from it
-        if ($this->streamBody !== null) {
-            $future = $this->streamBody->readAll();
-            $this->bufferedContents = Fiber::suspend($future) ?? '';
-            $this->streamBody = null; // Release stream
+        // If we have a stream reader, read all from it
+        if ($this->streamReader !== null) {
+            $this->bufferedContents = $this->readAllFromReader($this->streamReader);
+            $this->streamReader = null; // Release reader
             return;
         }
 
@@ -89,14 +88,14 @@ class Stream implements StreamInterface
 
     public function close(): void
     {
-        $this->streamBody = null;
+        $this->streamReader = null;
         $this->bufferedContents = null;
         $this->readable = false;
     }
 
     public function detach()
     {
-        $this->streamBody = null;
+        $this->streamReader = null;
         $this->bufferedContents = null;
         $this->readable = false;
         return null;
@@ -206,15 +205,15 @@ class Stream implements StreamInterface
             return $data;
         }
 
-        // Streaming mode: read from stream body
-        $streamBody = $this->getStreamBody();
-        if ($streamBody === null) {
+        // Streaming mode: read from stream reader
+        $streamReader = $this->getStreamReader();
+        if ($streamReader === null) {
             $this->eof = true;
             return '';
         }
 
         try {
-            $future = $streamBody->read($length);
+            $future = $streamReader->read($length);
             $data = Fiber::suspend($future);
 
             if ($data === null || $data === '') {
@@ -244,15 +243,14 @@ class Stream implements StreamInterface
         }
 
         // Streaming mode: read all remaining from stream
-        $streamBody = $this->getStreamBody();
-        if ($streamBody === null) {
+        $streamReader = $this->getStreamReader();
+        if ($streamReader === null) {
             $this->eof = true;
             return '';
         }
 
         try {
-            $future = $streamBody->readAll();
-            $data = Fiber::suspend($future) ?? '';
+            $data = $this->readAllFromReader($streamReader);
             $this->position += strlen($data);
             $this->eof = true;
             return $data;
@@ -260,6 +258,19 @@ class Stream implements StreamInterface
             $this->eof = true;
             return '';
         }
+    }
+
+    private function readAllFromReader(AsyncReader $reader): string
+    {
+        $result = '';
+        while (true) {
+            $chunk = Fiber::suspend($reader->read(8192));
+            if ($chunk === null || $chunk === '') {
+                break;
+            }
+            $result .= $chunk;
+        }
+        return $result;
     }
 
     public function getMetadata($key = null)

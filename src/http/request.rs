@@ -1,219 +1,191 @@
-/// HTTP Request Builder - wraps reqwest::RequestBuilder
-///
-/// Provides fluent API for building HTTP requests with full reqwest capabilities:
-/// - Headers manipulation
-/// - Query parameters
-/// - Request body (text, JSON, form data, multipart, stream)
-/// - Basic/Bearer authentication
-/// - Timeout override
-
+use bytes::Bytes;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
-
-use reqwest::{Method, RequestBuilder};
+use http::header::{HeaderName, HeaderValue};
+use http::{Request, Uri};
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Empty, Full, StreamBody};
 use std::collections::HashMap;
+use std::convert::Infallible;
+use std::error::Error;
 use std::time::Duration;
+use url::Url;
 
-use crate::future::RustFuture;
 use crate::util::Shared;
 
-/// HTTP Request Builder
-///
-/// This class wraps reqwest::RequestBuilder and provides a fluent API
-/// for building HTTP requests. All methods return self for method chaining.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RequestTimeout(pub Duration);
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RequestSent;
+
+pub(crate) fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
+    Empty::<Bytes>::new()
+        .map_err(|err: Infallible| match err {})
+        .boxed()
+}
+
+fn full_body(bytes: Bytes) -> BoxBody<Bytes, Box<dyn Error + Send>> {
+    Full::new(bytes)
+        .map_err(|err: Infallible| match err {})
+        .boxed()
+}
+
+fn parse_uri(uri: &str) -> Result<Uri, String> {
+    uri.parse::<Uri>()
+        .map_err(|e| format!("Invalid URI: {e}"))
+}
+
+fn set_header(request: &mut Request<BoxBody<Bytes, Box<dyn Error + Send>>>, name: String, value: String) -> Result<(), String> {
+    let name = HeaderName::from_bytes(name.as_bytes())
+        .map_err(|e| format!("Invalid header name: {e}"))?;
+    let value = HeaderValue::from_str(&value)
+        .map_err(|e| format!("Invalid header value: {e}"))?;
+    request.headers_mut().insert(name, value);
+    Ok(())
+}
+
+/// HTTP Request (protocol-level, client-agnostic)
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpRequest")]
 pub struct HttpRequest {
-    builder: Shared<Option<RequestBuilder>>,
+    pub(crate) inner: Shared<Request<BoxBody<Bytes, Box<dyn Error + Send>>>>,
 }
 
 unsafe impl Send for HttpRequest {}
 unsafe impl Sync for HttpRequest {}
 
 impl HttpRequest {
-    /// Internal constructor
-    pub(crate) fn new(client: std::sync::Arc<reqwest::Client>, method: &str, url: String) -> Self {
-        let method = method.parse::<Method>().unwrap_or(Method::GET);
-        let builder = client.request(method, url);
-        Self {
-            builder: Shared::new(Some(builder)),
-        }
+    pub(crate) fn new(method: &str, url: String) -> PhpResult<Self> {
+        let request = Request::builder()
+            .method(method)
+            .uri(parse_uri(&url)?)
+            .body(empty_body())
+            .map_err(|e| format!("Failed to build request: {e}"))?;
+        Ok(Self {
+            inner: Shared::new(request),
+        })
     }
 }
 
 #[php_impl]
 impl HttpRequest {
-    /// Set a header
+    #[php(constructor)]
+    pub fn __construct(method: String, url: String) -> PhpResult<Self> {
+        Self::new(&method, url)
+    }
+
     #[php]
     pub fn header(&mut self, name: String, value: String) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.header(name, value));
-        }
+        set_header(self.inner.get_mut(), name, value)?;
         Ok(())
     }
 
-    /// Set multiple headers
     #[php]
     pub fn headers(&mut self, headers: HashMap<String, String>) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(mut builder) = builder_ref.take() {
-            for (key, value) in headers {
-                builder = builder.header(key, value);
-            }
-            *builder_ref = Some(builder);
+        let request = self.inner.get_mut();
+        for (name, value) in headers {
+            set_header(request, name, value)?;
         }
         Ok(())
     }
 
-    /// Add a query parameter
     #[php]
     pub fn query(&mut self, name: String, value: String) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.query(&[(name, value)]));
-        }
+        let request = self.inner.get_mut();
+        let mut url = Url::parse(&request.uri().to_string())
+            .map_err(|e| format!("Invalid URL: {e}"))?;
+        url.query_pairs_mut().append_pair(&name, &value);
+        *request.uri_mut() = parse_uri(url.as_str())?;
         Ok(())
     }
 
-    /// Add multiple query parameters
     #[php]
     pub fn query_params(&mut self, params: HashMap<String, String>) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.query(&params));
+        let request = self.inner.get_mut();
+        let mut url = Url::parse(&request.uri().to_string())
+            .map_err(|e| format!("Invalid URL: {e}"))?;
+        {
+            let mut qp = url.query_pairs_mut();
+            for (k, v) in params {
+                qp.append_pair(&k, &v);
+            }
         }
+        *request.uri_mut() = parse_uri(url.as_str())?;
         Ok(())
     }
 
-    /// Set Basic Authentication
-    #[php]
-    pub fn basic_auth(&mut self, username: String, password: Option<String>) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.basic_auth(username, password));
-        }
-        Ok(())
-    }
-
-    /// Set Bearer token authentication
-    #[php]
-    pub fn bearer_auth(&mut self, token: String) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.bearer_auth(token));
-        }
-        Ok(())
-    }
-
-    /// Set request timeout (overrides client timeout)
     #[php]
     pub fn timeout(&mut self, seconds: f64) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.timeout(Duration::from_secs_f64(seconds)));
-        }
+        let secs = if seconds.is_sign_negative() { 0.0 } else { seconds };
+        let req = self.inner.get_mut();
+        req.extensions_mut()
+            .insert(RequestTimeout(Duration::from_secs_f64(secs)));
         Ok(())
     }
 
-    /// Set text body with optional content type
     #[php]
     pub fn body_text(&mut self, text: String, content_type: Option<String>) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(mut builder) = builder_ref.take() {
-            if let Some(ct) = content_type {
-                builder = builder.header("Content-Type", ct);
-            }
-            *builder_ref = Some(builder.body(text));
+        let req = self.inner.get_mut();
+        if let Some(ct) = content_type {
+            set_header(req, "Content-Type".to_string(), ct)?;
         }
+        *req.body_mut() = full_body(Bytes::from(text));
         Ok(())
     }
 
-    /// Set JSON body (automatically sets Content-Type: application/json)
     #[php]
     pub fn body_json(&mut self, json: String) -> PhpResult<()> {
-        let json_value: serde_json::Value = serde_json::from_str(&json)
-            .map_err(|e| format!("Invalid JSON: {}", e))?;
-
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.json(&json_value));
-        }
+        let _: serde_json::Value = serde_json::from_str(&json)
+            .map_err(|e| format!("Invalid JSON: {e}"))?;
+        let req = self.inner.get_mut();
+        set_header(req, "Content-Type".to_string(), "application/json".to_string())?;
+        *req.body_mut() = full_body(Bytes::from(json));
         Ok(())
     }
 
-    /// Set form body (application/x-www-form-urlencoded)
     #[php]
     pub fn body_form(&mut self, form: HashMap<String, String>) -> PhpResult<()> {
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.form(&form));
+        let req = self.inner.get_mut();
+        set_header(req, "Content-Type".to_string(), "application/x-www-form-urlencoded".to_string())?;
+        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+        for (k, v) in form {
+            serializer.append_pair(&k, &v);
         }
+        let encoded = serializer.finish();
+        *req.body_mut() = full_body(Bytes::from(encoded));
         Ok(())
     }
 
-    /// Set binary/raw body
     #[php]
     pub fn body_bytes(&mut self, data: &Zval) -> PhpResult<()> {
         let bytes = if let Some(bin) = data.binary() {
-            bin.to_vec()
+            Bytes::from(bin.to_vec())
         } else if let Some(s) = data.str() {
-            s.as_bytes().to_vec()
+            Bytes::from(s.as_bytes().to_vec())
         } else {
             return Err(PhpException::default("Body must be string or binary".to_string()));
         };
 
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.body(bytes));
-        }
+        let req = self.inner.get_mut();
+        *req.body_mut() = full_body(bytes);
         Ok(())
     }
 
-    /// Set streaming body from AsyncReader
-    ///
-    /// Accepts an AsyncReader instance and streams it as the request body.
-    /// This is efficient for large files or network streams.
-    ///
-    /// # Example (PHP)
-    /// ```php
-    /// $file = AsyncFileHandle::open('large-file.bin', 'r');
-    /// $request->bodyStream($file->as_reader());
-    /// ```
     #[php]
     pub fn body_stream(&mut self, reader: &crate::io::AsyncReader) -> PhpResult<()> {
+        use futures::TryStreamExt;
+        use http_body::Frame;
+        use sync_wrapper::SyncStream;
         use tokio_util::io::ReaderStream;
-        use reqwest::Body;
 
-        let stream = ReaderStream::new(reader.get_inner());
-        let body = Body::wrap_stream(stream);
+        let stream = ReaderStream::new(reader.get_inner())
+            .map_ok(Frame::data)
+            .map_err(|e| Box::new(e) as Box<dyn Error + Send>);
+        let body = StreamBody::new(SyncStream::new(stream)).boxed();
 
-        let builder_ref = self.builder.get_mut();
-        if let Some(builder) = builder_ref.take() {
-            *builder_ref = Some(builder.body(body));
-        }
+        let req = self.inner.get_mut();
+        *req.body_mut() = body;
         Ok(())
-    }
-
-    /// Send the request and return a Future that resolves to HttpResponse
-    #[php]
-    pub fn send(&mut self) -> RustFuture {
-        let builder_opt = self.builder.get_mut().take();
-
-        RustFuture::new(async move {
-            let builder = builder_opt
-                .ok_or_else(|| "Request already sent or invalidated".to_string())?;
-
-            let response = builder
-                .send()
-                .await
-                .map_err(|e| format!("Request failed: {}", e))?;
-
-            let response_obj = crate::http::HttpResponse::new_internal(response);
-            response_obj
-                .into_zval(false)
-                .map_err(|e| format!("Failed to convert response: {:?}", e))
-        })
     }
 }

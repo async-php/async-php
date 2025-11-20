@@ -13,9 +13,7 @@
 mod client;
 mod request;
 mod response;
-mod body;
 
 pub use client::HttpClient;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
-pub use body::HttpResponseBody;
