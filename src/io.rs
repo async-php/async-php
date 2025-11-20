@@ -14,6 +14,24 @@ use std::task::{Context, Poll};
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 
+// ==================== Combined Trait Definitions ====================
+
+/// Trait combining AsyncRead and AsyncWrite
+pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> AsyncReadWrite for T {}
+
+/// Trait combining AsyncRead and AsyncSeek
+pub trait AsyncReadSeek: AsyncRead + AsyncSeek + Unpin + Send {}
+impl<T: AsyncRead + AsyncSeek + Unpin + Send> AsyncReadSeek for T {}
+
+/// Trait combining AsyncWrite and AsyncSeek
+pub trait AsyncWriteSeek: AsyncWrite + AsyncSeek + Unpin + Send {}
+impl<T: AsyncWrite + AsyncSeek + Unpin + Send> AsyncWriteSeek for T {}
+
+/// Trait combining AsyncRead, AsyncWrite, and AsyncSeek
+pub trait AsyncReadWriteSeek: AsyncRead + AsyncWrite + AsyncSeek + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + AsyncSeek + Unpin + Send> AsyncReadWriteSeek for T {}
+
 /// AsyncReader wraps Shared<Box<dyn AsyncRead + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncReader")]
@@ -46,24 +64,7 @@ impl AsyncReader {
 impl AsyncReader {
     /// Read up to length bytes
     pub fn read(&mut self, length: i64) -> RustFuture {
-        let inner = self.inner.clone();
-
-        let future = async move {
-            let mut buf = vec![0u8; length as usize];
-            let n = inner.get_mut().read(&mut buf).await.map_err(|e| e.to_string())?;
-
-            if n == 0 {
-                return Ok::<Zval, String>(Zval::null());
-            }
-
-            buf.truncate(n);
-            // Use set_binary to preserve all bytes (binary-safe)
-            let mut z = Zval::new();
-            z.set_binary(buf);
-            Ok(z)
-        };
-
-        RustFuture::new(future)
+        self.inner.read_impl(length)
     }
 }
 
@@ -99,32 +100,12 @@ impl AsyncWriter {
 impl AsyncWriter {
     /// Write data
     pub fn write(&mut self, data: String) -> RustFuture {
-        let inner = self.inner.clone();
-
-        let future = async move {
-            let bytes = data.as_bytes();
-            inner.get_mut().write_all(bytes).await.map_err(|e| e.to_string())?;
-
-            let mut z = Zval::new();
-            z.set_long(bytes.len() as i64);
-            Ok::<Zval, String>(z)
-        };
-
-        RustFuture::new(future)
+        self.inner.write_impl(data)
     }
 
     /// Flush buffered data
     pub fn flush(&mut self) -> RustFuture {
-        let inner = self.inner.clone();
-
-        let future = async move {
-            inner.get_mut().flush().await.map_err(|e| e.to_string())?;
-            let mut z = Zval::new();
-            z.set_bool(true);
-            Ok::<Zval, String>(z)
-        };
-
-        RustFuture::new(future)
+        self.inner.flush_impl()
     }
 }
 
@@ -160,8 +141,282 @@ impl AsyncSeeker {
 impl AsyncSeeker {
     /// Seek to a position
     pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
-        let inner = self.inner.clone();
+        self.inner.seek_impl(offset, whence)
+    }
+}
 
+// ==================== Combined Trait Types ====================
+
+/// AsyncReadWriter wraps Shared<Box<dyn AsyncReadWrite>>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncReadWriter")]
+pub struct AsyncReadWriter {
+    inner: Shared<Box<dyn AsyncReadWrite>>,
+}
+
+impl AsyncReadWriter {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWrite>>) -> Self {
+        Self { inner: shared }
+    }
+
+    pub fn new<T: AsyncReadWrite + 'static>(io: T) -> Self {
+        Self {
+            inner: Shared::new(Box::new(io)),
+        }
+    }
+
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWrite>> {
+        self.inner.clone()
+    }
+}
+
+#[php_impl]
+impl AsyncReadWriter {
+    /// Read up to length bytes
+    pub fn read(&mut self, length: i64) -> RustFuture {
+        self.inner.read_impl(length)
+    }
+
+    /// Write data
+    pub fn write(&mut self, data: String) -> RustFuture {
+        self.inner.write_impl(data)
+    }
+
+    /// Flush buffered data
+    pub fn flush(&mut self) -> RustFuture {
+        self.inner.flush_impl()
+    }
+
+}
+
+/// AsyncReadSeeker wraps Shared<Box<dyn AsyncReadSeek>>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncReadSeeker")]
+pub struct AsyncReadSeeker {
+    inner: Shared<Box<dyn AsyncReadSeek>>,
+}
+
+impl AsyncReadSeeker {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadSeek>>) -> Self {
+        Self { inner: shared }
+    }
+
+    pub fn new<T: AsyncReadSeek + 'static>(io: T) -> Self {
+        Self {
+            inner: Shared::new(Box::new(io)),
+        }
+    }
+
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadSeek>> {
+        self.inner.clone()
+    }
+}
+
+#[php_impl]
+impl AsyncReadSeeker {
+    /// Read up to length bytes
+    pub fn read(&mut self, length: i64) -> RustFuture {
+        self.inner.read_impl(length)
+    }
+
+    /// Seek to a position
+    pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
+        self.inner.seek_impl(offset, whence)
+    }
+}
+
+/// AsyncWriteSeeker wraps Shared<Box<dyn AsyncWriteSeek>>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncWriteSeeker")]
+pub struct AsyncWriteSeeker {
+    inner: Shared<Box<dyn AsyncWriteSeek>>,
+}
+
+impl AsyncWriteSeeker {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncWriteSeek>>) -> Self {
+        Self { inner: shared }
+    }
+
+    pub fn new<T: AsyncWriteSeek + 'static>(io: T) -> Self {
+        Self {
+            inner: Shared::new(Box::new(io)),
+        }
+    }
+
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncWriteSeek>> {
+        self.inner.clone()
+    }
+}
+
+#[php_impl]
+impl AsyncWriteSeeker {
+    /// Write data
+    pub fn write(&mut self, data: String) -> RustFuture {
+        self.inner.write_impl(data)
+    }
+
+    /// Flush buffered data
+    pub fn flush(&mut self) -> RustFuture {
+        self.inner.flush_impl()
+    }
+
+    /// Seek to a position
+    pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
+        self.inner.seek_impl(offset, whence)
+    }
+}
+
+/// AsyncReadWriteSeeker wraps Shared<Box<dyn AsyncReadWriteSeek>>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncReadWriteSeeker")]
+pub struct AsyncReadWriteSeeker {
+    inner: Shared<Box<dyn AsyncReadWriteSeek>>,
+}
+
+impl AsyncReadWriteSeeker {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWriteSeek>>) -> Self {
+        Self { inner: shared }
+    }
+
+    pub fn new<T: AsyncReadWriteSeek + 'static>(io: T) -> Self {
+        Self {
+            inner: Shared::new(Box::new(io)),
+        }
+    }
+
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWriteSeek>> {
+        self.inner.clone()
+    }
+}
+
+#[php_impl]
+impl AsyncReadWriteSeeker {
+    /// Read up to length bytes
+    pub fn read(&mut self, length: i64) -> RustFuture {
+        self.inner.read_impl(length)
+    }
+
+    /// Write data
+    pub fn write(&mut self, data: String) -> RustFuture {
+        self.inner.write_impl(data)
+    }
+
+    /// Flush buffered data
+    pub fn flush(&mut self) -> RustFuture {
+        self.inner.flush_impl()
+    }
+
+    /// Seek to a position
+    pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
+        self.inner.seek_impl(offset, whence)
+    }
+
+}
+
+/// AsyncBufReader wraps Shared<Box<dyn AsyncBufRead + Unpin + Send>>
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\AsyncBufReader")]
+pub struct AsyncBufReader {
+    inner: Shared<Box<dyn AsyncBufRead + Unpin + Send>>,
+}
+
+impl AsyncBufReader {
+    /// Create AsyncBufReader from a Shared-wrapped reader
+    /// This allows multiple AsyncBufReader instances to share the same underlying reader
+    pub fn from_shared(shared: Shared<Box<dyn AsyncBufRead + Unpin + Send>>) -> Self {
+        Self { inner: shared }
+    }
+
+    /// Create AsyncBufReader from a tokio AsyncBufRead type
+    /// This wraps the reader in a new Shared container
+    pub fn new<B: AsyncBufRead + Unpin + Send + 'static>(reader: B) -> Self {
+        Self {
+            inner: Shared::new(Box::new(reader)),
+        }
+    }
+
+    /// Get a clone of the inner Shared without consuming self
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncBufRead + Unpin + Send>> {
+        self.inner.clone()
+    }
+}
+
+#[php_impl]
+impl AsyncBufReader {
+    /// Read a line
+    pub fn read_line(&mut self) -> RustFuture {
+        self.inner.read_line_impl()
+    }
+
+    /// Read until delimiter
+    pub fn read_until(&mut self, delim: u8) -> RustFuture {
+        self.inner.read_until_impl(delim)
+    }
+}
+
+// ==================== Generic Methods for Shared<Box<T>> to Reduce Duplication ====================
+
+/// Implement read method for all Shared<Box<T>> where T implements AsyncRead
+impl<T: ?Sized + 'static> Shared<Box<T>>
+where
+    T: AsyncRead + Unpin + Send,
+{
+    pub fn read_impl(&self, length: i64) -> RustFuture {
+        let inner = self.clone();
+        let future = async move {
+            let mut buf = vec![0u8; length as usize];
+            let n = inner.get_mut().read(&mut buf).await.map_err(|e| e.to_string())?;
+
+            if n == 0 {
+                return Ok::<Zval, String>(Zval::null());
+            }
+
+            buf.truncate(n);
+            let mut z = Zval::new();
+            z.set_binary(buf);
+            Ok(z)
+        };
+        RustFuture::new(future)
+    }
+}
+
+/// Implement write and flush methods for all Shared<Box<T>> where T implements AsyncWrite
+impl<T: ?Sized + 'static> Shared<Box<T>>
+where
+    T: AsyncWrite + Unpin + Send,
+{
+    pub fn write_impl(&self, data: String) -> RustFuture {
+        let inner = self.clone();
+        let future = async move {
+            let bytes = data.as_bytes();
+            inner.get_mut().write_all(bytes).await.map_err(|e| e.to_string())?;
+
+            let mut z = Zval::new();
+            z.set_long(bytes.len() as i64);
+            Ok::<Zval, String>(z)
+        };
+        RustFuture::new(future)
+    }
+
+    pub fn flush_impl(&self) -> RustFuture {
+        let inner = self.clone();
+        let future = async move {
+            inner.get_mut().flush().await.map_err(|e| e.to_string())?;
+            let mut z = Zval::new();
+            z.set_bool(true);
+            Ok::<Zval, String>(z)
+        };
+        RustFuture::new(future)
+    }
+}
+
+/// Implement seek method for all Shared<Box<T>> where T implements AsyncSeek
+impl<T: ?Sized + 'static> Shared<Box<T>>
+where
+    T: AsyncSeek + Unpin + Send,
+{
+    pub fn seek_impl(&self, offset: i64, whence: i64) -> RustFuture {
+        let inner = self.clone();
         let future = async move {
             let seek_from = match whence {
                 0 => SeekFrom::Start(offset as u64),
@@ -176,45 +431,17 @@ impl AsyncSeeker {
             z.set_long(new_pos as i64);
             Ok::<Zval, String>(z)
         };
-
         RustFuture::new(future)
     }
 }
 
-/// AsyncBufReader wraps Shared<Box<dyn AsyncBufRead + Unpin>>
-#[php_class]
-#[php(name = "Async\\Kernel\\IO\\AsyncBufReader")]
-pub struct AsyncBufReader {
-    inner: Shared<Box<dyn AsyncBufRead + Unpin>>,
-}
-
-impl AsyncBufReader {
-    /// Create AsyncBufReader from a Shared-wrapped reader
-    /// This allows multiple AsyncBufReader instances to share the same underlying reader
-    pub fn from_shared(shared: Shared<Box<dyn AsyncBufRead + Unpin>>) -> Self {
-        Self { inner: shared }
-    }
-
-    /// Create AsyncBufReader from a tokio AsyncBufRead type
-    /// This wraps the reader in a new Shared container
-    pub fn new<B: AsyncBufRead + Unpin + 'static>(reader: B) -> Self {
-        Self {
-            inner: Shared::new(Box::new(reader)),
-        }
-    }
-
-    /// Get a clone of the inner Shared without consuming self
-    pub fn get_inner(&self) -> Shared<Box<dyn AsyncBufRead + Unpin>> {
-        self.inner.clone()
-    }
-}
-
-#[php_impl]
-impl AsyncBufReader {
-    /// Read a line
-    pub fn read_line(&mut self) -> RustFuture {
-        let inner = self.inner.clone();
-
+/// Implement buffered read methods for all Shared<Box<T>> where T implements AsyncBufRead
+impl<T: ?Sized + 'static> Shared<Box<T>>
+where
+    T: AsyncBufRead + Unpin + Send,
+{
+    pub fn read_line_impl(&self) -> RustFuture {
+        let inner = self.clone();
         let future = async move {
             let mut line = String::new();
             let n = inner.get_mut().read_line(&mut line).await.map_err(|e| e.to_string())?;
@@ -228,14 +455,11 @@ impl AsyncBufReader {
                 .map_err(|e| format!("set_string error: {:?}", e))?;
             Ok(z)
         };
-
         RustFuture::new(future)
     }
 
-    /// Read until delimiter
-    pub fn read_until(&mut self, delim: u8) -> RustFuture {
-        let inner = self.inner.clone();
-
+    pub fn read_until_impl(&self, delim: u8) -> RustFuture {
+        let inner = self.clone();
         let future = async move {
             let mut buf = Vec::new();
             let n = inner.get_mut().read_until(delim, &mut buf).await.map_err(|e| e.to_string())?;
@@ -244,12 +468,10 @@ impl AsyncBufReader {
                 return Ok::<Zval, String>(Zval::null());
             }
 
-            // Use set_binary to preserve all bytes (binary-safe)
             let mut z = Zval::new();
             z.set_binary(buf);
             Ok(z)
         };
-
         RustFuture::new(future)
     }
 }
@@ -769,7 +991,7 @@ impl PhpBufReader {
             eof: false,
         };
 
-        let trait_object: Shared<Box<dyn AsyncBufRead + Unpin>> =
+        let trait_object: Shared<Box<dyn AsyncBufRead + Unpin + Send>> =
             Shared::new(Box::new(reader));
         AsyncBufReader::from_shared(trait_object)
     }
@@ -902,5 +1124,319 @@ impl AsyncBufRead for PhpBufReader {
     fn consume(mut self: Pin<&mut Self>, amt: usize) {
         let n = amt.min(self.buffer.len());
         self.buffer.drain(..n);
+    }
+}
+
+// ==================== Combined PHP IO Bridge Types ====================
+
+/// PhpReadWriter implements AsyncRead + AsyncWrite for PHP IO objects
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpReadWriter")]
+pub struct PhpReadWriter {
+    reader: PhpReader,
+    writer: PhpWriter,
+}
+
+unsafe impl Send for PhpReadWriter {}
+unsafe impl Sync for PhpReadWriter {}
+
+#[php_impl]
+impl PhpReadWriter {
+    /// Create a PhpReadWriter from dual channels
+    #[php(constructor)]
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self {
+            reader: PhpReader::__construct(request_channel, response_channel),
+            writer: PhpWriter::__construct(request_channel, response_channel),
+        }
+    }
+
+    /// Convert to AsyncReadWriter for use in async operations
+    #[php]
+    pub fn as_read_writer(&self) -> AsyncReadWriter {
+        let rw = PhpReadWriter {
+            reader: PhpReader {
+                bridge: self.reader.bridge.clone(),
+                pending: None,
+                eof: false,
+            },
+            writer: PhpWriter {
+                bridge: self.writer.bridge.clone(),
+                pending_write: None,
+                pending_flush: None,
+                pending_shutdown: None,
+            },
+        };
+
+        let trait_object: Shared<Box<dyn AsyncReadWrite>> =
+            Shared::new(Box::new(rw));
+        AsyncReadWriter::from_shared(trait_object)
+    }
+}
+
+impl Drop for PhpReadWriter {
+    fn drop(&mut self) {
+        self.reader.bridge.close_sync();
+    }
+}
+
+impl AsyncRead for PhpReadWriter {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for PhpReadWriter {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<IoResult<usize>> {
+        Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+/// PhpReadSeeker implements AsyncRead + AsyncSeek for PHP IO objects
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpReadSeeker")]
+pub struct PhpReadSeeker {
+    reader: PhpReader,
+    seeker: PhpSeeker,
+}
+
+unsafe impl Send for PhpReadSeeker {}
+unsafe impl Sync for PhpReadSeeker {}
+
+#[php_impl]
+impl PhpReadSeeker {
+    /// Create a PhpReadSeeker from dual channels
+    #[php(constructor)]
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self {
+            reader: PhpReader::__construct(request_channel, response_channel),
+            seeker: PhpSeeker::__construct(request_channel, response_channel),
+        }
+    }
+
+    /// Convert to AsyncReadSeeker for use in async operations
+    #[php]
+    pub fn as_read_seeker(&self) -> AsyncReadSeeker {
+        let rs = PhpReadSeeker {
+            reader: PhpReader {
+                bridge: self.reader.bridge.clone(),
+                pending: None,
+                eof: false,
+            },
+            seeker: PhpSeeker {
+                bridge: self.seeker.bridge.clone(),
+                pending: None,
+                pending_call: None,
+            },
+        };
+
+        let trait_object: Shared<Box<dyn AsyncReadSeek>> =
+            Shared::new(Box::new(rs));
+        AsyncReadSeeker::from_shared(trait_object)
+    }
+}
+
+impl Drop for PhpReadSeeker {
+    fn drop(&mut self) {
+        self.reader.bridge.close_sync();
+    }
+}
+
+impl AsyncRead for PhpReadSeeker {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncSeek for PhpReadSeeker {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> IoResult<()> {
+        Pin::new(&mut self.seeker).start_seek(position)
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
+        Pin::new(&mut self.seeker).poll_complete(cx)
+    }
+}
+
+/// PhpWriteSeeker implements AsyncWrite + AsyncSeek for PHP IO objects
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpWriteSeeker")]
+pub struct PhpWriteSeeker {
+    writer: PhpWriter,
+    seeker: PhpSeeker,
+}
+
+unsafe impl Send for PhpWriteSeeker {}
+unsafe impl Sync for PhpWriteSeeker {}
+
+#[php_impl]
+impl PhpWriteSeeker {
+    /// Create a PhpWriteSeeker from dual channels
+    #[php(constructor)]
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self {
+            writer: PhpWriter::__construct(request_channel, response_channel),
+            seeker: PhpSeeker::__construct(request_channel, response_channel),
+        }
+    }
+
+    /// Convert to AsyncWriteSeeker for use in async operations
+    #[php]
+    pub fn as_write_seeker(&self) -> AsyncWriteSeeker {
+        let ws = PhpWriteSeeker {
+            writer: PhpWriter {
+                bridge: self.writer.bridge.clone(),
+                pending_write: None,
+                pending_flush: None,
+                pending_shutdown: None,
+            },
+            seeker: PhpSeeker {
+                bridge: self.seeker.bridge.clone(),
+                pending: None,
+                pending_call: None,
+            },
+        };
+
+        let trait_object: Shared<Box<dyn AsyncWriteSeek>> =
+            Shared::new(Box::new(ws));
+        AsyncWriteSeeker::from_shared(trait_object)
+    }
+}
+
+impl Drop for PhpWriteSeeker {
+    fn drop(&mut self) {
+        self.writer.bridge.close_sync();
+    }
+}
+
+impl AsyncWrite for PhpWriteSeeker {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<IoResult<usize>> {
+        Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+impl AsyncSeek for PhpWriteSeeker {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> IoResult<()> {
+        Pin::new(&mut self.seeker).start_seek(position)
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
+        Pin::new(&mut self.seeker).poll_complete(cx)
+    }
+}
+
+/// PhpReadWriteSeeker implements AsyncRead + AsyncWrite + AsyncSeek for PHP IO objects
+#[php_class]
+#[php(name = "Async\\Kernel\\IO\\PhpReadWriteSeeker")]
+pub struct PhpReadWriteSeeker {
+    reader: PhpReader,
+    writer: PhpWriter,
+    seeker: PhpSeeker,
+}
+
+unsafe impl Send for PhpReadWriteSeeker {}
+unsafe impl Sync for PhpReadWriteSeeker {}
+
+#[php_impl]
+impl PhpReadWriteSeeker {
+    /// Create a PhpReadWriteSeeker from dual channels
+    #[php(constructor)]
+    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+        Self {
+            reader: PhpReader::__construct(request_channel, response_channel),
+            writer: PhpWriter::__construct(request_channel, response_channel),
+            seeker: PhpSeeker::__construct(request_channel, response_channel),
+        }
+    }
+
+    /// Convert to AsyncReadWriteSeeker for use in async operations
+    #[php]
+    pub fn as_read_write_seeker(&self) -> AsyncReadWriteSeeker {
+        let rws = PhpReadWriteSeeker {
+            reader: PhpReader {
+                bridge: self.reader.bridge.clone(),
+                pending: None,
+                eof: false,
+            },
+            writer: PhpWriter {
+                bridge: self.writer.bridge.clone(),
+                pending_write: None,
+                pending_flush: None,
+                pending_shutdown: None,
+            },
+            seeker: PhpSeeker {
+                bridge: self.seeker.bridge.clone(),
+                pending: None,
+                pending_call: None,
+            },
+        };
+
+        let trait_object: Shared<Box<dyn AsyncReadWriteSeek>> =
+            Shared::new(Box::new(rws));
+        AsyncReadWriteSeeker::from_shared(trait_object)
+    }
+}
+
+impl Drop for PhpReadWriteSeeker {
+    fn drop(&mut self) {
+        self.reader.bridge.close_sync();
+    }
+}
+
+impl AsyncRead for PhpReadWriteSeeker {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for PhpReadWriteSeeker {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<IoResult<usize>> {
+        Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+        Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+impl AsyncSeek for PhpReadWriteSeeker {
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> IoResult<()> {
+        Pin::new(&mut self.seeker).start_seek(position)
+    }
+
+    fn poll_complete(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<IoResult<u64>> {
+        Pin::new(&mut self.seeker).poll_complete(cx)
     }
 }

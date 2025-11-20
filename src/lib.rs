@@ -18,7 +18,10 @@ mod util;
 mod logger;
 
 use future::RustFuture;
-use io::{AsyncReader, AsyncWriter, AsyncSeeker, AsyncBufReader};
+use io::{
+    AsyncReader, AsyncWriter, AsyncSeeker, AsyncBufReader,
+    AsyncReadWriter, AsyncReadSeeker, AsyncWriteSeeker, AsyncReadWriteSeeker,
+};
 use bytes::{BytesReader, BytesWriter};
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
@@ -28,7 +31,10 @@ use time::AsyncTime;
 use logger::AsyncLogger;
 
 // Export PHP IO bridge types for external use
-pub use io::{PhpReader, PhpWriter, PhpSeeker, PhpBufReader};
+pub use io::{
+    PhpReader, PhpWriter, PhpSeeker, PhpBufReader,
+    PhpReadWriter, PhpReadSeeker, PhpWriteSeeker, PhpReadWriteSeeker,
+};
 
 pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
     let mut current_val = fiber
@@ -179,12 +185,20 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncWriter>()
         .class::<AsyncSeeker>()
         .class::<AsyncBufReader>()
+        .class::<AsyncReadWriter>() // Combined IO types
+        .class::<AsyncReadSeeker>()
+        .class::<AsyncWriteSeeker>()
+        .class::<AsyncReadWriteSeeker>()
         .class::<BytesReader>() // In-memory IO
         .class::<BytesWriter>()
         .class::<PhpReader>() // PHP IO bridges
         .class::<PhpWriter>()
         .class::<PhpSeeker>()
         .class::<PhpBufReader>()
+        .class::<PhpReadWriter>() // Combined PHP IO bridges
+        .class::<PhpReadSeeker>()
+        .class::<PhpWriteSeeker>()
+        .class::<PhpReadWriteSeeker>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
 }

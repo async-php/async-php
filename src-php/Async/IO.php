@@ -6,6 +6,10 @@ use Async\IO\Wrapper\ReaderWrapper;
 use Async\IO\Wrapper\WriterWrapper;
 use Async\IO\Wrapper\SeekerWrapper;
 use Async\IO\Wrapper\BufReaderWrapper;
+use Async\IO\Wrapper\ReadWriterWrapper;
+use Async\IO\Wrapper\ReadSeekerWrapper;
+use Async\IO\Wrapper\WriteSeekerWrapper;
+use Async\IO\Wrapper\ReadWriteSeekerWrapper;
 use Async\IO\Adapter\ByteReaderAdapter;
 use Async\IO\Adapter\ByteWriterAdapter;
 use Async\IO\Adapter\StringReaderAdapter;
@@ -18,10 +22,18 @@ use Async\IO\Adapter\WriterToAdapter;
 use Async\IO\Reader;
 use Async\IO\Writer;
 use Async\IO\Seeker;
+use Async\IO\ReadWriter;
+use Async\IO\ReadSeeker;
+use Async\IO\WriteSeeker;
+use Async\IO\ReadWriteSeeker;
 use Async\Kernel\IO\AsyncReader;
 use Async\Kernel\IO\AsyncWriter;
 use Async\Kernel\IO\AsyncSeeker;
 use Async\Kernel\IO\AsyncBufReader;
+use Async\Kernel\IO\AsyncReadWriter;
+use Async\Kernel\IO\AsyncReadSeeker;
+use Async\Kernel\IO\AsyncWriteSeeker;
+use Async\Kernel\IO\AsyncReadWriteSeeker;
 
 /**
  * IO provides type conversion methods between Kernel IO types and Wrapper types
@@ -70,6 +82,50 @@ class IO
     public static function wrapBufReader(AsyncBufReader $reader): BufReaderWrapper
     {
         return new BufReaderWrapper($reader);
+    }
+
+    /**
+     * Wrap AsyncReadWriter into a ReadWriterWrapper
+     *
+     * @param AsyncReadWriter $readWriter The kernel async read-writer
+     * @return ReadWriterWrapper ReadWriter interface implementation
+     */
+    public static function wrapReadWriter(AsyncReadWriter $readWriter): ReadWriterWrapper
+    {
+        return new ReadWriterWrapper($readWriter);
+    }
+
+    /**
+     * Wrap AsyncReadSeeker into a ReadSeekerWrapper
+     *
+     * @param AsyncReadSeeker $readSeeker The kernel async read-seeker
+     * @return ReadSeekerWrapper ReadSeeker interface implementation
+     */
+    public static function wrapReadSeeker(AsyncReadSeeker $readSeeker): ReadSeekerWrapper
+    {
+        return new ReadSeekerWrapper($readSeeker);
+    }
+
+    /**
+     * Wrap AsyncWriteSeeker into a WriteSeekerWrapper
+     *
+     * @param AsyncWriteSeeker $writeSeeker The kernel async write-seeker
+     * @return WriteSeekerWrapper WriteSeeker interface implementation
+     */
+    public static function wrapWriteSeeker(AsyncWriteSeeker $writeSeeker): WriteSeekerWrapper
+    {
+        return new WriteSeekerWrapper($writeSeeker);
+    }
+
+    /**
+     * Wrap AsyncReadWriteSeeker into a ReadWriteSeekerWrapper
+     *
+     * @param AsyncReadWriteSeeker $readWriteSeeker The kernel async read-write-seeker
+     * @return ReadWriteSeekerWrapper ReadWriteSeeker interface implementation
+     */
+    public static function wrapReadWriteSeeker(AsyncReadWriteSeeker $readWriteSeeker): ReadWriteSeekerWrapper
+    {
+        return new ReadWriteSeekerWrapper($readWriteSeeker);
     }
 
     /**
@@ -242,6 +298,62 @@ class IO
     {
         [$requestChannel, $responseChannel] = self::spawnIO($reader);
         return new \Async\Kernel\IO\PhpBufReader($requestChannel->unwrap(), $responseChannel->unwrap());
+    }
+
+    /**
+     * Wrap a PHP read-writer object into PhpReadWriter (for tokio async usage)
+     *
+     * The object should have read($length), write($data), and flush() methods
+     *
+     * @param object $readWriter PHP object implementing read, write, and flush methods
+     * @return \Async\Kernel\IO\PhpReadWriter
+     */
+    public static function wrapPhpReadWriter($readWriter): \Async\Kernel\IO\PhpReadWriter
+    {
+        [$requestChannel, $responseChannel] = self::spawnIO($readWriter);
+        return new \Async\Kernel\IO\PhpReadWriter($requestChannel->unwrap(), $responseChannel->unwrap());
+    }
+
+    /**
+     * Wrap a PHP read-seeker object into PhpReadSeeker (for tokio async usage)
+     *
+     * The object should have read($length) and seek($offset, $whence) methods
+     *
+     * @param object $readSeeker PHP object implementing read and seek methods
+     * @return \Async\Kernel\IO\PhpReadSeeker
+     */
+    public static function wrapPhpReadSeeker($readSeeker): \Async\Kernel\IO\PhpReadSeeker
+    {
+        [$requestChannel, $responseChannel] = self::spawnIO($readSeeker);
+        return new \Async\Kernel\IO\PhpReadSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
+    }
+
+    /**
+     * Wrap a PHP write-seeker object into PhpWriteSeeker (for tokio async usage)
+     *
+     * The object should have write($data), flush(), and seek($offset, $whence) methods
+     *
+     * @param object $writeSeeker PHP object implementing write, flush, and seek methods
+     * @return \Async\Kernel\IO\PhpWriteSeeker
+     */
+    public static function wrapPhpWriteSeeker($writeSeeker): \Async\Kernel\IO\PhpWriteSeeker
+    {
+        [$requestChannel, $responseChannel] = self::spawnIO($writeSeeker);
+        return new \Async\Kernel\IO\PhpWriteSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
+    }
+
+    /**
+     * Wrap a PHP read-write-seeker object into PhpReadWriteSeeker (for tokio async usage)
+     *
+     * The object should have read($length), write($data), flush(), and seek($offset, $whence) methods
+     *
+     * @param object $readWriteSeeker PHP object implementing read, write, flush, and seek methods
+     * @return \Async\Kernel\IO\PhpReadWriteSeeker
+     */
+    public static function wrapPhpReadWriteSeeker($readWriteSeeker): \Async\Kernel\IO\PhpReadWriteSeeker
+    {
+        [$requestChannel, $responseChannel] = self::spawnIO($readWriteSeeker);
+        return new \Async\Kernel\IO\PhpReadWriteSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
     }
 
     /**
