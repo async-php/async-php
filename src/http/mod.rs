@@ -13,6 +13,7 @@
 mod client;
 mod request;
 mod response;
+mod server;
 
 pub use client::HttpClient;
 pub use request::HttpRequest;

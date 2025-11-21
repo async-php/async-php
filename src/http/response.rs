@@ -62,7 +62,7 @@ impl HttpResponse {
         Self::new_internal(http_response)
     }
 
-    fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send>>, String> {
+    pub(crate) fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send>>, String> {
         let resp = self.inner.get_mut();
         if resp.extensions().get::<BodyConsumed>().is_some() {
             return Err("Response body already consumed".to_string());
