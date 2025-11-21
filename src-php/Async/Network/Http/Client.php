@@ -8,6 +8,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Fiber;
+use Psr\Http\Message\StreamInterface;
 
 /**
  * HTTP Client with PSR-18 support
@@ -89,6 +90,10 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
+            } elseif ($body instanceof ReadStream) {
+                $kernelRequest->bodyStream($body);
+            } elseif ($body instanceof StreamInterface) {
+                $kernelRequest->bodyText($body->getContents());
             }
         }
 
@@ -117,6 +122,10 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
+            } elseif ($body instanceof ReadStream) {
+                $kernelRequest->bodyStream($body);
+            } elseif ($body instanceof StreamInterface) {
+                $kernelRequest->bodyText($body->getContents());
             }
         }
 
@@ -145,6 +154,10 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
+            } elseif ($body instanceof ReadStream) {
+                $kernelRequest->bodyStream($body);
+            } elseif ($body instanceof StreamInterface) {
+                $kernelRequest->bodyText($body->getContents());
             }
         }
 
@@ -223,14 +236,27 @@ class Client implements ClientInterface
 
         // Apply body
         $body = $request->getBody();
-        if ($body->getSize() > 0) {
-            $body->rewind();
-            // Try bodyText with camelCase
+        $bodySize = $body->getSize();
+
+        // Skip empty bodies
+        if ($bodySize === 0) {
+            // Body is explicitly empty
+        } elseif ($body instanceof ReadStream) {
+            $kernelRequest->bodyStream($body->unwrap());
+        } else {
+            // Fallback for other StreamInterface implementations
+            // Note: This buffers the entire body into memory
             try {
-                $kernelRequest->bodyText($body->getContents(), $request->getHeaderLine('Content-Type') ?: null);
-            } catch (\Error $e) {
-                // Fallback: skip body for now if method not found
-                // TODO: Fix body_text method registration
+                // Don't rewind if not seekable
+                if ($body->isSeekable()) {
+                    $body->rewind();
+                }
+                $contents = $body->getContents();
+                if ($contents !== '') {
+                    $kernelRequest->bodyText($contents, $request->getHeaderLine('Content-Type') ?: null);
+                }
+            } catch (\Throwable $e) {
+                // Body handling failed, continue without body
             }
         }
 

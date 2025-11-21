@@ -201,7 +201,15 @@ class Psr7Response implements ResponseInterface
     {
         if ($this->body === null) {
             // Create stream from kernel response on first access
-            $this->body = new Stream($this->kernelResponse);
+            try {
+                $asyncReader = $this->kernelResponse->stream();
+                $contentLength = $this->kernelResponse->contentLength();
+                $this->body = new ReadStream($asyncReader, $contentLength);
+            } catch (\Throwable $e) {
+                // If stream() fails, create an empty stream by creating a dummy AsyncReader
+                // For now, we'll throw the error as this shouldn't happen in normal cases
+                throw new \RuntimeException('Failed to create response body stream: ' . $e->getMessage(), 0, $e);
+            }
         }
         return $this->body;
     }
