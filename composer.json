@@ -5,10 +5,12 @@
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "Async\\": "src-php/Async/"
+            "Async\\": "src-php/Async/",
+            "PDO\\": "src-php/PDO/"
         },
         "files": [
-            "src-php/Async/functions.php"
+            "src-php/Async/functions.php",
+            "src-php/PDO/functions.php"
         ]
     },
     "require": {

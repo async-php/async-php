@@ -12,7 +12,7 @@ mod net;
 mod fs;
 mod http;
 mod channel;
-mod db;
+mod pdo;
 mod time;
 mod util;
 mod logger;
@@ -28,7 +28,7 @@ use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, Asyn
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::HttpServer;
 use channel::AsyncChannel;
-use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
+use pdo::{AsyncPdoMySql, AsyncPdoPgSql, AsyncPdoMySqlTransaction, AsyncPdoPgSqlTransaction};
 use time::AsyncTime;
 use logger::AsyncLogger;
 use context::AsyncContext;
@@ -181,10 +181,10 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpResponse>()
         .class::<HttpServer>()
         .class::<AsyncChannel>()
-        .class::<AsyncMySql>()
-        .class::<AsyncMySqlTransaction>()
-        .class::<AsyncPgSql>()
-        .class::<AsyncPgSqlTransaction>()
+        .class::<AsyncPdoMySql>()
+        .class::<AsyncPdoMySqlTransaction>()
+        .class::<AsyncPdoPgSql>()
+        .class::<AsyncPdoPgSqlTransaction>()
         .class::<AsyncTime>()
         .class::<AsyncLogger>() // Register AsyncLogger
         .class::<AsyncReader>() // IO types
