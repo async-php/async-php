@@ -337,4 +337,20 @@ impl AsyncFileHandle {
             Shared::new(Box::new(self.inner.clone()));
         AsyncSeeker::from_shared(trait_object)
     }
+
+    /// Extract as AsyncReadWriter (returns \Async\Kernel\IO\AsyncReadWriter)
+    #[php]
+    pub fn as_read_writer(&self) -> crate::io::AsyncReadWriter {
+        use crate::io::AsyncReadWriter;
+        let trait_object: Shared<Box<dyn crate::io::AsyncReadWrite>> =
+            Shared::new(Box::new(self.inner.clone()));
+        AsyncReadWriter::from_shared(trait_object)
+    }
+}
+
+impl AsyncFileHandle {
+    /// Internal: Get inner Shared<File> for zero-copy operations
+    pub(crate) fn get_inner(&self) -> Shared<fs::File> {
+        self.inner.clone()
+    }
 }

@@ -213,4 +213,20 @@ impl AsyncTcpStream {
             Shared::new(Box::new(self.inner.clone()));
         AsyncWriter::from_shared(trait_object)
     }
+
+    /// Extract as AsyncReadWriter (returns \Async\Kernel\IO\AsyncReadWriter)
+    #[php]
+    pub fn as_read_writer(&self) -> crate::io::AsyncReadWriter {
+        use crate::io::AsyncReadWriter;
+        let trait_object: Shared<Box<dyn crate::io::AsyncReadWrite>> =
+            Shared::new(Box::new(self.inner.clone()));
+        AsyncReadWriter::from_shared(trait_object)
+    }
+}
+
+impl AsyncTcpStream {
+    /// Internal: Get inner Shared<TcpStream> for zero-copy operations
+    pub(crate) fn get_inner(&self) -> Shared<TcpStream> {
+        self.inner.clone()
+    }
 }

@@ -15,7 +15,7 @@ use crate::util::Shared;
 #[derive(Clone, Copy, Debug)]
 struct BodyConsumed;
 
-fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
+fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send + Sync>> {
     Empty::<Bytes>::new()
         .map_err(|err: Infallible| match err {})
         .boxed()
@@ -25,14 +25,14 @@ fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpResponse")]
 pub struct HttpResponse {
-    pub(crate) inner: Shared<Response<BoxBody<Bytes, Box<dyn Error + Send>>>>,
+    pub(crate) inner: Shared<Response<BoxBody<Bytes, Box<dyn Error + Send + Sync>>>>,
 }
 
 unsafe impl Send for HttpResponse {}
 unsafe impl Sync for HttpResponse {}
 
 impl HttpResponse {
-    pub(crate) fn new_internal(response: Response<BoxBody<Bytes, Box<dyn Error + Send>>>) -> Self {
+    pub(crate) fn new_internal(response: Response<BoxBody<Bytes, Box<dyn Error + Send + Sync>>>) -> Self {
         Self {
             inner: Shared::new(response),
         }
@@ -51,7 +51,7 @@ impl HttpResponse {
         let stream = response
             .bytes_stream()
             .map_ok(Frame::data)
-            .map_err(|e| Box::new(e) as Box<dyn Error + Send>);
+            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>);
         let body = StreamBody::new(SyncStream::new(stream)).boxed();
 
         let mut http_response = Response::new(body);
@@ -62,7 +62,7 @@ impl HttpResponse {
         Self::new_internal(http_response)
     }
 
-    pub(crate) fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send>>, String> {
+    pub(crate) fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send + Sync>>, String> {
         let resp = self.inner.get_mut();
         if resp.extensions().get::<BodyConsumed>().is_some() {
             return Err("Response body already consumed".to_string());
