@@ -120,7 +120,7 @@ pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
 }
 
 #[php_function]
-pub fn go(callable: &Zval) -> PhpResult<Zval> {
+pub fn go(callable: &Zval) -> PhpResult<i64> {
     let fiber_class = ClassEntry::try_find("Fiber")
         .ok_or_else(|| PhpException::default("Fiber class not found".into()))?;
     
@@ -134,14 +134,16 @@ pub fn go(callable: &Zval) -> PhpResult<Zval> {
     })?;
     
     let fiber_clone = fiber_zval.shallow_clone();
+
+    let fiber_id = crate::context::next_fiber_id() as i64;
     
-    crate::context::spawn_local(async move {
+    crate::context::spawn_local_with_fiber_id(fiber_id as u64, async move {
         if let Err(e) = crate::drive_fiber(fiber_clone).await {
             tracing::error!("Spawned fiber failed: {:?}", e);
         }
     });
     
-    Ok(fiber_zval)
+    Ok(fiber_id)
 }
 
 #[php_function]

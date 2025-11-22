@@ -3,15 +3,23 @@ use ext_php_rs::types::Zval;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 type ContextMap = HashMap<String, Zval>;
 
 tokio::task_local! {
     static TASK_CONTEXT: RefCell<ContextMap>;
+    static TASK_FIBER_ID: u64;
 }
 
 thread_local! {
     static THREAD_CONTEXT: RefCell<ContextMap> = RefCell::new(HashMap::new());
+}
+
+static NEXT_FIBER_ID: AtomicU64 = AtomicU64::new(1);
+
+pub fn next_fiber_id() -> u64 {
+    NEXT_FIBER_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 fn get_from_cell(cell: &RefCell<ContextMap>, id: &str, default: Option<&Zval>) -> Zval {
@@ -33,7 +41,14 @@ pub fn scope<F>(future: F) -> impl Future<Output = F::Output>
 where
     F: Future,
 {
-    TASK_CONTEXT.scope(RefCell::new(HashMap::new()), future)
+    scope_with_fiber_id(0, future)
+}
+
+pub fn scope_with_fiber_id<F>(fiber_id: u64, future: F) -> impl Future<Output = F::Output>
+where
+    F: Future,
+{
+    TASK_FIBER_ID.scope(fiber_id, TASK_CONTEXT.scope(RefCell::new(HashMap::new()), future))
 }
 
 pub fn spawn_local<F>(future: F) -> tokio::task::JoinHandle<F::Output>
@@ -42,6 +57,14 @@ where
     F::Output: 'static,
 {
     tokio::task::spawn_local(scope(future))
+}
+
+pub fn spawn_local_with_fiber_id<F>(fiber_id: u64, future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + 'static,
+    F::Output: 'static,
+{
+    tokio::task::spawn_local(scope_with_fiber_id(fiber_id, future))
 }
 
 #[php_class]

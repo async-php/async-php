@@ -37,9 +37,9 @@ class Kernel
         \Fiber::suspend(Time::sleep($ms));
     }
 
-    public static function spawn(callable $task): void
+    public static function spawn(callable $task): int
     {
-        \go($task);
+        return \go($task);
     }
 
     public static function setupLog(array $config): void
