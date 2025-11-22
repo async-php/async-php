@@ -1,46 +1,37 @@
 use crate::util::Shared;
 use crate::http::{HttpRequest, HttpResponse};
 use hyper::{Request, Response, body::Incoming};
-use http_body_util::{Full, BodyExt};
+use http_body_util::BodyExt;
 use bytes::Bytes;
+use hyper_util::server::conn::auto;
+use std::future::Future;
+use std::time::Duration;
+use ext_php_rs::prelude::*;
+use ext_php_rs::types::ZendHashTable;
 
-#[cfg(feature = "hyper-server")]
-mod server_types {
-    use super::*;
-    use hyper_util::server::conn::auto;
-    use std::future::Future;
-    use std::time::Duration;
-    use ext_php_rs::prelude::*;
-    use ext_php_rs::types::ZendHashTable;
+#[derive(Clone)]
+pub struct LocalExecutor;
 
-    #[derive(Clone)]
-    pub struct LocalExecutor;
-
-    // 实现 Hyper 的 Executor trait
-    impl<Fut> hyper::rt::Executor<Fut> for LocalExecutor
-    where
-        Fut: Future + 'static, // 注意：这里没有 Send 约束！
-    {
-        fn execute(&self, fut: Fut) {
-            // 使用 spawn_local 而不是 spawn
-            tokio::task::spawn_local(fut);
-        }
+// 实现 Hyper 的 Executor trait
+impl<Fut> hyper::rt::Executor<Fut> for LocalExecutor
+where
+    Fut: Future + 'static, // 注意：这里没有 Send 约束！
+{
+    fn execute(&self, fut: Fut) {
+        // 使用 spawn_local 而不是 spawn
+        tokio::task::spawn_local(fut);
     }
-
-    #[php_class]
-    #[php(name = "Async\\Kernel\\Network\\Http\\ConnectionBuilder")]
-    pub struct ConnectionBuilder {
-        pub(super) inner: Shared<auto::Builder<LocalExecutor>>
-    }
-
-    unsafe impl Send for ConnectionBuilder {}
-    unsafe impl Sync for ConnectionBuilder {}
 }
 
-#[cfg(feature = "hyper-server")]
-pub use server_types::*;
+#[php_class]
+#[php(name = "Async\\Kernel\\Network\\Http\\ConnectionBuilder")]
+pub struct ConnectionBuilder {
+    pub(super) inner: Shared<auto::Builder<LocalExecutor>>
+}
 
-#[cfg(feature = "hyper-server")]
+unsafe impl Send for ConnectionBuilder {}
+unsafe impl Sync for ConnectionBuilder {}
+
 #[php_impl]
 impl ConnectionBuilder {
     /// Create a new connection builder
@@ -338,25 +329,21 @@ pub async fn http_request_from_hyper(req: Request<Incoming>) -> Result<HttpReque
     })
 }
 
-/// Convert HttpResponse to hyper Response
-pub async fn http_response_to_hyper(mut response: HttpResponse) -> Result<Response<Full<Bytes>>, String> {
-    use http_body_util::BodyExt;
-
-    // Take the body from response
+/// Convert HttpResponse to hyper Response with streaming body
+pub async fn http_response_to_hyper(
+    mut response: HttpResponse,
+) -> Result<Response<http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send>>>, String> {
+    // Take the body from response (keeps it streaming)
     let body = response.take_body()?;
 
-    // Collect all bytes from the body
-    let collected = body.collect().await.map_err(|e| e.to_string())?;
-    let bytes = collected.to_bytes();
-
-    // Get response parts (status, headers, etc.)
+    // Get response parts (status, headers, etc.) before consuming
     let resp = response.inner.get_ref();
     let status = resp.status();
     let headers = resp.headers().clone();
     let version = resp.version();
 
-    // Build hyper response with Full body
-    let mut hyper_response = Response::new(Full::new(bytes));
+    // Build hyper response with streaming BoxBody
+    let mut hyper_response = Response::new(body);
     *hyper_response.status_mut() = status;
     *hyper_response.headers_mut() = headers;
     *hyper_response.version_mut() = version;

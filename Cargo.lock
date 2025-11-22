@@ -92,6 +92,8 @@ dependencies = [
  "http-body",
  "http-body-util",
  "httparse",
+ "hyper",
+ "hyper-util",
  "pin-project",
  "quinn",
  "rcgen",
