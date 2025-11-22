@@ -32,7 +32,7 @@ impl AsyncTime {
         let callback = callback.shallow_clone();
         let ms = (seconds * 1000.0) as u64;
 
-        tokio::task::spawn_local(async move {
+        crate::context::spawn_local(async move {
             tokio_sleep(Duration::from_millis(ms)).await;
             if let Err(e) = callback.try_call(vec![]) {
                 eprintln!("Timer callback failed: {}", e);

@@ -23,7 +23,7 @@ where
 {
     fn execute(&self, fut: Fut) {
         // 使用 spawn_local 而不是 spawn
-        tokio::task::spawn_local(fut);
+        crate::context::spawn_local(fut);
     }
 }
 

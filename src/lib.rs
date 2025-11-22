@@ -16,6 +16,7 @@ mod db;
 mod time;
 mod util;
 mod logger;
+mod context;
 
 use future::RustFuture;
 use io::{
@@ -30,6 +31,7 @@ use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
 use logger::AsyncLogger;
+use context::AsyncContext;
 
 // Export PHP IO bridge types for external use
 pub use io::{
@@ -133,10 +135,10 @@ pub fn go(callable: &Zval) -> PhpResult<Zval> {
     
     let fiber_clone = fiber_zval.shallow_clone();
     
-    tokio::task::spawn_local(async move {
-            if let Err(e) = crate::drive_fiber(fiber_clone).await {
-                tracing::error!("Spawned fiber failed: {:?}", e);
-            }
+    crate::context::spawn_local(async move {
+        if let Err(e) = crate::drive_fiber(fiber_clone).await {
+            tracing::error!("Spawned fiber failed: {:?}", e);
+        }
     });
     
     Ok(fiber_zval)
@@ -152,15 +154,16 @@ pub fn run(fiber: &mut Zval) -> PhpResult<()> {
 
     let local = tokio::task::LocalSet::new();
 
-    local.block_on(&rt, async {
+    local.block_on(&rt, crate::context::scope(async {
         let fiber_clone = fiber.shallow_clone();
         drive_fiber(fiber_clone).await
-    })
+    }))
 }
 
 #[php_module]
 pub fn module(module: ModuleBuilder) -> ModuleBuilder {
     module
+        .class::<AsyncContext>()
         .class::<RustFuture>()
         .class::<AsyncTcpListener>()
         .class::<AsyncTcpStream>()
