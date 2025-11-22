@@ -188,4 +188,68 @@ impl HttpRequest {
         *req.body_mut() = body;
         Ok(())
     }
+
+    // ==================== Server-side getter methods ====================
+
+    /// Get the HTTP method (GET, POST, etc.)
+    #[php]
+    pub fn method(&self) -> String {
+        self.inner.get_ref().method().to_string()
+    }
+
+    /// Get the request path (e.g., "/api/users")
+    #[php]
+    pub fn path(&self) -> String {
+        self.inner.get_ref().uri().path().to_string()
+    }
+
+    /// Get the full URI as a string
+    #[php]
+    pub fn uri(&self) -> String {
+        self.inner.get_ref().uri().to_string()
+    }
+
+    /// Get the query string (without the "?")
+    #[php]
+    pub fn query_string(&self) -> String {
+        self.inner.get_ref().uri().query().unwrap_or("").to_string()
+    }
+
+    /// Get HTTP version as a string (e.g., "HTTP/1.1", "HTTP/2")
+    #[php]
+    pub fn version(&self) -> String {
+        format!("{:?}", self.inner.get_ref().version())
+    }
+
+    /// Get all headers as an array
+    /// Returns: array<string, array<string>> (header name => array of values)
+    #[php]
+    pub fn get_headers(&self) -> HashMap<String, Vec<String>> {
+        let mut result = HashMap::new();
+        let headers = self.inner.get_ref().headers();
+
+        for (name, value) in headers.iter() {
+            let name_str = name.to_string();
+            let value_str = value.to_str().unwrap_or("").to_string();
+
+            result
+                .entry(name_str)
+                .or_insert_with(Vec::new)
+                .push(value_str);
+        }
+
+        result
+    }
+
+    /// Get a specific header value
+    /// Returns the first value if multiple values exist
+    #[php]
+    pub fn get_header(&self, name: String) -> Option<String> {
+        self.inner
+            .get_ref()
+            .headers()
+            .get(&name)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+    }
 }

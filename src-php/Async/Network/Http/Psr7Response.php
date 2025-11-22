@@ -204,7 +204,7 @@ class Psr7Response implements ResponseInterface
             try {
                 $asyncReader = $this->kernelResponse->stream();
                 $contentLength = $this->kernelResponse->contentLength();
-                $this->body = new ReadStream($asyncReader, $contentLength);
+                $this->body = new ReaderStream($asyncReader, $contentLength);
             } catch (\Throwable $e) {
                 // If stream() fails, create an empty stream by creating a dummy AsyncReader
                 // For now, we'll throw the error as this shouldn't happen in normal cases

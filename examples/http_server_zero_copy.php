@@ -15,7 +15,7 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use Async\Network\Http\HttpServer;
+use Async\Network\Http\Server;
 use Async\Network\Tcp\Listener;
 use Async\Kernel\Network\Http\HttpRequest;
 use Async\Kernel\Network\Http\HttpResponse;
@@ -29,7 +29,7 @@ function main(): void
     echo "Press Ctrl+C to stop\n\n";
 
     // Create HTTP server
-    $server = new HttpServer();
+    $server = new Server();
 
     // Optional: Configure HTTP/1.1 or HTTP/2 only
     // $server->http1Only();
@@ -97,7 +97,7 @@ function main(): void
 // Alternative: Use the convenience method
 function mainConvenience(): void
 {
-    $server = new HttpServer();
+    $server = new Server();
 
     // This does the same as main() but in one call
     $server->listenAndServe('127.0.0.1:9001', function(HttpRequest $req): HttpResponse {

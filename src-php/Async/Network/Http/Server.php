@@ -2,7 +2,7 @@
 
 namespace Async\Network\Http;
 
-use Async\Kernel\Network\Http\ConnectionBuilder;
+use Async\Kernel\Network\Http\HttpServer as KernelHttpServer;
 use Async\Kernel\Network\Http\HttpRequest as KernelHttpRequest;
 use Async\Kernel\Network\Http\HttpResponse as KernelHttpResponse;
 use Async\Kernel\IO\AsyncReadWriter;
@@ -29,13 +29,13 @@ use Fiber;
  * }
  * ```
  */
-class HttpServer
+class Server
 {
-    private ConnectionBuilder $builder;
+    private KernelHttpServer $builder;
 
     public function __construct()
     {
-        $this->builder = new ConnectionBuilder();
+        $this->builder = new KernelHttpServer();
     }
 
     /**
@@ -59,7 +59,7 @@ class HttpServer
     /**
      * Configure HTTP/1 settings
      *
-     * @param array $options See ConnectionBuilder::http1() for available options
+     * @param array $options See KernelHttpServer::http1() for available options
      */
     public function http1(array $options): self
     {
@@ -70,7 +70,7 @@ class HttpServer
     /**
      * Configure HTTP/2 settings
      *
-     * @param array $options See ConnectionBuilder::http2() for available options
+     * @param array $options See KernelHttpServer::http2() for available options
      */
     public function http2(array $options): self
     {

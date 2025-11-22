@@ -18,3 +18,4 @@ mod server;
 pub use client::HttpClient;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
+pub use server::HttpServer;

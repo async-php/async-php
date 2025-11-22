@@ -144,7 +144,7 @@ impl hyper::service::Service<Request<Incoming>> for PhpHandlerService {
 
 
 #[php_class]
-#[php(name = "Async\\Kernel\\Network\\Http\\ConnectionBuilder")]
+#[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
     pub(super) conn_builder: Shared<auto::Builder<LocalExecutor>>
 }

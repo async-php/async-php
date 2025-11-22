@@ -90,7 +90,7 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReadStream) {
+            } elseif ($body instanceof ReaderStream) {
                 $kernelRequest->bodyStream($body);
             } elseif ($body instanceof StreamInterface) {
                 $kernelRequest->bodyText($body->getContents());
@@ -122,7 +122,7 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReadStream) {
+            } elseif ($body instanceof ReaderStream) {
                 $kernelRequest->bodyStream($body);
             } elseif ($body instanceof StreamInterface) {
                 $kernelRequest->bodyText($body->getContents());
@@ -154,7 +154,7 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReadStream) {
+            } elseif ($body instanceof ReaderStream) {
                 $kernelRequest->bodyStream($body);
             } elseif ($body instanceof StreamInterface) {
                 $kernelRequest->bodyText($body->getContents());
@@ -241,7 +241,7 @@ class Client implements ClientInterface
         // Skip empty bodies
         if ($bodySize === 0) {
             // Body is explicitly empty
-        } elseif ($body instanceof ReadStream) {
+        } elseif ($body instanceof ReaderStream) {
             $kernelRequest->bodyStream($body->unwrap());
         } else {
             // Fallback for other StreamInterface implementations

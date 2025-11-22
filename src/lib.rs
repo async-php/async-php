@@ -25,6 +25,7 @@ use io::{
 use bytes::{BytesReader, BytesWriter};
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
+use http::HttpServer;
 use channel::AsyncChannel;
 use db::{AsyncMySql, AsyncPgSql, AsyncMySqlTransaction, AsyncPgSqlTransaction};
 use time::AsyncTime;
@@ -173,6 +174,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpClient>()
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
+        .class::<HttpServer>()
         .class::<AsyncChannel>()
         .class::<AsyncMySql>()
         .class::<AsyncMySqlTransaction>()

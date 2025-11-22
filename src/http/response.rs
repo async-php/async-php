@@ -204,4 +204,52 @@ impl HttpResponse {
 
         Ok(AsyncReader::new(reader))
     }
+
+    // ==================== Server-side builder methods ====================
+
+    /// Create a new HTTP response (for server-side use)
+    #[php(constructor)]
+    pub fn __construct() -> Self {
+        let response = Response::new(empty_body());
+        Self::new_internal(response)
+    }
+
+    /// Set the HTTP status code
+    #[php]
+    pub fn set_status(&mut self, status: u16) -> PhpResult<()> {
+        let resp = self.inner.get_mut();
+        *resp.status_mut() = http::StatusCode::from_u16(status)
+            .map_err(|e| format!("Invalid status code: {e}"))?;
+        Ok(())
+    }
+
+    /// Set a response header
+    #[php]
+    pub fn set_header(&mut self, name: String, value: String) -> PhpResult<()> {
+        use http::header::{HeaderName, HeaderValue};
+
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| format!("Invalid header name: {e}"))?;
+        let value = HeaderValue::from_str(&value)
+            .map_err(|e| format!("Invalid header value: {e}"))?;
+
+        let resp = self.inner.get_mut();
+        resp.headers_mut().insert(name, value);
+        Ok(())
+    }
+
+    /// Set the response body from a string
+    #[php]
+    pub fn set_body(&mut self, body: String) -> PhpResult<()> {
+        use bytes::Bytes;
+        use http_body_util::Full;
+
+        let full_body = Full::new(Bytes::from(body))
+            .map_err(|err: Infallible| match err {})
+            .boxed();
+
+        let resp = self.inner.get_mut();
+        *resp.body_mut() = full_body;
+        Ok(())
+    }
 }

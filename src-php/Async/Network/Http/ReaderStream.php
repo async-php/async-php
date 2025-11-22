@@ -15,7 +15,7 @@ use Psr\Http\Message\StreamInterface;
  * NOTE: This stream does NOT support seeking/rewinding as it's designed for
  * forward-only streaming to handle large responses efficiently.
  */
-class ReadStream implements StreamInterface
+class ReaderStream implements StreamInterface
 {
     private ?ReaderWrapper $reader = null;
     private int $position = 0;

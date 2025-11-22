@@ -60,12 +60,12 @@ class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
 
     public function remoteAddr(): string
     {
-        return $this->inner->peer_addr();
+        return $this->inner->peerAddr();
     }
 
     public function localAddr(): string
     {
-        return $this->inner->local_addr();
+        return $this->inner->localAddr();
     }
 
     /**
@@ -178,5 +178,14 @@ class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
         }
 
         return $totalWritten;
+    }
+
+    /**
+     * Extract as AsyncReadWriter for zero-copy IO operations
+     * @return \Async\Kernel\IO\AsyncReadWriter
+     */
+    public function asReadWriter()
+    {
+        return $this->inner->asReadWriter();
     }
 }
