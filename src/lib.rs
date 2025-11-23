@@ -13,6 +13,7 @@ mod fs;
 mod http;
 mod channel;
 mod pdo;
+mod curl;
 mod time;
 mod util;
 mod logger;
@@ -29,6 +30,7 @@ use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::HttpServer;
 use channel::AsyncChannel;
 use pdo::{AsyncPdoMySql, AsyncPdoPgSql, AsyncPdoMySqlTransaction, AsyncPdoPgSqlTransaction};
+use curl::{CurlHandle, CurlMulti};
 use time::AsyncTime;
 use logger::AsyncLogger;
 use context::AsyncContext;
@@ -185,6 +187,8 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPdoMySqlTransaction>()
         .class::<AsyncPdoPgSql>()
         .class::<AsyncPdoPgSqlTransaction>()
+        .class::<CurlHandle>() // cURL support
+        .class::<CurlMulti>()
         .class::<AsyncTime>()
         .class::<AsyncLogger>() // Register AsyncLogger
         .class::<AsyncReader>() // IO types
