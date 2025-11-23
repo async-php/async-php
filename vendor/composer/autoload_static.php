@@ -8,6 +8,7 @@ class ComposerStaticInit92d916dea917a74e4d27f1891deb36c9
 {
     public static $files = array (
         '2f1dd8d6596759616a81c6ca3b312c0d' => __DIR__ . '/../..' . '/src-php/Async/functions.php',
+        '3ee5acfaf5e1c607b64c9386efd7e4c5' => __DIR__ . '/../..' . '/src-php/PDO/functions.php',
     );
 
     public static $prefixLengthsPsr4 = array (
@@ -16,6 +17,7 @@ class ComposerStaticInit92d916dea917a74e4d27f1891deb36c9
             'Psr\\Http\\Server\\' => 16,
             'Psr\\Http\\Message\\' => 17,
             'Psr\\Http\\Client\\' => 16,
+            'PDO\\' => 4,
         ),
         'A' => 
         array (
@@ -37,6 +39,10 @@ class ComposerStaticInit92d916dea917a74e4d27f1891deb36c9
         'Psr\\Http\\Client\\' => 
         array (
             0 => __DIR__ . '/..' . '/psr/http-client/src',
+        ),
+        'PDO\\' => 
+        array (
+            0 => __DIR__ . '/../..' . '/src-php/PDO',
         ),
         'Async\\' => 
         array (

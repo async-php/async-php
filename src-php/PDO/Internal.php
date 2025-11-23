@@ -143,7 +143,14 @@ final class Internal
                     continue;
                 }
 
-                if ($ch === ':' && $next !== ':' && $next !== '' && preg_match('/[A-Za-z_]/', $next) === 1) {
+                // Named parameter (avoid PostgreSQL cast operator `::type`)
+                if (
+                    $ch === ':'
+                    && ($i === 0 || $sql[$i - 1] !== ':')
+                    && $next !== ':'
+                    && $next !== ''
+                    && preg_match('/[A-Za-z_]/', $next) === 1
+                ) {
                     $j = $i + 1;
                     while ($j < $len && preg_match('/[A-Za-z0-9_]/', $sql[$j]) === 1) {
                         $j++;

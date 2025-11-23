@@ -127,7 +127,25 @@ fn pg_row_to_zval(row: &PgRow) -> Zval {
                     z
                 })
                 .unwrap_or_else(Zval::new),
-            "INT2" | "INT4" | "INT8" => row
+            "INT2" => row
+                .try_get::<Option<i16>, _>(name)
+                .unwrap_or(None)
+                .map(|v| {
+                    let mut z = Zval::new();
+                    z.set_long(v as i64);
+                    z
+                })
+                .unwrap_or_else(Zval::new),
+            "INT4" => row
+                .try_get::<Option<i32>, _>(name)
+                .unwrap_or(None)
+                .map(|v| {
+                    let mut z = Zval::new();
+                    z.set_long(v as i64);
+                    z
+                })
+                .unwrap_or_else(Zval::new),
+            "INT8" => row
                 .try_get::<Option<i64>, _>(name)
                 .unwrap_or(None)
                 .map(|v| {
@@ -136,9 +154,28 @@ fn pg_row_to_zval(row: &PgRow) -> Zval {
                     z
                 })
                 .unwrap_or_else(Zval::new),
-            "FLOAT4" | "FLOAT8" | "NUMERIC" => row
+            "FLOAT4" => row
+                .try_get::<Option<f32>, _>(name)
+                .unwrap_or(None)
+                .map(|v| {
+                    let mut z = Zval::new();
+                    z.set_double(v as f64);
+                    z
+                })
+                .unwrap_or_else(Zval::new),
+            "FLOAT8" => row
                 .try_get::<Option<f64>, _>(name)
                 .unwrap_or(None)
+                .map(|v| {
+                    let mut z = Zval::new();
+                    z.set_double(v);
+                    z
+                })
+                .unwrap_or_else(Zval::new),
+            "NUMERIC" => row
+                .try_get::<Option<f64>, _>(name)
+                .ok()
+                .flatten()
                 .map(|v| {
                     let mut z = Zval::new();
                     z.set_double(v);
