@@ -1,6 +1,6 @@
 <?php
 
-namespace Pdo;
+namespace PDO;
 
 /**
  * MySQL specialized PDO class (PHP 8.4+ naming).
@@ -8,8 +8,11 @@ namespace Pdo;
  * This class intentionally exists even when native PDO is disabled, to keep
  * user code aligned with the latest PHP driver class names.
  */
-class Mysql extends \PDO
+class Mysql extends PDO
 {
+    /**
+     * @throws PDOException
+     */
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null)
     {
         $dsn = self::normalizeDsn($dsn);

@@ -1,20 +1,23 @@
 <?php
 
-namespace Pdo;
+namespace PDO;
 
 /**
- * PostgreSQL specialized PDO class (PHP 8.4+ naming).
+ * PostgresSQL specialized PDO class (PHP 8.4+ naming).
  */
-class Pgsql extends \PDO
+class Pgsql extends PDO
 {
+    /**
+     * @throws PDOException
+     */
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null)
     {
         $dsn = self::normalizeDsn($dsn);
         parent::__construct($dsn, $username, $password, $options);
 
         $options ??= [];
-        if (array_key_exists(\PDO::PGSQL_ATTR_DISABLE_PREPARES, $options)) {
-            $this->setAttribute(\PDO::PGSQL_ATTR_DISABLE_PREPARES, (bool)$options[\PDO::PGSQL_ATTR_DISABLE_PREPARES]);
+        if (array_key_exists(PDO::PGSQL_ATTR_DISABLE_PREPARES, $options)) {
+            $this->setAttribute(PDO::PGSQL_ATTR_DISABLE_PREPARES, (bool)$options[PDO::PGSQL_ATTR_DISABLE_PREPARES]);
         }
     }
 

@@ -10,7 +10,7 @@
         },
         "files": [
             "src-php/Async/functions.php",
-            "src-php/PDO/functions.php"
+            "src-php/PDO/supports.php"
         ]
     },
     "require": {
