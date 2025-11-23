@@ -6,7 +6,7 @@ use Async\Kernel\PDO\MySql as KernelMySql;
 use Async\Kernel\PDO\PgSql as KernelPgSql;
 use Fiber;
 
-final class PDO
+class PDO
 {
     // Generic PDO constants (matching ext/pdo values on PHP 8.4)
     public const ATTR_AUTOCOMMIT = 0;
