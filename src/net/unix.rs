@@ -194,6 +194,7 @@ impl AsyncUnixStream {
 
 impl AsyncUnixStream {
     /// Internal: Get inner Shared<UnixStream> for zero-copy operations
+    #[allow(dead_code)]
     pub(crate) fn get_inner(&self) -> Shared<tokio::net::UnixStream> {
         self.inner.clone()
     }

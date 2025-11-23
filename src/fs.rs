@@ -350,6 +350,7 @@ impl AsyncFileHandle {
 
 impl AsyncFileHandle {
     /// Internal: Get inner Shared<File> for zero-copy operations
+    #[allow(dead_code)]
     pub(crate) fn get_inner(&self) -> Shared<fs::File> {
         self.inner.clone()
     }

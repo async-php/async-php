@@ -60,6 +60,7 @@ impl Handler for ResponseHandler {
 #[derive(Clone)]
 struct CurlResult {
     body: Vec<u8>,
+    #[allow(dead_code)]
     headers: Vec<u8>,
     response_code: u32,
     effective_url: String,

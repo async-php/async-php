@@ -471,6 +471,7 @@ impl AsyncTlsStream {
 
 impl AsyncTlsStream {
     /// Internal: Get inner Shared<TlsStream<TcpStream>> for zero-copy operations
+    #[allow(dead_code)]
     pub(crate) fn get_inner(&self) -> Shared<TlsStream<TcpStream>> {
         self.inner.clone()
     }

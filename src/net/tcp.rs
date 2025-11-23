@@ -226,6 +226,7 @@ impl AsyncTcpStream {
 
 impl AsyncTcpStream {
     /// Internal: Get inner Shared<TcpStream> for zero-copy operations
+    #[allow(dead_code)]
     pub(crate) fn get_inner(&self) -> Shared<TcpStream> {
         self.inner.clone()
     }
