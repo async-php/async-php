@@ -14,7 +14,7 @@ final class PDOStatement
 
     /** @var array<int|string,mixed> */
     private array $boundValues = [];
-    /** @var array<int|string,mixed> */
+    /** @var array<int|string,array{ref:mixed,type:int}> */
     private array $boundParams = [];
 
     private bool $executed = false;
@@ -47,6 +47,7 @@ final class PDOStatement
         $this->placeholders = $placeholders;
         $this->queryString = $sql;
         $this->defaultFetchMode = $pdo->getAttribute(PDO::ATTR_DEFAULT_FETCH_MODE);
+        $this->attributes[PDO::ATTR_CURSOR] = (int)$pdo->getAttribute(PDO::ATTR_CURSOR);
     }
 
     public function execute(?array $params = null): bool
@@ -55,7 +56,7 @@ final class PDOStatement
 
         $final = $this->boundValues;
         foreach ($this->boundParams as $k => $v) {
-            $final[$k] = $v;
+            $final[$k] = $this->coerceParamValue($v['ref'], $v['type']);
         }
         if ($params !== null) {
             foreach ($params as $k => $v) {
@@ -109,7 +110,7 @@ final class PDOStatement
     public function bindValue(int|string $param, mixed $value, int $type = PDO::PARAM_STR): bool
     {
         $key = Internal::normalizeParamKey($param);
-        $this->boundValues[$key] = $value;
+        $this->boundValues[$key] = $this->coerceParamValue($value, $type);
         return true;
     }
 
@@ -119,27 +120,38 @@ final class PDOStatement
     public function bindParam(int|string $param, mixed &$var, int $type = PDO::PARAM_STR, int $maxLength = 0, mixed $driverOptions = null): bool
     {
         $key = Internal::normalizeParamKey($param);
-        $this->boundParams[$key] = &$var;
+        $this->boundParams[$key] = ['ref' => &$var, 'type' => $type];
         return true;
     }
 
-    public function fetch(int $mode = PDO::FETCH_DEFAULT): mixed
+    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
     {
         if (!$this->executed) {
             return false;
         }
-        if ($this->cursor >= count($this->rows)) {
+        if ($cursorOrientation !== PDO::FETCH_ORI_NEXT && !$this->isCursorScrollable()) {
             return false;
         }
-        $row = $this->rows[$this->cursor++];
-        $mode = $mode === PDO::FETCH_DEFAULT ? $this->defaultFetchMode : $mode;
+
+        $idx = $this->resolveCursorIndex($cursorOrientation, $cursorOffset);
+        if ($idx === null) {
+            return false;
+        }
+        $row = $this->rows[$idx];
+        $this->cursor = $idx + 1;
+
+        $args = [];
+        if ($mode === PDO::FETCH_DEFAULT) {
+            $mode = $this->defaultFetchMode;
+            $args = $this->defaultFetchModeArgs;
+        }
 
         if ($mode === PDO::FETCH_BOUND) {
             $this->applyBoundColumns($row);
             return true;
         }
 
-        return $this->formatRow($row, $mode);
+        return $this->formatRowWithArgs($row, $mode, $args);
     }
 
     public function fetchAll(int $mode = PDO::FETCH_DEFAULT, mixed ...$args): array
@@ -147,10 +159,25 @@ final class PDOStatement
         if (!$this->executed) {
             return [];
         }
-        $mode = $mode === PDO::FETCH_DEFAULT ? $this->defaultFetchMode : $mode;
-        $args = $args !== [] ? $args : $this->defaultFetchModeArgs;
+        if ($mode === PDO::FETCH_DEFAULT) {
+            $mode = $this->defaultFetchMode;
+            $args = $args !== [] ? $args : $this->defaultFetchModeArgs;
+        }
 
-        if ($mode === PDO::FETCH_COLUMN) {
+        $group = ($mode & PDO::FETCH_GROUP) === PDO::FETCH_GROUP;
+        $unique = ($mode & PDO::FETCH_UNIQUE) === PDO::FETCH_UNIQUE;
+        $flags = PDO::FETCH_GROUP | PDO::FETCH_UNIQUE | PDO::FETCH_CLASSTYPE | PDO::FETCH_SERIALIZE | PDO::FETCH_PROPS_LATE;
+        $baseMode = $mode & (~$flags);
+        if ($baseMode === 0) {
+            $baseMode = PDO::FETCH_BOTH;
+        }
+
+        if ($group || $unique) {
+            $this->cursor = count($this->rows);
+            return $this->fetchAllGroupedOrUnique($baseMode, $args, $group, $unique, $mode);
+        }
+
+        if ($baseMode === PDO::FETCH_COLUMN) {
             $col = (int)($args[0] ?? 0);
             $out = [];
             while (true) {
@@ -163,7 +190,7 @@ final class PDOStatement
             return $out;
         }
 
-        if ($mode === PDO::FETCH_KEY_PAIR) {
+        if ($baseMode === PDO::FETCH_KEY_PAIR) {
             $out = [];
             while (true) {
                 $row = $this->fetch(PDO::FETCH_NUM);
@@ -177,14 +204,32 @@ final class PDOStatement
             return $out;
         }
 
-        $out = [];
-        while (true) {
-            $row = $this->fetch($mode);
-            if ($row === false) {
-                break;
+        if ($baseMode === PDO::FETCH_INTO) {
+            $into = $args[0] ?? null;
+            if (!is_object($into)) {
+                return [];
             }
-            $out[] = $row;
+            $caseMode = (int)$this->pdo->getAttribute(PDO::ATTR_CASE);
+            $stringify = (bool)$this->pdo->getAttribute(PDO::ATTR_STRINGIFY_FETCHES);
+            $out = [];
+            foreach ($this->rows as $rawRow) {
+                try {
+                    $obj = clone $into;
+                } catch (\Throwable) {
+                    $obj = $into;
+                }
+                $this->assignRowToObject($rawRow, $obj, $caseMode, $stringify);
+                $out[] = $obj;
+            }
+            $this->cursor = count($this->rows);
+            return $out;
         }
+
+        $out = [];
+        foreach ($this->rows as $rawRow) {
+            $out[] = $this->formatRowWithArgs($rawRow, $mode, $args);
+        }
+        $this->cursor = count($this->rows);
         return $out;
     }
 
@@ -313,6 +358,45 @@ final class PDOStatement
         $this->errorInfo = ['00000', null, null];
     }
 
+    private function isCursorScrollable(): bool
+    {
+        $v = $this->getAttribute(PDO::ATTR_CURSOR);
+        if (is_int($v)) {
+            return $v === PDO::CURSOR_SCROLL;
+        }
+        return false;
+    }
+
+    private function resolveCursorIndex(int $orientation, int $offset): ?int
+    {
+        $count = count($this->rows);
+        if ($count === 0) {
+            return null;
+        }
+
+        $idx = null;
+        if ($orientation === PDO::FETCH_ORI_NEXT) {
+            $idx = $this->cursor;
+        } elseif ($orientation === PDO::FETCH_ORI_PRIOR) {
+            $idx = $this->cursor - 2;
+        } elseif ($orientation === PDO::FETCH_ORI_FIRST) {
+            $idx = 0;
+        } elseif ($orientation === PDO::FETCH_ORI_LAST) {
+            $idx = $count - 1;
+        } elseif ($orientation === PDO::FETCH_ORI_ABS) {
+            $idx = $offset;
+        } elseif ($orientation === PDO::FETCH_ORI_REL) {
+            $idx = $this->cursor + $offset;
+        } else {
+            return null;
+        }
+
+        if (!is_int($idx) || $idx < 0 || $idx >= $count) {
+            return null;
+        }
+        return $idx;
+    }
+
     private function applyBoundColumns(array $row): void
     {
         if ($this->boundColumns === []) {
@@ -328,15 +412,246 @@ final class PDOStatement
         }
     }
 
-    private function formatRow(array $row, int $mode): mixed
+    /**
+     * @param list<mixed> $args
+     */
+    private function formatRowWithArgs(array $row, int $mode, array $args): mixed
     {
-        return match ($mode) {
+        $caseMode = (int)$this->pdo->getAttribute(PDO::ATTR_CASE);
+        $stringify = (bool)$this->pdo->getAttribute(PDO::ATTR_STRINGIFY_FETCHES);
+
+        $flags = PDO::FETCH_GROUP | PDO::FETCH_UNIQUE | PDO::FETCH_CLASSTYPE | PDO::FETCH_SERIALIZE | PDO::FETCH_PROPS_LATE;
+        $baseMode = $mode & (~$flags);
+        if ($baseMode === 0) {
+            $baseMode = PDO::FETCH_BOTH;
+        }
+
+        if ($baseMode === PDO::FETCH_NAMED) {
+            $baseMode = PDO::FETCH_ASSOC;
+        }
+
+        if ($baseMode === PDO::FETCH_CLASS) {
+            $class = (string)($args[0] ?? 'stdClass');
+            $ctorArgs = $args[1] ?? null;
+            if ($ctorArgs !== null && !is_array($ctorArgs)) {
+                $ctorArgs = null;
+            }
+            $propsLate = ($mode & PDO::FETCH_PROPS_LATE) === PDO::FETCH_PROPS_LATE;
+            $classType = ($mode & PDO::FETCH_CLASSTYPE) === PDO::FETCH_CLASSTYPE;
+            if ($classType) {
+                $vals = array_values($row);
+                $class = isset($vals[0]) ? (string)$vals[0] : $class;
+            }
+            return $this->rowToClassObject($row, $class, $ctorArgs ?? [], $propsLate, $classType, $caseMode, $stringify);
+        }
+
+        if ($baseMode === PDO::FETCH_INTO) {
+            $into = $args[0] ?? null;
+            if (!is_object($into)) {
+                return false;
+            }
+            $this->assignRowToObject($row, $into, $caseMode, $stringify);
+            return $into;
+        }
+
+        if ($baseMode === PDO::FETCH_FUNC) {
+            $fn = $args[0] ?? null;
+            if (!is_callable($fn)) {
+                return false;
+            }
+            $vals = array_values($this->stringifyRowValues($row, $stringify));
+            return $fn(...$vals);
+        }
+
+        $row = $this->applyCaseMode($row, $caseMode);
+        $row = $this->stringifyRowValues($row, $stringify);
+
+        return match ($baseMode) {
             PDO::FETCH_ASSOC => $row,
             PDO::FETCH_NUM => array_values($row),
             PDO::FETCH_BOTH => array_replace($row, array_values($row)),
             PDO::FETCH_OBJ => (object)$row,
             default => $row,
         };
+    }
+
+    private function applyCaseMode(array $row, int $caseMode): array
+    {
+        if ($caseMode !== PDO::CASE_UPPER && $caseMode !== PDO::CASE_LOWER) {
+            return $row;
+        }
+        $out = [];
+        foreach ($row as $k => $v) {
+            if (is_string($k)) {
+                $k = $caseMode === PDO::CASE_UPPER ? strtoupper($k) : strtolower($k);
+            }
+            $out[$k] = $v;
+        }
+        return $out;
+    }
+
+    private function stringifyRowValues(array $row, bool $stringify): array
+    {
+        if (!$stringify) {
+            return $row;
+        }
+        foreach ($row as $k => $v) {
+            if ($v === null || is_string($v)) {
+                continue;
+            }
+            if (is_bool($v)) {
+                $row[$k] = $v ? '1' : '0';
+                continue;
+            }
+            if (is_int($v) || is_float($v)) {
+                $row[$k] = (string)$v;
+            }
+        }
+        return $row;
+    }
+
+    /**
+     * @param list<mixed> $ctorArgs
+     */
+    private function rowToClassObject(array $row, string $class, array $ctorArgs, bool $propsLate, bool $classType, int $caseMode, bool $stringify): object|false
+    {
+        if ($class === '') {
+            $class = 'stdClass';
+        }
+        if ($class === 'stdClass') {
+            $row = $this->applyCaseMode($row, $caseMode);
+            $row = $this->stringifyRowValues($row, $stringify);
+            $obj = new \stdClass();
+            foreach ($row as $k => $v) {
+                if (is_string($k)) {
+                    $obj->$k = $v;
+                }
+            }
+            return $obj;
+        }
+
+        try {
+            $rc = new \ReflectionClass($class);
+
+            $firstName = $this->columns[0]['name'] ?? null;
+
+            if ($propsLate) {
+                $obj = $rc->newInstanceArgs($ctorArgs);
+                $this->assignRowToObject($row, $obj, $caseMode, $stringify, $classType, $firstName);
+                return $obj;
+            }
+
+            $obj = $rc->newInstanceWithoutConstructor();
+            $this->assignRowToObject($row, $obj, $caseMode, $stringify, $classType, $firstName);
+            $ctor = $rc->getConstructor();
+            if ($ctor !== null && $ctor->isPublic()) {
+                $ctor->invokeArgs($obj, $ctorArgs);
+            }
+            return $obj;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function assignRowToObject(array $row, object $obj, int $caseMode, bool $stringify, bool $classType = false, ?string $classTypeColumnName = null): void
+    {
+        $row = $this->applyCaseMode($row, $caseMode);
+        $row = $this->stringifyRowValues($row, $stringify);
+
+        foreach ($row as $k => $v) {
+            if (!is_string($k)) {
+                continue;
+            }
+            if ($classType && $classTypeColumnName !== null && $k === $classTypeColumnName) {
+                continue;
+            }
+            $obj->$k = $v;
+        }
+    }
+
+    /**
+     * @param list<mixed> $args
+     */
+    private function fetchAllGroupedOrUnique(int $baseMode, array $args, bool $group, bool $unique, int $fullMode): array
+    {
+        $out = [];
+        $firstName = $this->columns[0]['name'] ?? null;
+
+        foreach ($this->rows as $rawRow) {
+            $vals = array_values($rawRow);
+            $key = $vals[0] ?? null;
+
+            $row = $this->formatRowWithArgs($rawRow, $fullMode, $args);
+            $row = $this->removeFirstColumnFromFormattedRow($row, $baseMode, $firstName);
+
+            if ($group) {
+                if (!array_key_exists($key, $out)) {
+                    $out[$key] = [];
+                }
+                $out[$key][] = $row;
+            } elseif ($unique) {
+                $out[$key] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    private function removeFirstColumnFromFormattedRow(mixed $row, int $baseMode, ?string $firstName): mixed
+    {
+        if ($row === false || $row === null) {
+            return $row;
+        }
+
+        if ($baseMode === PDO::FETCH_NUM && is_array($row)) {
+            array_shift($row);
+            return $row;
+        }
+
+        if (($baseMode === PDO::FETCH_ASSOC || $baseMode === PDO::FETCH_BOTH) && is_array($row)) {
+            if ($firstName !== null && $firstName !== '') {
+                unset($row[$firstName]);
+                $caseMode = (int)$this->pdo->getAttribute(PDO::ATTR_CASE);
+                if ($caseMode === PDO::CASE_UPPER) {
+                    unset($row[strtoupper($firstName)]);
+                } elseif ($caseMode === PDO::CASE_LOWER) {
+                    unset($row[strtolower($firstName)]);
+                }
+            }
+            unset($row[0]);
+            return $row;
+        }
+
+        return $row;
+    }
+
+    private function coerceParamValue(mixed $value, int $type): mixed
+    {
+        $type = $type & (~PDO::PARAM_INPUT_OUTPUT);
+
+        return match ($type) {
+            PDO::PARAM_NULL => null,
+            PDO::PARAM_INT => $value === null ? null : (int)$value,
+            PDO::PARAM_BOOL => $value === null ? null : (bool)$value,
+            PDO::PARAM_STR => $value === null ? null : (string)$value,
+            PDO::PARAM_LOB => $this->coerceLob($value),
+            default => $value,
+        };
+    }
+
+    private function coerceLob(mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (is_resource($value) && get_resource_type($value) === 'stream') {
+            $data = stream_get_contents($value);
+            return $data === false ? null : $data;
+        }
+        if (is_string($value)) {
+            return $value;
+        }
+        return (string)$value;
     }
 
     private function isLikelyReturningRows(string $sql): bool

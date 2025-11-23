@@ -34,3 +34,29 @@ Kernel::run(function () {
 
 - `mysql:` / `pgsql:` 形式的 PDO DSN 会在 PHP 层转换为 SQLx 的 URI（例如 `mysql://...` / `postgres://...`）。
 - `?` 与 `:name` 占位符会在 PHP 层编译为驱动对应的占位符（`pgsql` 会转换为 `$1/$2/...`）。
+
+## 连接池（协程共享）
+
+底层 `Async\Kernel\PDO\MySql` / `Async\Kernel\PDO\PgSql` 基于 SQLx Pool 实现，PDO 层可以通过选项打开“同一个 PDO 实例在多个协程中并发使用”：
+
+```php
+$pdo = new PDO(
+    'mysql:host=127.0.0.1;port=3306;dbname=test',
+    'root',
+    'pass',
+    [
+        PDO::ATTR_CONNECTION_POOL_ENABLED => true,
+        PDO::ATTR_CONNECTION_POOL_MIN_SIZE => 2,
+        PDO::ATTR_CONNECTION_POOL_MAX_SIZE => 10,
+        PDO::ATTR_CONNECTION_POOL_TIMEOUT => 5,      // 创建连接池/首次连接超时（秒）
+        PDO::ATTR_CONNECTION_POOL_WAIT_TIMEOUT => 3, // 获取连接等待超时（秒，含健康检查/建连等阶段）
+        PDO::ATTR_CONNECTION_POOL_HEARTBEAT => true, // 获取连接前做健康检查
+        PDO::ATTR_CONNECTION_POOL_IDLE_TIME => 30,   // 空闲连接回收（秒）
+    ]
+);
+```
+
+说明：
+
+- 事务 / `errorInfo()` / `lastInsertId()` 等状态按协程隔离，避免不同协程互相污染。
+- 连接池配置在构造函数中生效（透传到扩展侧 SQLx PoolOptions），`setAttribute()` 当前不会动态重配底层 pool。

@@ -9,6 +9,15 @@ use sqlx::{Column, Row, Transaction, TypeInfo};
 use sqlx::mysql::{MySqlPool, MySqlRow};
 use sqlx::postgres::{PgPool, PgRow};
 use sqlx::{MySql, Postgres};
+use std::time::Duration;
+
+fn secs_to_duration(secs: Option<f64>) -> Option<Duration> {
+    let secs = secs?;
+    if !secs.is_finite() || secs <= 0.0 {
+        return None;
+    }
+    Some(Duration::from_secs_f64(secs))
+}
 
 fn sqlx_err_to_pdo_message(err: sqlx::Error) -> String {
     if let sqlx::Error::Database(db) = &err {
@@ -234,13 +243,41 @@ pub struct AsyncPdoMySql {
 
 #[php_impl]
 impl AsyncPdoMySql {
-    pub fn connect(dsn: String, max_conns: i32) -> RustFuture {
+    pub fn connect(
+        dsn: String,
+        max_conns: i32,
+        min_conns: Option<i32>,
+        connect_timeout_secs: Option<f64>,
+        wait_timeout_secs: Option<f64>,
+        heartbeat: Option<bool>,
+        idle_time_secs: Option<f64>,
+    ) -> RustFuture {
         let future = async move {
-            let pool = sqlx::mysql::MySqlPoolOptions::new()
-                .max_connections(max_conns.max(1) as u32)
-                .connect(&dsn)
-                .await
-                .map_err(sqlx_err_to_pdo_message)?;
+            let max_conns = max_conns.max(1) as u32;
+            let mut opts = sqlx::mysql::MySqlPoolOptions::new().max_connections(max_conns);
+
+            if let Some(min) = min_conns {
+                let min = min.max(0) as u32;
+                opts = opts.min_connections(min.min(max_conns));
+            }
+            if let Some(d) = secs_to_duration(wait_timeout_secs) {
+                opts = opts.acquire_timeout(d);
+            }
+            if let Some(test) = heartbeat {
+                opts = opts.test_before_acquire(test);
+            }
+            if let Some(d) = secs_to_duration(idle_time_secs) {
+                opts = opts.idle_timeout(Some(d));
+            }
+
+            let pool = if let Some(d) = secs_to_duration(connect_timeout_secs) {
+                tokio::time::timeout(d, opts.connect(&dsn))
+                    .await
+                    .map_err(|_| "SQLSTATE[HY000]: Connection pool connect timeout".to_string())?
+                    .map_err(sqlx_err_to_pdo_message)?
+            } else {
+                opts.connect(&dsn).await.map_err(sqlx_err_to_pdo_message)?
+            };
 
             let obj = AsyncPdoMySql { pool: Shared::new(pool) };
             ext_php_rs::types::ZendClassObject::new(obj)
@@ -424,13 +461,41 @@ pub struct AsyncPdoPgSql {
 
 #[php_impl]
 impl AsyncPdoPgSql {
-    pub fn connect(dsn: String, max_conns: i32) -> RustFuture {
+    pub fn connect(
+        dsn: String,
+        max_conns: i32,
+        min_conns: Option<i32>,
+        connect_timeout_secs: Option<f64>,
+        wait_timeout_secs: Option<f64>,
+        heartbeat: Option<bool>,
+        idle_time_secs: Option<f64>,
+    ) -> RustFuture {
         let future = async move {
-            let pool = sqlx::postgres::PgPoolOptions::new()
-                .max_connections(max_conns.max(1) as u32)
-                .connect(&dsn)
-                .await
-                .map_err(sqlx_err_to_pdo_message)?;
+            let max_conns = max_conns.max(1) as u32;
+            let mut opts = sqlx::postgres::PgPoolOptions::new().max_connections(max_conns);
+
+            if let Some(min) = min_conns {
+                let min = min.max(0) as u32;
+                opts = opts.min_connections(min.min(max_conns));
+            }
+            if let Some(d) = secs_to_duration(wait_timeout_secs) {
+                opts = opts.acquire_timeout(d);
+            }
+            if let Some(test) = heartbeat {
+                opts = opts.test_before_acquire(test);
+            }
+            if let Some(d) = secs_to_duration(idle_time_secs) {
+                opts = opts.idle_timeout(Some(d));
+            }
+
+            let pool = if let Some(d) = secs_to_duration(connect_timeout_secs) {
+                tokio::time::timeout(d, opts.connect(&dsn))
+                    .await
+                    .map_err(|_| "SQLSTATE[HY000]: Connection pool connect timeout".to_string())?
+                    .map_err(sqlx_err_to_pdo_message)?
+            } else {
+                opts.connect(&dsn).await.map_err(sqlx_err_to_pdo_message)?
+            };
 
             let obj = AsyncPdoPgSql { pool: Shared::new(pool) };
             ext_php_rs::types::ZendClassObject::new(obj)
