@@ -18,6 +18,7 @@ mod time;
 mod util;
 mod logger;
 mod context;
+mod sql_parser;
 
 use future::RustFuture;
 use io::{
@@ -164,6 +165,43 @@ pub fn run(fiber: &mut Zval) -> PhpResult<()> {
     }))
 }
 
+/// PHP-exposed function to compile SQL placeholders
+/// Returns: ['sql' => rewritten_sql, 'placeholders' => [...]]
+#[php_function]
+pub fn sql_compile_placeholders(driver: String, sql: String) -> PhpResult<Zval> {
+    let parsed = crate::sql_parser::parse_and_rewrite_sql(&sql, &driver)
+        .map_err(|e| PhpException::default(e))?;
+
+    // Build result array
+    let mut result = ext_php_rs::types::ZendHashTable::new();
+
+    // Add rewritten SQL
+    result.insert("sql", parsed.rewritten).ok();
+
+    // Build placeholders array
+    let mut placeholders_array = ext_php_rs::types::ZendHashTable::new();
+    for placeholder in parsed.placeholders {
+        let mut ph_entry = ext_php_rs::types::ZendHashTable::new();
+        match placeholder.kind {
+            crate::sql_parser::PlaceholderKind::Positional(num) => {
+                ph_entry.insert("kind", "pos").ok();
+                ph_entry.insert("key", num as i64).ok();
+            }
+            crate::sql_parser::PlaceholderKind::Named(name) => {
+                ph_entry.insert("kind", "named").ok();
+                ph_entry.insert("key", name).ok();
+            }
+        }
+        placeholders_array.push(ph_entry).ok();
+    }
+
+    result.insert("placeholders", placeholders_array).ok();
+
+    result
+        .into_zval(false)
+        .map_err(|e| PhpException::default(format!("Zval conversion error: {:?}", e)))
+}
+
 #[php_module]
 pub fn module(module: ModuleBuilder) -> ModuleBuilder {
     module
@@ -211,4 +249,5 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<PhpReadWriteSeeker>()
         .function(wrap_function!(run))
         .function(wrap_function!(go))
+        .function(wrap_function!(sql_compile_placeholders))
 }

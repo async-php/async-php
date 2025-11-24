@@ -72,11 +72,13 @@ final class PDOStatement
                 continue;
             }
 
+            // For positional parameters, $ph['key'] is 1-based from the parser
             $pos = (int)$ph['key']; // 1-based
-            if (array_key_exists($pos, $final)) {
-                $ordered[] = $final[$pos];
-            } elseif (array_key_exists($pos - 1, $final)) {
+            // But PHP arrays are 0-based, so check 0-based first
+            if (array_key_exists($pos - 1, $final)) {
                 $ordered[] = $final[$pos - 1];
+            } elseif (array_key_exists($pos, $final)) {
+                $ordered[] = $final[$pos];
             } else {
                 $ordered[] = null;
             }

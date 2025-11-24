@@ -108,6 +108,7 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
+ "nom",
  "once_cell",
  "pin-project",
  "quinn",

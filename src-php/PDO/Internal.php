@@ -112,99 +112,14 @@ final class Internal
 
     /**
      * Compile PDO-style placeholders into driver-native ones.
+     * Uses high-performance Rust implementation.
      *
      * @return array{0:string,1:list<array{kind:"pos"|"named",key:int|string}>}
      */
     public static function compilePlaceholders(string $driver, string $sql): array
     {
-        $placeholders = [];
-        $out = '';
-        $len = strlen($sql);
-        $i = 0;
-        $n = 0;
-
-        $mode = 'code'; // code|sq|dq|bq|line|block
-        while ($i < $len) {
-            $ch = $sql[$i];
-            $next = ($i + 1 < $len) ? $sql[$i + 1] : '';
-
-            if ($mode === 'code') {
-                if ($ch === "'" ) { $mode = 'sq'; $out .= $ch; $i++; continue; }
-                if ($ch === '"' ) { $mode = 'dq'; $out .= $ch; $i++; continue; }
-                if ($ch === '`' ) { $mode = 'bq'; $out .= $ch; $i++; continue; }
-                if ($ch === '-' && $next === '-') { $mode = 'line'; $out .= $ch . $next; $i += 2; continue; }
-                if ($ch === '/' && $next === '*') { $mode = 'block'; $out .= $ch . $next; $i += 2; continue; }
-
-                if ($ch === '?') {
-                    $n++;
-                    $placeholders[] = ['kind' => 'pos', 'key' => $n];
-                    $out .= ($driver === 'pgsql') ? ('$' . $n) : '?';
-                    $i++;
-                    continue;
-                }
-
-                // Named parameter (avoid PostgreSQL cast operator `::type`)
-                if (
-                    $ch === ':'
-                    && ($i === 0 || $sql[$i - 1] !== ':')
-                    && $next !== ':'
-                    && $next !== ''
-                    && preg_match('/[A-Za-z_]/', $next) === 1
-                ) {
-                    $j = $i + 1;
-                    while ($j < $len && preg_match('/[A-Za-z0-9_]/', $sql[$j]) === 1) {
-                        $j++;
-                    }
-                    $name = substr($sql, $i + 1, $j - ($i + 1));
-                    $n++;
-                    $placeholders[] = ['kind' => 'named', 'key' => $name];
-                    $out .= ($driver === 'pgsql') ? ('$' . $n) : '?';
-                    $i = $j;
-                    continue;
-                }
-
-                $out .= $ch;
-                $i++;
-                continue;
-            }
-
-            if ($mode === 'sq') {
-                $out .= $ch;
-                if ($ch === "'" && $next === "'") { $out .= $next; $i += 2; continue; }
-                if ($ch === "'") { $mode = 'code'; }
-                $i++;
-                continue;
-            }
-
-            if ($mode === 'dq') {
-                $out .= $ch;
-                if ($ch === '"' && $next === '"') { $out .= $next; $i += 2; continue; }
-                if ($ch === '"') { $mode = 'code'; }
-                $i++;
-                continue;
-            }
-
-            if ($mode === 'bq') {
-                $out .= $ch;
-                if ($ch === '`') { $mode = 'code'; }
-                $i++;
-                continue;
-            }
-
-            if ($mode === 'line') {
-                $out .= $ch;
-                $i++;
-                if ($ch === "\n") { $mode = 'code'; }
-                continue;
-            }
-
-            // block comment
-            $out .= $ch;
-            if ($ch === '*' && $next === '/') { $out .= $next; $i += 2; $mode = 'code'; continue; }
-            $i++;
-        }
-
-        return [$out, $placeholders];
+        $result = sql_compile_placeholders($driver, $sql);
+        return [$result['sql'], $result['placeholders']];
     }
 
     /**

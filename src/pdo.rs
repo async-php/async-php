@@ -515,6 +515,7 @@ impl AsyncPdoPgSql {
             }
 
             let rows = query
+                .persistent(false)  // Disable prepared statement caching to avoid type conflicts
                 .fetch_all(pool.get_ref())
                 .await
                 .map_err(sqlx_err_to_pdo_message)?;
@@ -547,6 +548,7 @@ impl AsyncPdoPgSql {
             }
 
             let done = query
+                .persistent(false)  // Disable prepared statement caching to avoid type conflicts
                 .execute(pool.get_ref())
                 .await
                 .map_err(sqlx_err_to_pdo_message)?;
@@ -593,7 +595,11 @@ impl AsyncPdoPgSqlTransaction {
                 query = bind_params_pg(query, args);
             }
 
-            let rows = query.fetch_all(&mut **tx).await.map_err(sqlx_err_to_pdo_message)?;
+            let rows = query
+                .persistent(false)  // Disable prepared statement caching to avoid type conflicts
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(sqlx_err_to_pdo_message)?;
             let cols = rows
                 .first()
                 .map(|first| columns_meta_to_zval(first.columns()))
@@ -626,7 +632,11 @@ impl AsyncPdoPgSqlTransaction {
                 query = bind_params_pg(query, args);
             }
 
-            let done = query.execute(&mut **tx).await.map_err(sqlx_err_to_pdo_message)?;
+            let done = query
+                .persistent(false)  // Disable prepared statement caching to avoid type conflicts
+                .execute(&mut **tx)
+                .await
+                .map_err(sqlx_err_to_pdo_message)?;
 
             let mut res = ext_php_rs::types::ZendHashTable::new();
             res.insert("rows_affected", done.rows_affected() as i64).ok();
