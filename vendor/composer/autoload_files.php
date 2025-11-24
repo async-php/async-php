@@ -7,5 +7,5 @@ $baseDir = dirname($vendorDir);
 
 return array(
     '2f1dd8d6596759616a81c6ca3b312c0d' => $baseDir . '/src-php/Async/functions.php',
-    '3ee5acfaf5e1c607b64c9386efd7e4c5' => $baseDir . '/src-php/PDO/functions.php',
+    'e8dfd4d87779a5274e0b143e8a53df6b' => $baseDir . '/src-php/PDO/supports.php',
 );

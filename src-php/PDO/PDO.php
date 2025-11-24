@@ -231,7 +231,10 @@ class PDO
     public function exec(string $statement): int|false
     {
         try {
-            [, , $affected] = $this->__internalExecuteCompiled($statement, [], false);
+            [, , $affected, $lastInsertId] = $this->__internalExecuteCompiled($statement, [], false);
+            if ($lastInsertId !== null) {
+                $this->setLastInsertId($lastInsertId);
+            }
             return $affected;
         } catch (\Throwable $e) {
             $this->__internalRecordThrowable($e);
