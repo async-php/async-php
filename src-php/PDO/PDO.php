@@ -154,7 +154,9 @@ class PDO
         $poolHeartbeat = $options[self::ATTR_CONNECTION_POOL_HEARTBEAT] ?? null;
         $poolIdleTime = $options[self::ATTR_CONNECTION_POOL_IDLE_TIME] ?? null;
 
-        [$driver, $sqlxDsn] = Internal::dsnToSqlx($dsn, $username, $password);
+        $result = pdo_dsn_to_sqlx($dsn, $username, $password);
+        $driver = $result['driver'];
+        $sqlxDsn = $result['uri'];
         $this->driverName = $driver;
         $this->connectionStatus = self::sanitizeConnectionStatus($sqlxDsn);
         $this->coroutineContextKeyPrefix = 'pdo:' . spl_object_id($this) . ':';
@@ -205,7 +207,9 @@ class PDO
 
     public function prepare(string $query, array $options = []): PDOStatement|false
     {
-        [$compiled, $placeholders] = Internal::compilePlaceholders($this->driverName, $query);
+        $result = sql_compile_placeholders($this->driverName, $query);
+        $compiled = $result['sql'];
+        $placeholders = $result['placeholders'];
         $stmt = new PDOStatement($this, $query, $compiled, $placeholders);
         if (array_key_exists(self::ATTR_CURSOR, $options)) {
             $stmt->setAttribute(self::ATTR_CURSOR, (int)$options[self::ATTR_CURSOR]);

@@ -60,7 +60,7 @@ final class PDOStatement
         }
         if ($params !== null) {
             foreach ($params as $k => $v) {
-                $final[Internal::normalizeParamKey(is_int($k) ? $k : (string)$k)] = $v;
+                $final[pdo_normalize_param_key(is_int($k) ? $k : (string)$k)] = $v;
             }
         }
 
@@ -111,7 +111,7 @@ final class PDOStatement
      */
     public function bindValue(int|string $param, mixed $value, int $type = PDO::PARAM_STR): bool
     {
-        $key = Internal::normalizeParamKey($param);
+        $key = pdo_normalize_param_key($param);
         $this->boundValues[$key] = $this->coerceParamValue($value, $type);
         return true;
     }
@@ -121,7 +121,7 @@ final class PDOStatement
      */
     public function bindParam(int|string $param, mixed &$var, int $type = PDO::PARAM_STR, int $maxLength = 0, mixed $driverOptions = null): bool
     {
-        $key = Internal::normalizeParamKey($param);
+        $key = pdo_normalize_param_key($param);
         $this->boundParams[$key] = ['ref' => &$var, 'type' => $type];
         return true;
     }
@@ -298,7 +298,7 @@ final class PDOStatement
      */
     public function bindColumn(int|string $param, mixed &$var, int $type = PDO::PARAM_STR, int $maxLength = 0, mixed $driverOptions = null): bool
     {
-        $key = Internal::normalizeParamKey($param);
+        $key = pdo_normalize_param_key($param);
         $this->boundColumns[$key] = &$var;
         return true;
     }

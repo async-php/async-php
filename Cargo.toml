@@ -49,6 +49,7 @@ curl = "0.4"
 once_cell = "1.19"
 # SQL parsing
 nom = "7"
+urlencoding = "2"
 
 [features]
 http3 = []
