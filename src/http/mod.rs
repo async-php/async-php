@@ -14,8 +14,10 @@ mod client;
 mod request;
 mod response;
 mod server;
+mod http3_server;
 
 pub use client::HttpClient;
 pub use request::HttpRequest;
 pub use response::HttpResponse;
 pub use server::HttpServer;
+pub use http3_server::Http3Server;

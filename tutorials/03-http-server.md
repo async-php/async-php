@@ -305,15 +305,72 @@ $resp->setBody($data);
 
 ```php
 $server = new Server();
-$server->http2(); // Enable HTTP/2
+$server->http2Only(); // Enable HTTP/2 only
 
-$listener = Listener::bind('127.0.0.1:8443');
+$listener = Listener::bind('127.0.0.1:8080');
 
 while (true) {
     $conn = $listener->accept();
     go(fn() => $server->serve($conn, $handler));
 }
 ```
+
+## HTTP/3 Support
+
+HTTP/3 uses QUIC as the transport protocol, providing better performance and connection migration support.
+
+### Prerequisites
+
+HTTP/3 requires TLS certificates. Generate a self-signed certificate for testing:
+
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+```
+
+### Basic HTTP/3 Server
+
+```php
+use Async\Kernel\Network\Quic\QuicListener;
+use Async\Kernel\Network\Http\Http3Server;
+
+// Create QUIC listener (similar to TcpListener)
+$listener = QuicListener::bind('127.0.0.1:4433', 'cert.pem', 'key.pem');
+
+// Create HTTP/3 server
+$server = new Http3Server();
+
+// Accept loop (same pattern as HTTP/1.1 and HTTP/2)
+while (true) {
+    $conn = $listener->accept();
+
+    go(function() use ($server, $conn) {
+        $server->serve($conn, function(HttpRequest $req): HttpResponse {
+            $resp = new HttpResponse();
+            $resp->setStatus(200);
+            $resp->setHeader('Content-Type', 'text/plain');
+            $resp->setBody('Hello from HTTP/3!');
+            return $resp;
+        });
+    });
+}
+```
+
+### Testing HTTP/3
+
+```bash
+# Using curl with HTTP/3 support
+curl --http3 https://localhost:4433/ --insecure
+
+# Or use a modern browser (Chrome, Firefox with HTTP/3 enabled)
+```
+
+### HTTP/3 Features
+
+- **QUIC Protocol**: UDP-based transport with built-in encryption
+- **0-RTT**: Faster connection establishment for repeat connections
+- **Connection Migration**: Connections survive network changes (e.g., WiFi to cellular)
+- **Improved Performance**: Better congestion control and packet loss recovery
+- **No Head-of-Line Blocking**: Independent streams don't block each other
 
 ## Middleware (PSR-15)
 

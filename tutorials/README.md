@@ -28,7 +28,8 @@ Comprehensive tutorials for learning async PHP programming with this extension.
    - Real-world examples
 
 4. **[HTTP Server](03-http-server.md)** - Building async web servers
-   - Zero-copy HTTP/1.1 and HTTP/2 server
+   - Zero-copy HTTP/1.1, HTTP/2, and HTTP/3 server
+   - QUIC protocol support (HTTP/3)
    - Request routing
    - Middleware support (PSR-15)
    - REST API example
@@ -82,6 +83,7 @@ The `examples/` directory contains working code samples:
 - `http_test_simple.php` - Simple HTTP server
 - `test_http_server.php` - Zero-copy server
 - `http_server_zero_copy.php` - Performance demo
+- `http3_server_test.php` - HTTP/3 server with QUIC
 - `psr15_middleware.php` - PSR-15 middleware
 
 ### Database Examples

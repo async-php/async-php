@@ -6,7 +6,7 @@ Async-PHP is a high-performance async PHP extension built with Rust. It brings a
 
 - **Async I/O** - Non-blocking network and file operations
 - **HTTP Client** - Full-featured HTTP/1.1, HTTP/2 client with connection pooling
-- **HTTP Server** - Zero-copy HTTP server with HTTP/1.1 and HTTP/2 support
+- **HTTP Server** - Zero-copy HTTP server with HTTP/1.1, HTTP/2, and HTTP/3 (QUIC) support
 - **PDO Database** - Async PDO implementation for MySQL and PostgreSQL
 - **Network** - TCP, UDP, Unix sockets with TLS support
 - **Concurrency** - Lightweight coroutines using PHP Fibers

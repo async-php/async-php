@@ -26,7 +26,7 @@ use io::{
     AsyncReadWriter, AsyncReadSeeker, AsyncWriteSeeker, AsyncReadWriteSeeker,
 };
 use bytes::{BytesReader, BytesWriter};
-use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream};
+use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream, AsyncQuicListener, AsyncQuicConnection};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::HttpServer;
 use channel::AsyncChannel;
@@ -366,12 +366,15 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncUnixStream>()
         .class::<AsyncTlsConfig>()
         .class::<AsyncTlsStream>()
+        .class::<AsyncQuicListener>()
+        .class::<AsyncQuicConnection>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
         .class::<http::HttpClient>()
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
         .class::<HttpServer>()
+        .class::<http::Http3Server>()
         .class::<AsyncChannel>()
         .class::<AsyncPdoMySql>()
         .class::<AsyncPdoMySqlTransaction>()
