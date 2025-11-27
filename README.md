@@ -7,6 +7,8 @@
 
 A high-performance async runtime for PHP, built with Rust and powered by Tokio. Brings true async/await capabilities to PHP using Fibers.
 
+English | [简体中文](README.zh-CN.md)
+
 ## ✨ Features
 
 ### 🚀 **Async I/O**
