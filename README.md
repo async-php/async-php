@@ -41,6 +41,7 @@ English | [简体中文](README.zh-CN.md)
 - Timers and delays
 - Context API for coroutine-local storage
 - Concurrent task execution
+- **Redis client** with connection pooling and async operations
 
 ## 📦 Installation
 
@@ -227,6 +228,43 @@ Kernel::run(function () {
 });
 ```
 
+### Async Redis
+
+```php
+<?php
+use Async\Kernel;
+use Redis\Redis;
+
+Kernel::run(function () {
+    // Create Redis client
+    $redis = new Redis();
+    $redis->connect('127.0.0.1', 6379);
+
+    // String operations
+    $redis->set('name', 'Alice');
+    echo $redis->get('name') . "\n"; // Alice
+
+    // Counter operations
+    $redis->incr('counter');
+    $redis->incrBy('counter', 5);
+
+    // List operations
+    $redis->rPush('tasks', 'Task 1', 'Task 2', 'Task 3');
+    $tasks = $redis->lRange('tasks', 0, -1);
+
+    // Hash operations
+    $redis->hSet('user:1', 'name', 'Bob');
+    $redis->hSet('user:1', 'email', 'bob@example.com');
+    $user = $redis->hGetAll('user:1');
+
+    // Set operations
+    $redis->sAdd('tags', 'php', 'rust', 'async');
+    $tags = $redis->sMembers('tags');
+
+    $redis->close();
+});
+```
+
 ## 📚 Documentation
 
 Comprehensive tutorials and guides are available in the [tutorials/](tutorials/) directory:
@@ -236,6 +274,7 @@ Comprehensive tutorials and guides are available in the [tutorials/](tutorials/)
 - **[HTTP Client](tutorials/02-http-client.md)** - Making async HTTP requests
 - **[HTTP Server](tutorials/03-http-server.md)** - Building async web servers
 - **[PDO Database](tutorials/04-pdo-database.md)** - Async database operations
+- **[Redis Client](examples/redis_test.php)** - Async Redis operations
 
 ### Quick Links
 
@@ -258,6 +297,7 @@ Comprehensive tutorials and guides are available in the [tutorials/](tutorials/)
 │  - Hyper for HTTP/1.1 & HTTP/2      │
 │  - Quinn + h3 for HTTP/3            │
 │  - Reqwest for HTTP client          │
+│  - Redis for caching                │
 └─────────────────────────────────────┘
 ```
 
@@ -287,6 +327,9 @@ php -d extension=target/release/libasync_php.dylib examples/http3_server_test.ph
 
 # PDO test (requires database)
 php -d extension=target/release/libasync_php.dylib examples/pdo_live_test.php
+
+# Redis test (requires Redis server)
+php -d extension=target/release/libasync_php.dylib examples/redis_test.php
 ```
 
 ## 🔧 Development
@@ -362,7 +405,8 @@ This project is built on top of excellent open-source libraries:
 
 - [ ] WebSocket support
 - [ ] gRPC support
-- [ ] More database drivers (SQLite, Redis)
+- [x] Redis support (completed!)
+- [ ] More database drivers (SQLite)
 - [ ] Async file I/O improvements
 - [ ] Performance benchmarks
 - [ ] More comprehensive examples

@@ -14,6 +14,7 @@ mod http;
 mod channel;
 mod pdo;
 mod curl;
+mod redis;
 mod time;
 mod util;
 mod logger;
@@ -32,6 +33,7 @@ use http::HttpServer;
 use channel::AsyncChannel;
 use pdo::{AsyncPdoMySql, AsyncPdoPgSql, AsyncPdoMySqlTransaction, AsyncPdoPgSqlTransaction};
 use curl::{CurlHandle, CurlMulti};
+use redis::AsyncRedisClient;
 use time::AsyncTime;
 use logger::AsyncLogger;
 use context::AsyncContext;
@@ -382,6 +384,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncPdoPgSqlTransaction>()
         .class::<CurlHandle>() // cURL support
         .class::<CurlMulti>()
+        .class::<AsyncRedisClient>() // Redis support
         .class::<AsyncTime>()
         .class::<AsyncLogger>() // Register AsyncLogger
         .class::<AsyncReader>() // IO types

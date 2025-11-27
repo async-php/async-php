@@ -8,4 +8,7 @@ $baseDir = dirname($vendorDir);
 return array(
     '2f1dd8d6596759616a81c6ca3b312c0d' => $baseDir . '/src-php/Async/functions.php',
     'e8dfd4d87779a5274e0b143e8a53df6b' => $baseDir . '/src-php/PDO/supports.php',
+    'e29ef0acf92329125c02b8131de004c8' => $baseDir . '/src-php/Curl/constants.php',
+    'e091218761e5767ab7d42a14397fab36' => $baseDir . '/src-php/Curl/functions.php',
+    '0fa651804a06809c84fe371e4fd8121e' => $baseDir . '/src-php/Redis/functions.php',
 );

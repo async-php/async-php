@@ -51,6 +51,8 @@ once_cell = "1.19"
 # SQL parsing
 nom = "7"
 urlencoding = "2"
+# Redis support
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager", "aio"] }
 
 [features]
 http3 = []

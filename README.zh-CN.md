@@ -41,6 +41,7 @@
 - 定时器和延迟
 - 协程本地存储的 Context API
 - 并发任务执行
+- **Redis 客户端** 支持连接池和异步操作
 
 ## 📦 安装
 
@@ -227,6 +228,43 @@ Kernel::run(function () {
 });
 ```
 
+### 异步 Redis
+
+```php
+<?php
+use Async\Kernel;
+use Redis\Redis;
+
+Kernel::run(function () {
+    // 创建 Redis 客户端
+    $redis = new Redis();
+    $redis->connect('127.0.0.1', 6379);
+
+    // 字符串操作
+    $redis->set('name', 'Alice');
+    echo $redis->get('name') . "\n"; // Alice
+
+    // 计数器操作
+    $redis->incr('counter');
+    $redis->incrBy('counter', 5);
+
+    // 列表操作
+    $redis->rPush('tasks', 'Task 1', 'Task 2', 'Task 3');
+    $tasks = $redis->lRange('tasks', 0, -1);
+
+    // 哈希操作
+    $redis->hSet('user:1', 'name', 'Bob');
+    $redis->hSet('user:1', 'email', 'bob@example.com');
+    $user = $redis->hGetAll('user:1');
+
+    // 集合操作
+    $redis->sAdd('tags', 'php', 'rust', 'async');
+    $tags = $redis->sMembers('tags');
+
+    $redis->close();
+});
+```
+
 ## 📚 文档
 
 [tutorials/](tutorials/) 目录中提供了全面的教程和指南：
@@ -236,6 +274,7 @@ Kernel::run(function () {
 - **[HTTP 客户端](tutorials/02-http-client.md)** - 发起异步 HTTP 请求
 - **[HTTP 服务器](tutorials/03-http-server.md)** - 构建异步 Web 服务器
 - **[PDO 数据库](tutorials/04-pdo-database.md)** - 异步数据库操作
+- **[Redis 客户端](examples/redis_test.php)** - 异步 Redis 操作
 
 ### 快速链接
 
@@ -258,6 +297,7 @@ Kernel::run(function () {
 │  - Hyper (HTTP/1.1 & HTTP/2)        │
 │  - Quinn + h3 (HTTP/3)              │
 │  - Reqwest (HTTP 客户端)            │
+│  - Redis (缓存)                      │
 └─────────────────────────────────────┘
 ```
 
@@ -287,6 +327,9 @@ php -d extension=target/release/libasync_php.dylib examples/http3_server_test.ph
 
 # PDO 测试（需要数据库）
 php -d extension=target/release/libasync_php.dylib examples/pdo_live_test.php
+
+# Redis 测试（需要 Redis 服务器）
+php -d extension=target/release/libasync_php.dylib examples/redis_test.php
 ```
 
 ## 🔧 开发
@@ -362,7 +405,8 @@ cargo check
 
 - [ ] WebSocket 支持
 - [ ] gRPC 支持
-- [ ] 更多数据库驱动（SQLite、Redis）
+- [x] Redis 支持（已完成！）
+- [ ] 更多数据库驱动（SQLite）
 - [ ] 异步文件 I/O 改进
 - [ ] 性能基准测试
 - [ ] 更全面的示例

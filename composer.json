@@ -6,11 +6,16 @@
     "autoload": {
         "psr-4": {
             "Async\\": "src-php/Async/",
-            "PDO\\": "src-php/PDO/"
+            "PDO\\": "src-php/PDO/",
+            "Curl\\": "src-php/Curl/",
+            "Redis\\": "src-php/Redis/"
         },
         "files": [
             "src-php/Async/functions.php",
-            "src-php/PDO/supports.php"
+            "src-php/PDO/supports.php",
+            "src-php/Curl/constants.php",
+            "src-php/Curl/functions.php",
+            "src-php/Redis/functions.php"
         ]
     },
     "require": {
