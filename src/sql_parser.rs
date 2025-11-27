@@ -1,15 +1,9 @@
 use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_till, take_until, take_while, take_while1},
-    character::complete::{alphanumeric1, char, multispace0, one_of},
-    combinator::{opt, recognize},
-    multi::many0,
-    sequence::{delimited, pair, preceded, tuple},
+    bytes::complete::{tag, take_till, take_while, take_while1},
+    character::complete::char,
+    combinator::opt,
     IResult,
 };
-use ext_php_rs::prelude::*;
-use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaceholderKind {
@@ -20,6 +14,7 @@ pub enum PlaceholderKind {
 #[derive(Debug, Clone)]
 pub struct Placeholder {
     pub kind: PlaceholderKind,
+    #[allow(dead_code)]
     pub position: usize, // Position in the original SQL
 }
 
@@ -367,8 +362,6 @@ pub fn parse_and_rewrite_sql(sql: &str, driver: &str) -> Result<ParsedSql, Strin
                 kind: PlaceholderKind::Named(name.to_string()),
                 position,
             });
-
-            let original_len = name.len() + 1; // +1 for the :
 
             // Rewrite to driver-specific format
             if driver == "pgsql" {

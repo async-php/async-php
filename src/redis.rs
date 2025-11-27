@@ -1,12 +1,9 @@
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
 use crate::util::Shared;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, RedisResult, Value as RedisValue, ErrorKind};
-use std::collections::HashMap;
-use std::time::Duration;
+use redis::{AsyncCommands, RedisResult, Value as RedisValue};
 
 /// Async Redis client
 #[php_class]

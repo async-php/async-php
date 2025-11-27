@@ -1,10 +1,8 @@
 use ext_php_rs::prelude::*;
-use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 use quinn::{Endpoint, ServerConfig, Incoming, Connection};
-use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+use rustls_pki_types::CertificateDer;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use crate::future::RustFuture;
 use crate::util::Shared;
 
@@ -153,7 +151,7 @@ impl AsyncQuicConnection {
 
         // Accept the incoming connection
         let incoming = {
-            let mut incoming_ref = self.incoming.get_mut();
+            let incoming_ref = self.incoming.get_mut();
             incoming_ref.take()
                 .ok_or_else(|| "Connection already established".to_string())?
         };
@@ -165,7 +163,7 @@ impl AsyncQuicConnection {
 
         // Store the connection
         {
-            let mut conn_ref = self.connection.get_mut();
+            let conn_ref = self.connection.get_mut();
             *conn_ref = Some(conn.clone());
         }
 
@@ -188,7 +186,7 @@ impl AsyncQuicConnection {
     /// Close the connection
     #[php]
     pub fn close(&mut self, error_code: Option<i64>, reason: Option<String>) {
-        let mut conn_ref = self.connection.get_mut();
+        let conn_ref = self.connection.get_mut();
         if let Some(conn) = conn_ref.as_ref() {
             let code = quinn::VarInt::from_u32(error_code.unwrap_or(0) as u32);
             conn.close(
