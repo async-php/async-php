@@ -11,6 +11,7 @@ enum CurlOptionValue {
     String(String),
     Long(i64),
     Bool(bool),
+    StringArray(Vec<String>),
 }
 
 impl CurlOptionValue {
@@ -22,6 +23,19 @@ impl CurlOptionValue {
             Some(CurlOptionValue::Long(i))
         } else if let Some(b) = zval.bool() {
             Some(CurlOptionValue::Bool(b))
+        } else if let Some(arr) = zval.array() {
+            // Try to convert array to Vec<String>
+            let mut strings = Vec::new();
+            for (_, val) in arr.iter() {
+                if let Some(s) = val.string() {
+                    strings.push(s);
+                }
+            }
+            if !strings.is_empty() {
+                Some(CurlOptionValue::StringArray(strings))
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -450,6 +464,22 @@ fn apply_curl_option(easy: &mut Easy2<ResponseHandler>, option: i64, value: &Cur
         10036 => {
             if let CurlOptionValue::String(method) = value {
                 easy.custom_request(method).map_err(|e| format!("Failed to set custom request: {}", e))?;
+            }
+        }
+        // CURLOPT_POSTFIELDS = 10015
+        10015 => {
+            if let CurlOptionValue::String(data) = value {
+                easy.post_fields_copy(data.as_bytes()).map_err(|e| format!("Failed to set post fields: {}", e))?;
+            }
+        }
+        // CURLOPT_HTTPHEADER = 10023
+        10023 => {
+            if let CurlOptionValue::StringArray(headers) = value {
+                let mut list = curl::easy::List::new();
+                for header in headers {
+                    list.append(header).map_err(|e| format!("Failed to append header: {}", e))?;
+                }
+                easy.http_headers(list).map_err(|e| format!("Failed to set HTTP headers: {}", e))?;
             }
         }
         // For now, silently ignore unknown options (PHP compatibility)

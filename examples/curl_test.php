@@ -160,7 +160,8 @@ Kernel::run(function () {
     echo "   HTTP Status: " . $info['http_code'] . "\n";
     if ($response !== false) {
         $data = json_decode($response, true);
-        echo "   Redirects followed: " . $data['redirects'] . "\n";
+        // Use redirect_count from curl_getinfo instead of response data
+        echo "   Redirects followed: " . $info['redirect_count'] . "\n";
     }
     curl_close($handle);
     echo "\n";
@@ -178,7 +179,8 @@ Kernel::run(function () {
     $response = curl_exec($handle);
     if ($response !== false) {
         $data = json_decode($response, true);
-        echo "   PUT request status: " . $data['method'] . "\n";
+        // Check if response contains expected URL to verify success
+        echo "   PUT request status: " . (isset($data['url']) && strpos($data['url'], '/put') !== false ? 'PUT' : 'FAILED') . "\n";
     }
     curl_close($handle);
 
@@ -191,7 +193,8 @@ Kernel::run(function () {
     $response = curl_exec($handle);
     if ($response !== false) {
         $data = json_decode($response, true);
-        echo "   DELETE request status: " . $data['method'] . "\n";
+        // Check if response contains expected URL to verify success
+        echo "   DELETE request status: " . (isset($data['url']) && strpos($data['url'], '/delete') !== false ? 'DELETE' : 'FAILED') . "\n";
     }
     curl_close($handle);
 
@@ -206,7 +209,8 @@ Kernel::run(function () {
     $response = curl_exec($handle);
     if ($response !== false) {
         $data = json_decode($response, true);
-        echo "   PATCH request status: " . $data['method'] . "\n";
+        // Check if response contains expected URL to verify success
+        echo "   PATCH request status: " . (isset($data['url']) && strpos($data['url'], '/patch') !== false ? 'PATCH' : 'FAILED') . "\n";
     }
     curl_close($handle);
     echo "\n";
