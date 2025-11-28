@@ -6,9 +6,9 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    '2f1dd8d6596759616a81c6ca3b312c0d' => $baseDir . '/src-php/Async/functions.php',
+    'f8c0e6da9c4b57fabf4979826314a12f' => $baseDir . '/src-php/Async/supports.php',
     'e8dfd4d87779a5274e0b143e8a53df6b' => $baseDir . '/src-php/PDO/supports.php',
     'e29ef0acf92329125c02b8131de004c8' => $baseDir . '/src-php/Curl/constants.php',
-    'e091218761e5767ab7d42a14397fab36' => $baseDir . '/src-php/Curl/functions.php',
-    '0fa651804a06809c84fe371e4fd8121e' => $baseDir . '/src-php/Redis/functions.php',
+    '5bef38bff7fa36ccfff70ea88e2a159f' => $baseDir . '/src-php/Curl/supports.php',
+    'a41f299ee4c2faceb1fa88246d3124d7' => $baseDir . '/src-php/Redis/supports.php',
 );

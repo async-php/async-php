@@ -6,8 +6,6 @@
  * to maintain compatibility with standard PHP curl extension.
  */
 
-namespace Curl;
-
 // ============================================================================
 // CURLOPT_* Constants - Request Options
 // ============================================================================

@@ -11,11 +11,11 @@
             "Redis\\": "src-php/Redis/"
         },
         "files": [
-            "src-php/Async/functions.php",
+            "src-php/Async/supports.php",
             "src-php/PDO/supports.php",
             "src-php/Curl/constants.php",
-            "src-php/Curl/functions.php",
-            "src-php/Redis/functions.php"
+            "src-php/Curl/supports.php",
+            "src-php/Redis/supports.php"
         ]
     },
     "require": {

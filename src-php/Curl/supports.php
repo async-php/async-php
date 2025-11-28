@@ -1,6 +1,7 @@
 <?php
 
-namespace Curl;
+use Curl\Handle;
+use Curl\Multi;
 
 /**
  * Global cURL functions for async-php
@@ -358,4 +359,9 @@ function curl_pause(Handle $handle, int $bitmask): int
 {
     // Not implemented - return success for compatibility
     return CURLE_OK;
+}
+
+if (!class_exists('CurlHandle')) {
+    class_alias(Handle::class, 'CurlHandle');
+    class_alias(Multi::class, 'CurlMultiHandle');
 }
