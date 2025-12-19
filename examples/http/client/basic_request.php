@@ -3,8 +3,6 @@
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use Async\Network\Http\Client;
-use Async\Network\Http\Psr7Request;
-use Async\Network\Http\Uri;
 use Async\Kernel;
 
 Kernel::run(function () {
@@ -24,15 +22,14 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending request...\n";
-        $uri = new Uri('http://www.baidu.com');
-        $request = (new Psr7Request('GET', $uri))
-            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
-            ->withHeader('Accept', 'text/html');
-        $response = $client->sendRequest($request);
+        $response = $client->get('http://www.baidu.com', [
+            'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
+            'Accept' => 'text/html'
+        ]);
 
-        echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
-        echo "Body length: " . strlen($response->getBody()->getContents()) . " bytes\n";
+        echo "Status: " . $response->status() . "\n";
+        echo "Version: " . $response->version() . "\n";
+        echo "Body length: " . strlen($response->text()) . " bytes\n";
 
         echo "✓ Test 1 passed!\n\n";
     } catch (Exception $e) {
@@ -45,27 +42,24 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending HTTPS request...\n";
-        $uri = new Uri('https://www.baidu.com');
-        $request = (new Psr7Request('GET', $uri))
-            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
-            ->withHeader('Accept', 'text/html');
-        $response = $client->sendRequest($request);
+        $response = $client->get('https://www.baidu.com', [
+            'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
+            'Accept' => 'text/html'
+        ]);
 
-        echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
+        echo "Status: " . $response->status() . "\n";
+        echo "Version: " . $response->version() . "\n";
 
         // Check for important headers
-        $contentType = $response->getHeaderLine('content-type');
-        $server = $response->getHeaderLine('server');
-
-        if ($contentType) {
-            echo "Content-Type: " . $contentType . "\n";
+        $headers = $response->headers();
+        if (isset($headers['content-type'])) {
+            echo "Content-Type: " . $headers['content-type'] . "\n";
         }
-        if ($server) {
-            echo "Server: " . $server . "\n";
+        if (isset($headers['server'])) {
+            echo "Server: " . $headers['server'] . "\n";
         }
 
-        $content = $response->getBody()->getContents();
+        $content = $response->text();
         echo "Body length: " . strlen($content) . " bytes\n";
 
         // Check if content looks like HTML
@@ -84,16 +78,15 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending request...\n";
-        $uri = new Uri('https://api.github.com/');
-        $request = (new Psr7Request('GET', $uri))
-            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
-            ->withHeader('Accept', 'application/json');
-        $response = $client->sendRequest($request);
+        $response = $client->get('https://api.github.com/', [
+            'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
+            'Accept' => 'application/json'
+        ]);
 
-        echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
+        echo "Status: " . $response->status() . "\n";
+        echo "Version: " . $response->version() . "\n";
 
-        $content = $response->getBody()->getContents();
+        $content = $response->text();
         echo "Body length: " . strlen($content) . " bytes\n";
         $json = json_decode($content, true);
         if ($json && is_array($json)) {

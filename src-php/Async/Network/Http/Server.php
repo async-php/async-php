@@ -7,21 +7,19 @@ use Async\Kernel\Network\Http\HttpRequest as KernelHttpRequest;
 use Async\Kernel\Network\Http\HttpResponse as KernelHttpResponse;
 use Async\Kernel\IO\AsyncReadWriter;
 use Fiber;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * HttpServer - HTTP/1.1 and HTTP/2 server with zero-copy IO
  *
- * Usage (Go-style):
+ * Usage:
  * ```php
- * $server = new HttpServer();
- * $listener = TcpListener::bind('127.0.0.1:8080');
+ * $server = new Server();
+ * $listener = Listener::bind('127.0.0.1:8080');
  *
  * while (true) {
  *     $conn = $listener->accept();
  *     go(function() use ($server, $conn) {
- *         $server->serve($conn, function($req) {
+ *         $server->serve($conn, function(HttpRequest $req): HttpResponse {
  *             $resp = new HttpResponse();
  *             $resp->setStatus(200);
  *             $resp->setBody("Hello, World!");
@@ -34,7 +32,6 @@ use Psr\Http\Server\RequestHandlerInterface;
 class Server
 {
     private KernelHttpServer $builder;
-    private ?MiddlewareStack $middlewareStack = null;
 
     public function __construct()
     {
@@ -82,24 +79,6 @@ class Server
     }
 
     /**
-     * Add PSR-15 middleware to the server
-     *
-     * Middlewares are executed in the order they are added.
-     * Use this to add cross-cutting concerns like logging, auth, CORS, etc.
-     *
-     * @param MiddlewareInterface $middleware
-     * @return self
-     */
-    public function withMiddleware(MiddlewareInterface $middleware): self
-    {
-        if ($this->middlewareStack === null) {
-            $this->middlewareStack = new MiddlewareStack();
-        }
-        $this->middlewareStack->add($middleware);
-        return $this;
-    }
-
-    /**
      * Serve HTTP requests on a connection with zero-copy IO
      *
      * The handler receives an HttpRequest and must return an HttpResponse.
@@ -135,40 +114,6 @@ class Server
         $result = Fiber::suspend($future);
 
         return (bool)$result;
-    }
-
-    /**
-     * Serve HTTP requests using PSR-15 middleware and handler
-     *
-     * This method wraps PSR-7 ServerRequestInterface and ResponseInterface,
-     * allowing you to use standard PSR-15 middleware and handlers.
-     *
-     * @param AsyncReadWriter $conn Connection IO
-     * @param RequestHandlerInterface $handler PSR-15 request handler
-     * @return bool True if connection served successfully
-     */
-    public function servePsr15($conn, RequestHandlerInterface $handler): bool
-    {
-        // Build the handler chain with middleware (if any)
-        $finalHandler = $handler;
-        if ($this->middlewareStack !== null) {
-            $finalHandler = $this->middlewareStack->build($handler);
-        }
-
-        // Wrap the PSR-15 handler to work with kernel request/response
-        $kernelHandler = function(KernelHttpRequest $kernelRequest) use ($finalHandler): KernelHttpResponse {
-            // Convert kernel request to PSR-7 server request
-            $psr7Request = new Psr7ServerRequest($kernelRequest);
-
-            // Process through PSR-15 handler chain
-            $psr7Response = $finalHandler->handle($psr7Request);
-
-            // Convert PSR-7 response back to kernel response
-            return ResponseConverter::toKernelResponse($psr7Response);
-        };
-
-        // Use the standard serve method with our wrapper
-        return $this->serve($conn, $kernelHandler);
     }
 
     /**
@@ -208,27 +153,17 @@ class Server
     }
 
     /**
-     * Listen and serve using PSR-15 handler (convenience method)
+     * Listen and serve on an address (static convenience method)
+     *
+     * This is a simple wrapper around listenAndServe() that can be used
+     * without creating a Server instance first.
      *
      * @param string $addr Address to bind to (e.g., "127.0.0.1:8080")
-     * @param RequestHandlerInterface $handler PSR-15 request handler
+     * @param callable(KernelHttpRequest): KernelHttpResponse $handler Request handler
      */
-    public function listenAndServePsr15(string $addr, RequestHandlerInterface $handler): void
+    public static function listen(string $addr, callable $handler): void
     {
-        $listener = \Async\Network\Tcp\Listener::bind($addr);
-
-        while (true) {
-            $conn = $listener->accept();
-
-            // Spawn a new fiber to handle this connection
-            go(function() use ($conn, $handler) {
-                try {
-                    $this->servePsr15($conn, $handler);
-                } catch (\Throwable $e) {
-                    // Log error but don't crash the server
-                    error_log("HTTP server error: " . $e->getMessage());
-                }
-            });
-        }
+        $server = new self();
+        $server->listenAndServe($addr, $handler);
     }
 }

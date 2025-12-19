@@ -9,8 +9,6 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use Async\Network\Http\Client;
 use Async\Kernel;
-use Async\Network\Http\Psr7Request;
-use Async\Network\Http\Uri;
 
 Kernel::run(function () {
     echo "\n";
@@ -36,16 +34,13 @@ Kernel::run(function () {
     // Demo 1: Simple GET request
     echo "━━━ Demo 1: Simple GET Request ━━━\n";
     try {
-        $uri = (new Uri('https://httpbin.org/get'))
-            ->withQuery('demo=simple&version=1.0');
-        $request = new Psr7Request('GET', $uri);
-        $response = $client->sendRequest($request);
+        $response = $client->get('https://httpbin.org/get?demo=simple&version=1.0');
 
-        echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
-        $isSuccess = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        echo "Status: {$response->status()}\n";
+        $isSuccess = $response->status() >= 200 && $response->status() < 300;
         echo "Success: " . ($isSuccess ? 'Yes' : 'No') . "\n";
 
-        $data = json_decode($response->getBody()->getContents(), true);
+        $data = json_decode($response->text(), true);
         if ($data !== null) {
             echo "URL: {$data['url']}\n";
             echo "Query params: " . json_encode($data['args']) . "\n";
@@ -60,21 +55,15 @@ Kernel::run(function () {
     // Demo 2: POST with JSON
     echo "━━━ Demo 2: POST with JSON ━━━\n";
     try {
-        $uri = new Uri('https://httpbin.org/post');
-        $jsonBody = json_encode([
+        $response = $client->post('https://httpbin.org/post', [
             'username' => 'demo_user',
             'action' => 'create',
             'timestamp' => time()
         ]);
-        $request = (new Psr7Request('POST', $uri))
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody(new Async\Network\Http\StringStream($jsonBody));
 
-        $response = $client->sendRequest($request);
+        echo "Status: {$response->status()}\n";
 
-        echo "Status: {$response->getStatusCode()}\n";
-
-        $data = json_decode($response->getBody()->getContents(), true);
+        $data = json_decode($response->text(), true);
         if ($data !== null) {
             echo "Content-Type: {$data['headers']['Content-Type']}\n";
             echo "Sent data: " . json_encode($data['json']) . "\n";
@@ -94,15 +83,13 @@ Kernel::run(function () {
         $password = 'secret123';
         $authHeader = 'Basic ' . base64_encode("$username:$password");
 
-        $uri = new Uri('https://httpbin.org/basic-auth/demo/secret123');
-        $request = (new Psr7Request('GET', $uri))
-            ->withHeader('Authorization', $authHeader);
+        $response = $authClient->get('https://httpbin.org/basic-auth/demo/secret123', [
+            'Authorization' => $authHeader
+        ]);
 
-        $response = $authClient->sendRequest($request);
-
-        $isSuccess = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        $isSuccess = $response->status() >= 200 && $response->status() < 300;
         if ($isSuccess) {
-            $data = json_decode($response->getBody()->getContents(), true);
+            $data = json_decode($response->text(), true);
             if ($data !== null) {
                 echo "✓ Authenticated successfully\n";
                 echo "User: {$data['user']}\n";
@@ -111,7 +98,7 @@ Kernel::run(function () {
                 echo "Failed to decode JSON response for authentication.\n";
             }
         } else {
-            echo "Authentication failed. Status: {$response->getStatusCode()}\n";
+            echo "Authentication failed. Status: {$response->status()}\n";
         }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
@@ -121,12 +108,10 @@ Kernel::run(function () {
     // Demo 4: Redirect following
     echo "━━━ Demo 4: Auto Redirect Following ━━━\n";
     try {
-        $uri = new Uri('https://httpbin.org/redirect/3');
-        $request = new Psr7Request('GET', $uri);
-        $response = $client->sendRequest($request);
+        $response = $client->get('https://httpbin.org/redirect/3');
 
         echo "✓ Followed 3 redirects automatically\n";
-        echo "Final status: {$response->getStatusCode()}\n";
+        echo "Final status: {$response->status()}\n";
         echo "Final URL reached successfully\n";
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
@@ -140,16 +125,12 @@ Kernel::run(function () {
 
         // Login - set session cookie
         echo "Step 1: Set session cookie\n";
-        $uriSetCookie = new Uri('https://httpbin.org/cookies/set?session_id=demo_abc123');
-        $requestSetCookie = new Psr7Request('GET', $uriSetCookie);
-        $sessionClient->sendRequest($requestSetCookie);
+        $sessionClient->get('https://httpbin.org/cookies/set?session_id=demo_abc123');
 
         // Subsequent request - cookie sent automatically
         echo "Step 2: Make request with automatic cookie\n";
-        $uriGetCookie = new Uri('https://httpbin.org/cookies');
-        $requestGetCookie = new Psr7Request('GET', $uriGetCookie);
-        $response = $sessionClient->sendRequest($requestGetCookie);
-        $data = json_decode($response->getBody()->getContents(), true);
+        $response = $sessionClient->get('https://httpbin.org/cookies');
+        $data = json_decode($response->text(), true);
 
         if ($data !== null && isset($data['cookies']['session_id'])) {
             echo "✓ Cookie sent automatically: {$data['cookies']['session_id']}\n";
@@ -164,14 +145,12 @@ Kernel::run(function () {
     // Demo 6: Headers and compression
     echo "━━━ Demo 6: Custom Headers & Compression ━━━\n";
     try {
-        $uri = new Uri('https://httpbin.org/headers');
-        $request = (new Psr7Request('GET', $uri))
-            ->withHeader('X-Custom-Header', 'Demo-Value')
-            ->withHeader('X-API-Version', '2.0');
+        $response = $client->get('https://httpbin.org/headers', [
+            'X-Custom-Header' => 'Demo-Value',
+            'X-API-Version' => '2.0'
+        ]);
 
-        $response = $client->sendRequest($request);
-
-        $data = json_decode($response->getBody()->getContents(), true);
+        $data = json_decode($response->text(), true);
         if ($data !== null) {
             $responseHeaders = array_change_key_case($data['headers'], CASE_LOWER);
             echo "Custom headers sent:\n";

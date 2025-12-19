@@ -2,14 +2,12 @@
 
 namespace Async\Network\Http;
 
-use Psr\Http\Message\UriInterface;
-
 /**
- * PSR-7 URI implementation
+ * URI implementation
  *
  * Represents a URI according to RFC 3986 with immutability.
  */
-class Uri implements UriInterface
+class Uri
 {
     private string $scheme = '';
     private string $userInfo = '';
@@ -107,7 +105,7 @@ class Uri implements UriInterface
         return $this->fragment;
     }
 
-    public function withScheme($scheme): UriInterface
+    public function withScheme($scheme): Uri
     {
         $scheme = strtolower($scheme);
         if ($scheme === $this->scheme) {
@@ -119,7 +117,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withUserInfo($user, $password = null): UriInterface
+    public function withUserInfo($user, $password = null): Uri
     {
         $userInfo = $user;
         if ($password !== null && $password !== '') {
@@ -135,7 +133,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withHost($host): UriInterface
+    public function withHost($host): Uri
     {
         $host = strtolower($host);
         if ($host === $this->host) {
@@ -147,7 +145,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withPort($port): UriInterface
+    public function withPort($port): Uri
     {
         if ($port !== null) {
             if ($port < 1 || $port > 65535) {
@@ -164,7 +162,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withPath($path): UriInterface
+    public function withPath($path): Uri
     {
         if ($path === $this->path) {
             return $this;
@@ -175,7 +173,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withQuery($query): UriInterface
+    public function withQuery($query): Uri
     {
         if ($query === $this->query) {
             return $this;
@@ -186,7 +184,7 @@ class Uri implements UriInterface
         return $new;
     }
 
-    public function withFragment($fragment): UriInterface
+    public function withFragment($fragment): Uri
     {
         if ($fragment === $this->fragment) {
             return $this;

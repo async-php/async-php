@@ -3,7 +3,6 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\IO\BytesReader;
-use Psr\Http\Message\StreamInterface;
 use Fiber;
 
 /**
@@ -17,7 +16,7 @@ use Fiber;
  * - Efficient memory management at Rust level
  * - Seekable by default (no buffering needed)
  */
-class StringStream implements StreamInterface
+class StringStream
 {
     private BytesReader $reader;
     private int $size;

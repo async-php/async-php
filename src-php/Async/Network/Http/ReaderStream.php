@@ -4,18 +4,17 @@ namespace Async\Network\Http;
 
 use Async\Kernel\IO\AsyncReader;
 use Async\IO\Wrapper\ReaderWrapper;
-use Psr\Http\Message\StreamInterface;
 
 /**
- * PSR-7 Stream implementation for HTTP response bodies
+ * Stream implementation for HTTP response bodies
  *
  * This implementation is optimized for streaming large responses without buffering.
- * It wraps an AsyncReader and provides PSR-7 StreamInterface compatibility.
+ * It wraps an AsyncReader for efficient streaming.
  *
  * NOTE: This stream does NOT support seeking/rewinding as it's designed for
  * forward-only streaming to handle large responses efficiently.
  */
-class ReaderStream implements StreamInterface
+class ReaderStream
 {
     private ?ReaderWrapper $reader = null;
     private int $position = 0;

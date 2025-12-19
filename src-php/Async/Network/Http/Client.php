@@ -4,20 +4,23 @@ namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpClient as KernelClient;
 use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
-use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
+use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
 use Fiber;
-use Psr\Http\Message\StreamInterface;
 
 /**
- * HTTP Client with PSR-18 support
+ * HTTP Client - Async HTTP/1.1 and HTTP/2 client
  *
  * This client wraps the reqwest-based kernel client and provides
  * a convenient PHP API with fluent method chaining.
  *
+ * Usage:
+ * ```php
+ * $client = new Client(['timeout' => 30]);
+ * $response = $client->get('https://example.com');
+ * echo $response->text();
+ * ```
  */
-class Client implements ClientInterface
+class Client
 {
     private KernelClient $kernel;
 
@@ -61,9 +64,9 @@ class Client implements ClientInterface
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function get(string $url, array $headers = []): ResponseInterface
+    public function get(string $url, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('GET', $url);
 
@@ -71,19 +74,18 @@ class Client implements ClientInterface
             $kernelRequest->header($name, $value);
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
      * Send a POST request
      *
      * @param string $url
-     * @param mixed $body Optional request body
+     * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function post(string $url, $body = null, array $headers = []): ResponseInterface
+    public function post(string $url, $body = null, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('POST', $url);
 
@@ -96,26 +98,21 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReaderStream) {
-                $kernelRequest->bodyStream($body);
-            } elseif ($body instanceof StreamInterface) {
-                $kernelRequest->bodyText($body->getContents());
             }
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
      * Send a PUT request
      *
      * @param string $url
-     * @param mixed $body Optional request body
+     * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function put(string $url, $body = null, array $headers = []): ResponseInterface
+    public function put(string $url, $body = null, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('PUT', $url);
 
@@ -128,26 +125,21 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReaderStream) {
-                $kernelRequest->bodyStream($body);
-            } elseif ($body instanceof StreamInterface) {
-                $kernelRequest->bodyText($body->getContents());
             }
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
      * Send a PATCH request
      *
      * @param string $url
-     * @param mixed $body Optional request body
+     * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function patch(string $url, $body = null, array $headers = []): ResponseInterface
+    public function patch(string $url, $body = null, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('PATCH', $url);
 
@@ -160,15 +152,10 @@ class Client implements ClientInterface
                 $kernelRequest->bodyJson(json_encode($body));
             } elseif (is_string($body)) {
                 $kernelRequest->bodyText($body);
-            } elseif ($body instanceof ReaderStream) {
-                $kernelRequest->bodyStream($body);
-            } elseif ($body instanceof StreamInterface) {
-                $kernelRequest->bodyText($body->getContents());
             }
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
@@ -176,9 +163,9 @@ class Client implements ClientInterface
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function delete(string $url, array $headers = []): ResponseInterface
+    public function delete(string $url, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('DELETE', $url);
 
@@ -186,8 +173,7 @@ class Client implements ClientInterface
             $kernelRequest->header($name, $value);
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
@@ -195,9 +181,9 @@ class Client implements ClientInterface
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return ResponseInterface
+     * @return KernelResponse
      */
-    public function head(string $url, array $headers = []): ResponseInterface
+    public function head(string $url, array $headers = []): KernelResponse
     {
         $kernelRequest = new KernelRequest('HEAD', $url);
 
@@ -205,8 +191,7 @@ class Client implements ClientInterface
             $kernelRequest->header($name, $value);
         }
 
-        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($kernelRequest));
     }
 
     /**
@@ -214,10 +199,10 @@ class Client implements ClientInterface
      *
      * Use this when you need to configure the request before sending:
      * ```php
-     * $response = $client->request('POST', '/api/data')
+     * $request = $client->request('POST', '/api/data')
      *     ->header('X-Custom', 'value')
-     *     ->bodyJson(['key' => 'value'])
-     *     ->send();
+     *     ->bodyJson(['key' => 'value']);
+     * $response = $client->send($request);
      * ```
      *
      * @param string $method
@@ -230,60 +215,14 @@ class Client implements ClientInterface
     }
 
     /**
-     * Send a PSR-7 request and return a PSR-7 response
+     * Send a KernelRequest
      *
-     * This implements the PSR-18 ClientInterface.
-     *
-     * @param RequestInterface $request
-     * @return ResponseInterface
+     * @param KernelRequest $request
+     * @return KernelResponse
      */
-    public function sendRequest(RequestInterface $request): ResponseInterface
+    public function send(KernelRequest $request): KernelResponse
     {
-        // Create kernel request from PSR-7 request
-        $kernelRequest = new KernelRequest(
-            $request->getMethod(),
-            (string)$request->getUri()
-        );
-
-        // Apply headers
-        foreach ($request->getHeaders() as $name => $values) {
-            foreach ($values as $value) {
-                $kernelRequest->header($name, $value);
-            }
-        }
-
-        // Apply body
-        $body = $request->getBody();
-        $bodySize = $body->getSize();
-
-        // Skip empty bodies
-        if ($bodySize === 0) {
-            // Body is explicitly empty
-        } elseif ($body instanceof ReaderStream) {
-            $kernelRequest->bodyStream($body->unwrap());
-        } else {
-            // Fallback for other StreamInterface implementations
-            // Note: This buffers the entire body into memory
-            try {
-                // Don't rewind if not seekable
-                if ($body->isSeekable()) {
-                    $body->rewind();
-                }
-                $contents = $body->getContents();
-                if ($contents !== '') {
-                    $kernelRequest->bodyText($contents, $request->getHeaderLine('Content-Type') ?: null);
-                }
-            } catch (\Throwable $e) {
-                // Body handling failed, continue without body
-            }
-        }
-
-        // Send and await response
-        $future = $this->kernel->send($kernelRequest);
-        $kernelResponse = Fiber::suspend($future);
-
-        // Convert to PSR-7 response
-        return new Psr7Response($kernelResponse);
+        return Fiber::suspend($this->kernel->send($request));
     }
 
     /**
