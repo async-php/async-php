@@ -4,9 +4,9 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use Async\Kernel;
 use Async\Network\Http\Server;
+use Async\Network\Http\Request;
+use Async\Network\Http\Response;
 use Async\Network\Tcp\Listener;
-use Async\Kernel\Network\Http\HttpRequest;
-use Async\Kernel\Network\Http\HttpResponse;
 
 echo "=== HTTP Server Test ===\n";
 echo "Starting server on 127.0.0.1:9001\n";
@@ -21,14 +21,13 @@ Kernel::run(function () {
         $conn = $listener->accept();
 
         go(function() use ($server, $conn) {
-            $server->serve($conn, function (HttpRequest $request): HttpResponse {
+            $server->serve($conn, function (Request $request): Response {
                 $method = $request->method();
                 $path = $request->path();
 
                 echo "[$method] $path\n";
 
-                $resp = new HttpResponse();
-                $resp->setHeader('Content-Type', 'text/html; charset=utf-8');
+                $resp = new Response();
 
                 $body = match ($path) {
                     '/', '' => '<h1>Hello from async-php!</h1>
@@ -37,14 +36,14 @@ Kernel::run(function () {
                             <li><a href="/text">Text response</a></li>
                         </ul>',
 
-                    '/json' => json_encode([
+                    '/json' => [
                         'message' => 'Hello, World!',
                         'timestamp' => time(),
                         'request' => [
                             'method' => $method,
                             'path' => $path,
                         ],
-                    ], JSON_PRETTY_PRINT),
+                    ],
 
                     '/text' => 'Plain text response',
 
@@ -52,18 +51,15 @@ Kernel::run(function () {
                 };
 
                 if ($path === '/json') {
-                    $resp->setHeader('Content-Type', 'application/json');
+                    $resp->setStatus(200)->setJson($body);
                 } elseif ($path === '/text') {
-                    $resp->setHeader('Content-Type', 'text/plain');
-                }
-
-                if (!in_array($path, ['/', '', '/json', '/text'])) {
-                    $resp->setStatus(404);
+                    $resp->setStatus(200)->setText($body);
+                } elseif (in_array($path, ['/', ''])) {
+                    $resp->setStatus(200)->setHtml($body);
                 } else {
-                    $resp->setStatus(200);
+                    $resp->setStatus(404)->setText($body);
                 }
 
-                $resp->setBody($body);
                 return $resp;
             });
         });

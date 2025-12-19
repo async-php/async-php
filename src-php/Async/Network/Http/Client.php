@@ -4,7 +4,6 @@ namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpClient as KernelClient;
 use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
-use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
 use Fiber;
 
 /**
@@ -18,6 +17,7 @@ use Fiber;
  * $client = new Client(['timeout' => 30]);
  * $response = $client->get('https://example.com');
  * echo $response->text();
+ * $data = $response->json();
  * ```
  */
 class Client
@@ -64,9 +64,9 @@ class Client
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function get(string $url, array $headers = []): KernelResponse
+    public function get(string $url, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('GET', $url);
 
@@ -74,7 +74,8 @@ class Client
             $kernelRequest->header($name, $value);
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -83,9 +84,9 @@ class Client
      * @param string $url
      * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function post(string $url, $body = null, array $headers = []): KernelResponse
+    public function post(string $url, $body = null, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('POST', $url);
 
@@ -101,7 +102,8 @@ class Client
             }
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -110,9 +112,9 @@ class Client
      * @param string $url
      * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function put(string $url, $body = null, array $headers = []): KernelResponse
+    public function put(string $url, $body = null, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('PUT', $url);
 
@@ -128,7 +130,8 @@ class Client
             }
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -137,9 +140,9 @@ class Client
      * @param string $url
      * @param mixed $body Optional request body (string or array for JSON)
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function patch(string $url, $body = null, array $headers = []): KernelResponse
+    public function patch(string $url, $body = null, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('PATCH', $url);
 
@@ -155,7 +158,8 @@ class Client
             }
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -163,9 +167,9 @@ class Client
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function delete(string $url, array $headers = []): KernelResponse
+    public function delete(string $url, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('DELETE', $url);
 
@@ -173,7 +177,8 @@ class Client
             $kernelRequest->header($name, $value);
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -181,9 +186,9 @@ class Client
      *
      * @param string $url
      * @param array $headers Optional headers
-     * @return KernelResponse
+     * @return Response
      */
-    public function head(string $url, array $headers = []): KernelResponse
+    public function head(string $url, array $headers = []): Response
     {
         $kernelRequest = new KernelRequest('HEAD', $url);
 
@@ -191,7 +196,8 @@ class Client
             $kernelRequest->header($name, $value);
         }
 
-        return Fiber::suspend($this->kernel->send($kernelRequest));
+        $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
+        return new Response($kernelResponse);
     }
 
     /**
@@ -207,22 +213,23 @@ class Client
      *
      * @param string $method
      * @param string $url
-     * @return KernelRequest
+     * @return Request
      */
-    public function request(string $method, string $url): KernelRequest
+    public function request(string $method, string $url): Request
     {
-        return new KernelRequest($method, $url);
+        return new Request($method, $url);
     }
 
     /**
-     * Send a KernelRequest
+     * Send a Request
      *
-     * @param KernelRequest $request
-     * @return KernelResponse
+     * @param Request $request
+     * @return Response
      */
-    public function send(KernelRequest $request): KernelResponse
+    public function send(Request $request): Response
     {
-        return Fiber::suspend($this->kernel->send($request));
+        $kernelResponse = Fiber::suspend($this->kernel->send($request->getKernel()));
+        return new Response($kernelResponse);
     }
 
     /**

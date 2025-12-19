@@ -3,8 +3,6 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpServer as KernelHttpServer;
-use Async\Kernel\Network\Http\HttpRequest as KernelHttpRequest;
-use Async\Kernel\Network\Http\HttpResponse as KernelHttpResponse;
 use Async\Kernel\IO\AsyncReadWriter;
 use Fiber;
 
@@ -19,8 +17,8 @@ use Fiber;
  * while (true) {
  *     $conn = $listener->accept();
  *     go(function() use ($server, $conn) {
- *         $server->serve($conn, function(HttpRequest $req): HttpResponse {
- *             $resp = new HttpResponse();
+ *         $server->serve($conn, function(Request $req): Response {
+ *             $resp = new Response();
  *             $resp->setStatus(200);
  *             $resp->setBody("Hello, World!");
  *             return $resp;
@@ -81,7 +79,7 @@ class Server
     /**
      * Serve HTTP requests on a connection with zero-copy IO
      *
-     * The handler receives an HttpRequest and must return an HttpResponse.
+     * The handler receives a Request and must return a Response.
      * This uses the connection's native tokio IO for maximum performance.
      *
      * Supported connection types (zero-copy):
@@ -93,7 +91,7 @@ class Server
      * Also supports generic AsyncReadWriter from PHP bridges (with overhead)
      *
      * @param AsyncReadWriter $conn Connection IO
-     * @param callable(KernelHttpRequest): KernelHttpResponse $handler Request handler
+     * @param callable(Request): Response $handler Request handler
      * @return bool True if connection served successfully
      */
     public function serve($conn, callable $handler): bool
@@ -109,8 +107,15 @@ class Server
             );
         }
 
+        // Wrap the user handler to convert Request/Response to kernel types
+        $kernelHandler = function($kernelRequest) use ($handler) {
+            $request = new Request($kernelRequest);
+            $response = $handler($request);
+            return $response->getKernel();
+        };
+
         // Serve the connection
-        $future = $this->builder->serve($io, $handler);
+        $future = $this->builder->serve($io, $kernelHandler);
         $result = Fiber::suspend($future);
 
         return (bool)$result;
@@ -131,7 +136,7 @@ class Server
      * ```
      *
      * @param string $addr Address to bind to (e.g., "127.0.0.1:8080")
-     * @param callable(KernelHttpRequest): KernelHttpResponse $handler Request handler
+     * @param callable(Request): Response $handler Request handler
      */
     public function listenAndServe(string $addr, callable $handler): void
     {
@@ -159,7 +164,7 @@ class Server
      * without creating a Server instance first.
      *
      * @param string $addr Address to bind to (e.g., "127.0.0.1:8080")
-     * @param callable(KernelHttpRequest): KernelHttpResponse $handler Request handler
+     * @param callable(Request): Response $handler Request handler
      */
     public static function listen(string $addr, callable $handler): void
     {
