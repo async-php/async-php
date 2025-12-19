@@ -6,24 +6,24 @@
  * - Set cookies from server
  * - Automatically send cookies in subsequent requests
  * - Cookie persistence across requests
- * - Clear cookies
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use Async\Kernel;
 use Async\Network\Http\Client;
-use Async\Runtime;
 
-Runtime::run(function () {
+Kernel::run(function () {
     echo "=== HTTP Cookie Management Test ===\n\n";
 
     // Test 1: Enable Cookie Management
     echo "Test 1: Enable Cookie Jar\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client = new Client();
-    $client->enableCookies();
-    echo "✓ Cookie jar enabled\n\n";
+    $client = new Client([
+        'enable_cookies' => true
+    ]);
+    echo "✓ Cookie jar enabled via constructor\n\n";
 
     // Test 2: Set and Retrieve Single Cookie
     echo "Test 2: Set and Retrieve Single Cookie\n";
@@ -32,11 +32,11 @@ Runtime::run(function () {
     try {
         // Set a cookie
         echo "  Step 1: Setting cookie 'session=abc123'\n";
-        $response1 = $client->get('https://httpbin.org/cookies/set?session=abc123');
+        $client->get('https://httpbin.org/cookies/set?session=abc123');
 
         // Retrieve cookies to verify it was stored
-        $response2 = $client->get('https://httpbin.org/cookies');
-        $data = $response2->json();
+        $response = $client->get('https://httpbin.org/cookies');
+        $data = json_decode((string)$response->getBody(), true);
 
         if (isset($data['cookies']['session']) && $data['cookies']['session'] === 'abc123') {
             echo "✓ Cookie stored and sent automatically\n";
@@ -63,7 +63,7 @@ Runtime::run(function () {
 
         // Retrieve all cookies
         $response = $client->get('https://httpbin.org/cookies');
-        $data = $response->json();
+        $data = json_decode((string)$response->getBody(), true);
 
         $cookieCount = count($data['cookies']);
         echo "  Step 2: Retrieved {$cookieCount} cookies\n";
@@ -99,7 +99,7 @@ Runtime::run(function () {
 
         for ($i = 1; $i <= 3; $i++) {
             $response = $client->get('https://httpbin.org/cookies');
-            $data = $response->json();
+            $data = json_decode((string)$response->getBody(), true);
             $count = count($data['cookies']);
             echo "    Request {$i}: {$count} cookies sent\n";
         }
@@ -111,36 +111,13 @@ Runtime::run(function () {
 
     echo "\n";
 
-    // Test 5: Clear Cookies
-    echo "Test 5: Clear All Cookies\n";
-    echo str_repeat("-", 40) . "\n";
-
-    try {
-        echo "  Step 1: Clearing cookie jar\n";
-        $client->clearCookies();
-
-        $response = $client->get('https://httpbin.org/cookies');
-        $data = $response->json();
-
-        if (empty($data['cookies'])) {
-            echo "✓ All cookies cleared successfully\n";
-            echo "  Cookie count: 0\n";
-        } else {
-            echo "✗ Cookies not cleared\n";
-            echo "  Remaining: " . count($data['cookies']) . "\n";
-        }
-    } catch (\Exception $e) {
-        echo "✗ Error: {$e->getMessage()}\n";
-    }
-
-    echo "\n";
-
     // Test 6: Without Cookie Jar
     echo "Test 6: Without Cookie Management\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client2 = new Client();
-    // Don't enable cookies
+    $client2 = new Client([
+        'enable_cookies' => false
+    ]);
 
     try {
         // Set a cookie
@@ -148,87 +125,12 @@ Runtime::run(function () {
 
         // Try to retrieve - should not be there
         $response = $client2->get('https://httpbin.org/cookies');
-        $data = $response->json();
+        $data = json_decode((string)$response->getBody(), true);
 
         if (empty($data['cookies'])) {
             echo "✓ Cookies not stored (as expected, jar disabled)\n";
         } else {
             echo "✗ Unexpected: cookies stored without jar\n";
-        }
-    } catch (\Exception $e) {
-        echo "✗ Error: {$e->getMessage()}\n";
-    }
-
-    echo "\n";
-
-    // Test 7: Disable Cookie Management
-    echo "Test 7: Enable then Disable Cookies\n";
-    echo str_repeat("-", 40) . "\n";
-
-    $client3 = new Client();
-
-    try {
-        // Enable and set cookies
-        $client3->enableCookies();
-        echo "  Step 1: Enabled cookies and set some\n";
-        $client3->get('https://httpbin.org/cookies/set?test1=value1');
-
-        $response1 = $client3->get('https://httpbin.org/cookies');
-        $data1 = $response1->json();
-        echo "    Cookies stored: " . count($data1['cookies']) . "\n";
-
-        // Disable cookies
-        $client3->disableCookies();
-        echo "  Step 2: Disabled cookies\n";
-
-        // Set new cookie - should not be stored
-        $client3->get('https://httpbin.org/cookies/set?test2=value2');
-
-        $response2 = $client3->get('https://httpbin.org/cookies');
-        $data2 = $response2->json();
-
-        if (empty($data2['cookies'])) {
-            echo "✓ Cookies disabled successfully\n";
-            echo "  New cookies not stored\n";
-        }
-    } catch (\Exception $e) {
-        echo "✗ Error: {$e->getMessage()}\n";
-    }
-
-    echo "\n";
-
-    // Test 8: Session Simulation
-    echo "Test 8: Simulated Login Session\n";
-    echo str_repeat("-", 40) . "\n";
-
-    $client4 = new Client();
-    $client4->enableCookies();
-
-    try {
-        // Simulate login - set session cookie
-        echo "  Step 1: Login (set session cookie)\n";
-        $client4->get('https://httpbin.org/cookies/set?sessionid=user123_session&authenticated=true');
-
-        // Make authenticated requests
-        echo "  Step 2: Make authenticated requests\n";
-        $response = $client4->get('https://httpbin.org/cookies');
-        $data = $response->json();
-
-        if (isset($data['cookies']['sessionid']) && isset($data['cookies']['authenticated'])) {
-            echo "✓ Session maintained across requests\n";
-            echo "    Session ID: {$data['cookies']['sessionid']}\n";
-            echo "    Authenticated: {$data['cookies']['authenticated']}\n";
-        }
-
-        // Logout - clear cookies
-        echo "  Step 3: Logout (clear cookies)\n";
-        $client4->clearCookies();
-
-        $response2 = $client4->get('https://httpbin.org/cookies');
-        $data2 = $response2->json();
-
-        if (empty($data2['cookies'])) {
-            echo "✓ Session cleared\n";
         }
     } catch (\Exception $e) {
         echo "✗ Error: {$e->getMessage()}\n";

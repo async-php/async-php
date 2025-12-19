@@ -12,25 +12,26 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use Async\Kernel;
 use Async\Network\Http\Client;
-use Async\Runtime;
 
-Runtime::run(function () {
+Kernel::run(function () {
     echo "=== HTTP Redirect Test ===\n\n";
 
     // Test 1: Follow multiple redirects
     echo "Test 1: Following 5 redirects\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client = new Client();
-    $client->setFollowRedirects(true);
-    $client->setMaxRedirects(10);
+    // Configure via constructor
+    $client = new Client([
+        'max_redirects' => 10
+    ]);
 
     try {
         $response = $client->get('https://httpbin.org/redirect/5');
         echo "✓ Successfully followed 5 redirects\n";
         echo "  Final status: {$response->getStatusCode()}\n";
-        echo "  Response OK: " . ($response->isSuccess() ? 'Yes' : 'No') . "\n";
+        echo "  Response OK: " . ($response->getStatusCode() === 200 ? 'Yes' : 'No') . "\n";
     } catch (\Exception $e) {
         echo "✗ Failed: {$e->getMessage()}\n";
     }
@@ -41,16 +42,18 @@ Runtime::run(function () {
     echo "Test 2: Redirect limit enforcement\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client2 = new Client();
-    $client2->setFollowRedirects(true);
-    $client2->setMaxRedirects(3);  // Limit to 3
+    $client2 = new Client([
+        'max_redirects' => 3
+    ]);
 
     try {
+        // This should throw an error or return the last response depending on implementation
+        // Reqwest usually returns error on too many redirects
         $response = $client2->get('https://httpbin.org/redirect/5');
         echo "  Status: {$response->getStatusCode()}\n";
-        echo "  Note: Stopped at max redirect limit\n";
+        echo "  Note: Did not error on max redirect limit\n";
     } catch (\Exception $e) {
-        echo "  Error (expected): {$e->getMessage()}\n";
+        echo "✓ Error (expected): " . substr($e->getMessage(), 0, 100) . "...\n";
     }
 
     echo "\n";
@@ -59,16 +62,20 @@ Runtime::run(function () {
     echo "Test 3: Disable redirect following\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client3 = new Client();
-    $client3->setFollowRedirects(false);
+    $client3 = new Client([
+        'max_redirects' => 0
+    ]);
 
     try {
         $response = $client3->get('https://httpbin.org/redirect/1');
         echo "  Status: {$response->getStatusCode()}\n";
-        echo "  Is redirect: " . ($response->isRedirect() ? 'Yes' : 'No') . "\n";
+        
+        $statusCode = $response->getStatusCode();
+        $isRedirect = $statusCode >= 300 && $statusCode < 400;
+        echo "  Is redirect: " . ($isRedirect ? 'Yes' : 'No') . "\n";
 
-        if ($response->isRedirect()) {
-            $location = $response->getHeader('Location');
+        if ($isRedirect) {
+            $location = $response->getHeaderLine('Location');
             echo "  Location header: {$location}\n";
             echo "✓ Redirect not followed (as expected)\n";
         }
@@ -82,8 +89,9 @@ Runtime::run(function () {
     echo "Test 4: Relative URL redirects\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client4 = new Client();
-    $client4->setFollowRedirects(true);
+    $client4 = new Client([
+        'max_redirects' => 5
+    ]);
 
     try {
         $response = $client4->get('https://httpbin.org/relative-redirect/2');
@@ -99,8 +107,9 @@ Runtime::run(function () {
     echo "Test 5: Absolute URL redirects\n";
     echo str_repeat("-", 40) . "\n";
 
-    $client5 = new Client();
-    $client5->setFollowRedirects(true);
+    $client5 = new Client([
+        'max_redirects' => 5
+    ]);
 
     try {
         $response = $client5->get('https://httpbin.org/absolute-redirect/2');

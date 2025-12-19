@@ -9,8 +9,10 @@ echo "=== PHP-Side HTTP Client Test ===\n";
 echo "Testing the high-level PHP HTTP Client API\n\n";
 
 Kernel::run(function () {
-    $client = new Client();
-    $client->setTimeout(30);
+    // 1. Configure via constructor
+    $client = new Client([
+        'timeout' => 30
+    ]);
 
     // Test 1: Simple GET request
     try {
@@ -20,10 +22,14 @@ Kernel::run(function () {
         $response = $client->get('http://www.baidu.com');
 
         echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
-        echo "Version: HTTP/{$response->getVersion()}\n";
-        echo "Content-Type: {$response->getContentType()}\n";
-        echo "Body length: " . strlen($response->getBody()) . " bytes\n";
-        echo "Is successful: " . ($response->isSuccess() ? 'Yes' : 'No') . "\n";
+        echo "Version: HTTP/{$response->getProtocolVersion()}\n";
+        echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n";
+        
+        $body = (string)$response->getBody();
+        echo "Body length: " . strlen($body) . " bytes\n";
+        
+        $success = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        echo "Is successful: " . ($success ? 'Yes' : 'No') . "\n";
         echo "✓ Test 1 passed!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 1 failed: {$e->getMessage()}\n\n";
@@ -34,44 +40,55 @@ Kernel::run(function () {
         echo "Test 2: HTTPS GET with custom headers\n";
         echo str_repeat('=', 70) . "\n";
 
+        // Pass headers as 2nd argument
         $response = $client->get('https://www.baidu.com', [
-            'headers' => [
-                'Accept-Language' => 'zh-CN,zh;q=0.9',
-                'Accept' => 'text/html',
-            ]
+            'Accept-Language' => 'zh-CN,zh;q=0.9',
+            'Accept' => 'text/html',
         ]);
 
         echo "Status: {$response->getStatusCode()}\n";
-        echo "Server: " . ($response->getHeader('server') ?? 'Unknown') . "\n";
-        echo "Is HTML: " . ($response->isHtml() ? 'Yes' : 'No') . "\n";
+        echo "Server: " . ($response->getHeaderLine('Server') ?: 'Unknown') . "\n";
+        
+        $contentType = $response->getHeaderLine('Content-Type');
+        $isHtml = strpos($contentType, 'html') !== false;
+        echo "Is HTML: " . ($isHtml ? 'Yes' : 'No') . "\n";
         echo "✓ Test 2 passed!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 2 failed: {$e->getMessage()}\n\n";
     }
 
-    // Test 3: GET with query parameters
+    // Test 3: GET with query parameters (manual construction)
     try {
         echo "Test 3: GET with query parameters\n";
         echo str_repeat('=', 70) . "\n";
 
-        $response = $client->get('https://api.github.com/search/repositories', [
-            'query' => [
-                'q' => 'language:php',
-                'sort' => 'stars',
-                'per_page' => 3,
-            ],
+        $queryParams = http_build_query([
+            'q' => 'language:php',
+            'sort' => 'stars',
+            'per_page' => 3,
+        ]);
+        $url = 'https://api.github.com/search/repositories?' . $queryParams;
+
+        // Github requires User-Agent
+        $response = $client->get($url, [
+            'User-Agent' => 'Async-PHP-Client/1.0',
+            'Accept' => 'application/vnd.github.v3+json'
         ]);
 
         echo "Status: {$response->getStatusCode()}\n";
-        echo "Content-Type: {$response->getContentType()}\n";
+        echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n";
 
-        if ($response->isJson()) {
-            $data = $response->json();
-            echo "Total count: {$data['total_count']}\n";
-            echo "Items returned: " . count($data['items']) . "\n";
-
-            if (!empty($data['items'])) {
-                echo "Top repository: {$data['items'][0]['full_name']}\n";
+        $contentType = $response->getHeaderLine('Content-Type');
+        if (strpos($contentType, 'json') !== false) {
+            $data = json_decode((string)$response->getBody(), true);
+            if (isset($data['total_count'])) {
+                echo "Total count: {$data['total_count']}\n";
+            }
+            if (isset($data['items'])) {
+                echo "Items returned: " . count($data['items']) . "\n";
+                if (!empty($data['items'])) {
+                    echo "Top repository: {$data['items'][0]['full_name']}\n";
+                }
             }
         }
 
@@ -80,21 +97,21 @@ Kernel::run(function () {
         echo "✗ Test 3 failed: {$e->getMessage()}\n\n";
     }
 
-    // Test 4: JSON API request
+    // Test 4: JSON API request (Github User API)
     try {
         echo "Test 4: JSON API request\n";
         echo str_repeat('=', 70) . "\n";
 
         $response = $client->get('https://api.github.com/', [
-            'headers' => [
-                'Accept' => 'application/json',
-            ]
+             'User-Agent' => 'Async-PHP-Client/1.0',
+             'Accept' => 'application/json'
         ]);
 
         echo "Status: {$response->getStatusCode()}\n";
 
-        if ($response->isSuccess() && $response->isJson()) {
-            $data = $response->json();
+        $contentType = $response->getHeaderLine('Content-Type');
+        if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
+            $data = json_decode((string)$response->getBody(), true);
             echo "API endpoints available: " . count($data) . "\n";
             echo "✓ Valid JSON response\n";
         }
@@ -104,24 +121,28 @@ Kernel::run(function () {
         echo "✗ Test 4 failed: {$e->getMessage()}\n\n";
     }
 
-    // Test 5: POST with JSON body (to a test endpoint)
+    // Test 5: POST with JSON body
     try {
         echo "Test 5: POST with JSON body\n";
         echo str_repeat('=', 70) . "\n";
 
-        $response = $client->post('https://httpbin.org/post', [
-            'json' => [
-                'name' => 'async-php',
-                'version' => '1.0',
-                'features' => ['http', 'async', 'fiber'],
-            ],
+        $bodyData = [
+            'name' => 'async-php',
+            'version' => '1.0',
+            'features' => ['http', 'async', 'fiber'],
+        ];
+
+        // Pass array as body (automatically JSON encoded), and headers
+        $response = $client->post('https://httpbin.org/post', $bodyData, [
+            'Content-Type' => 'application/json' // Explicit content type just in case
         ]);
 
         echo "Status: {$response->getStatusCode()}\n";
 
-        if ($response->isSuccess() && $response->isJson()) {
-            $data = $response->json();
-
+        $contentType = $response->getHeaderLine('Content-Type');
+        if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
+            $data = json_decode((string)$response->getBody(), true);
+            
             // httpbin.org echoes back the JSON we sent
             if (isset($data['json']['name'])) {
                 echo "Echoed name: {$data['json']['name']}\n";
@@ -134,20 +155,6 @@ Kernel::run(function () {
         echo "✗ Test 5 failed: {$e->getMessage()}\n\n";
     }
 
-    // Test 6: Quick static methods
-    try {
-        echo "Test 6: Quick static GET method\n";
-        echo str_repeat('=', 70) . "\n";
-
-        $response = Client::quickGet('https://api.github.com/');
-
-        echo "Status: {$response->getStatusCode()}\n";
-        echo "✓ Static method works\n";
-        echo "✓ Test 6 passed!\n\n";
-    } catch (Exception $e) {
-        echo "✗ Test 6 failed: {$e->getMessage()}\n\n";
-    }
-
     // Test 7: HEAD request
     try {
         echo "Test 7: HEAD request\n";
@@ -156,8 +163,10 @@ Kernel::run(function () {
         $response = $client->head('https://www.baidu.com');
 
         echo "Status: {$response->getStatusCode()}\n";
-        echo "Content-Length: " . ($response->getContentLength() ?? 'Unknown') . "\n";
-        echo "Body is empty: " . (empty($response->getBody()) ? 'Yes' : 'No') . "\n";
+        echo "Content-Length: " . ($response->getHeaderLine('Content-Length') ?: 'Unknown') . "\n";
+        
+        $body = (string)$response->getBody();
+        echo "Body is empty: " . ($body === '' ? 'Yes' : 'No') . "\n";
         echo "✓ Test 7 passed!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 7 failed: {$e->getMessage()}\n\n";
@@ -171,8 +180,9 @@ Kernel::run(function () {
         $response = $client->get('https://httpbin.org/status/404');
 
         echo "Status: {$response->getStatusCode()}\n";
-        echo "Is client error: " . ($response->isClientError() ? 'Yes' : 'No') . "\n";
-        echo "Is successful: " . ($response->isSuccess() ? 'Yes' : 'No') . "\n";
+        $isClientError = $response->getStatusCode() >= 400 && $response->getStatusCode() < 500;
+        echo "Is client error: " . ($isClientError ? 'Yes' : 'No') . "\n";
+        echo "Is successful: " . ($response->getStatusCode() === 200 ? 'Yes' : 'No') . "\n";
         echo "✓ Test 8 passed!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 8 failed: {$e->getMessage()}\n\n";

@@ -60,11 +60,17 @@ class Client implements ClientInterface
      * Send a GET request
      *
      * @param string $url
+     * @param array $headers Optional headers
      * @return ResponseInterface
      */
-    public function get(string $url): ResponseInterface
+    public function get(string $url, array $headers = []): ResponseInterface
     {
         $kernelRequest = new KernelRequest('GET', $url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
+        }
+
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
@@ -169,11 +175,17 @@ class Client implements ClientInterface
      * Send a DELETE request
      *
      * @param string $url
+     * @param array $headers Optional headers
      * @return ResponseInterface
      */
-    public function delete(string $url): ResponseInterface
+    public function delete(string $url, array $headers = []): ResponseInterface
     {
         $kernelRequest = new KernelRequest('DELETE', $url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
+        }
+
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }
@@ -182,11 +194,17 @@ class Client implements ClientInterface
      * Send a HEAD request
      *
      * @param string $url
+     * @param array $headers Optional headers
      * @return ResponseInterface
      */
-    public function head(string $url): ResponseInterface
+    public function head(string $url, array $headers = []): ResponseInterface
     {
         $kernelRequest = new KernelRequest('HEAD', $url);
+
+        foreach ($headers as $name => $value) {
+            $kernelRequest->header($name, $value);
+        }
+
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
         return new Psr7Response($kernelResponse);
     }

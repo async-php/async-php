@@ -8,9 +8,11 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Async\Network\Http\Client;
-use Async\Runtime;
+use Async\Kernel;
+use Async\Network\Http\Psr7Request;
+use Async\Network\Http\Uri;
 
-Runtime::run(function () {
+Kernel::run(function () {
     echo "\n";
     echo "╔══════════════════════════════════════════════════════════╗\n";
     echo "║  HTTP Client - Production Features Quick Demo           ║\n";
@@ -18,39 +20,38 @@ Runtime::run(function () {
     echo "\n";
 
     // Create a production-ready client with all features enabled
-    $client = (new Client())
-        ->setTimeout(30)
-        ->setFollowRedirects(true)
-        ->setMaxRedirects(10)
-        ->enableCookies()
-        ->enableRetry()
-        ->setAutoDecompress(true)
-        ->setCollectMetrics(true)
-        ->setMaxConcurrentRequests(5);
+    $client = new Client([
+        'timeout' => 30,
+        'max_redirects' => 10,
+        'enable_cookies' => true,
+    ]);
 
     echo "✓ Client configured with production features:\n";
     echo "  • Timeout: 30 seconds\n";
     echo "  • Auto-redirect: enabled (max 10)\n";
     echo "  • Cookie management: enabled\n";
-    echo "  • Request retry: enabled\n";
     echo "  • Auto decompression: enabled\n";
-    echo "  • Metrics collection: enabled\n";
-    echo "  • Max concurrent requests: 5\n";
     echo "\n";
 
     // Demo 1: Simple GET request
     echo "━━━ Demo 1: Simple GET Request ━━━\n";
     try {
-        $response = $client->get('https://httpbin.org/get', [
-            'query' => ['demo' => 'simple', 'version' => '1.0']
-        ]);
+        $uri = (new Uri('https://httpbin.org/get'))
+            ->withQuery('demo=simple&version=1.0');
+        $request = new Psr7Request('GET', $uri);
+        $response = $client->sendRequest($request);
 
         echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
-        echo "Success: " . ($response->isSuccess() ? 'Yes' : 'No') . "\n";
+        $isSuccess = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        echo "Success: " . ($isSuccess ? 'Yes' : 'No') . "\n";
 
-        $data = $response->json();
-        echo "URL: {$data['url']}\n";
-        echo "Query params: " . json_encode($data['args']) . "\n";
+        $data = json_decode($response->getBody()->getContents(), true);
+        if ($data !== null) {
+            echo "URL: {$data['url']}\n";
+            echo "Query params: " . json_encode($data['args']) . "\n";
+        } else {
+            echo "Failed to decode JSON response.\n";
+        }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
     }
@@ -59,37 +60,58 @@ Runtime::run(function () {
     // Demo 2: POST with JSON
     echo "━━━ Demo 2: POST with JSON ━━━\n";
     try {
-        $response = $client->post('https://httpbin.org/post', [
-            'json' => [
-                'username' => 'demo_user',
-                'action' => 'create',
-                'timestamp' => time()
-            ]
+        $uri = new Uri('https://httpbin.org/post');
+        $jsonBody = json_encode([
+            'username' => 'demo_user',
+            'action' => 'create',
+            'timestamp' => time()
         ]);
+        $request = (new Psr7Request('POST', $uri))
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody(new Async\Network\Http\StringStream($jsonBody));
+
+        $response = $client->sendRequest($request);
 
         echo "Status: {$response->getStatusCode()}\n";
 
-        $data = $response->json();
-        echo "Content-Type: {$data['headers']['Content-Type']}\n";
-        echo "Sent data: " . json_encode($data['json']) . "\n";
+        $data = json_decode($response->getBody()->getContents(), true);
+        if ($data !== null) {
+            echo "Content-Type: {$data['headers']['Content-Type']}\n";
+            echo "Sent data: " . json_encode($data['json']) . "\n";
+        } else {
+            echo "Failed to decode JSON response.\n";
+        }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
     }
     echo "\n";
 
-    // Demo 3: Authentication
+    // Demo 3: Basic Authentication
     echo "━━━ Demo 3: Basic Authentication ━━━\n";
     try {
         $authClient = new Client();
-        $authClient->setBasicAuth('demo', 'secret123');
+        $username = 'demo';
+        $password = 'secret123';
+        $authHeader = 'Basic ' . base64_encode("$username:$password");
 
-        $response = $authClient->get('https://httpbin.org/basic-auth/demo/secret123');
+        $uri = new Uri('https://httpbin.org/basic-auth/demo/secret123');
+        $request = (new Psr7Request('GET', $uri))
+            ->withHeader('Authorization', $authHeader);
 
-        if ($response->isSuccess()) {
-            $data = $response->json();
-            echo "✓ Authenticated successfully\n";
-            echo "User: {$data['user']}\n";
-            echo "Authenticated: " . ($data['authenticated'] ? 'true' : 'false') . "\n";
+        $response = $authClient->sendRequest($request);
+
+        $isSuccess = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        if ($isSuccess) {
+            $data = json_decode($response->getBody()->getContents(), true);
+            if ($data !== null) {
+                echo "✓ Authenticated successfully\n";
+                echo "User: {$data['user']}\n";
+                echo "Authenticated: " . ($data['authenticated'] ? 'true' : 'false') . "\n";
+            } else {
+                echo "Failed to decode JSON response for authentication.\n";
+            }
+        } else {
+            echo "Authentication failed. Status: {$response->getStatusCode()}\n";
         }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
@@ -99,7 +121,9 @@ Runtime::run(function () {
     // Demo 4: Redirect following
     echo "━━━ Demo 4: Auto Redirect Following ━━━\n";
     try {
-        $response = $client->get('https://httpbin.org/redirect/3');
+        $uri = new Uri('https://httpbin.org/redirect/3');
+        $request = new Psr7Request('GET', $uri);
+        $response = $client->sendRequest($request);
 
         echo "✓ Followed 3 redirects automatically\n";
         echo "Final status: {$response->getStatusCode()}\n";
@@ -112,20 +136,25 @@ Runtime::run(function () {
     // Demo 5: Cookie session
     echo "━━━ Demo 5: Cookie Session ━━━\n";
     try {
-        $sessionClient = new Client();
-        $sessionClient->enableCookies();
+        $sessionClient = new Client(['enable_cookies' => true]);
 
         // Login - set session cookie
         echo "Step 1: Set session cookie\n";
-        $sessionClient->get('https://httpbin.org/cookies/set?session_id=demo_abc123');
+        $uriSetCookie = new Uri('https://httpbin.org/cookies/set?session_id=demo_abc123');
+        $requestSetCookie = new Psr7Request('GET', $uriSetCookie);
+        $sessionClient->sendRequest($requestSetCookie);
 
         // Subsequent request - cookie sent automatically
         echo "Step 2: Make request with automatic cookie\n";
-        $response = $sessionClient->get('https://httpbin.org/cookies');
-        $data = $response->json();
+        $uriGetCookie = new Uri('https://httpbin.org/cookies');
+        $requestGetCookie = new Psr7Request('GET', $uriGetCookie);
+        $response = $sessionClient->sendRequest($requestGetCookie);
+        $data = json_decode($response->getBody()->getContents(), true);
 
-        if (isset($data['cookies']['session_id'])) {
+        if ($data !== null && isset($data['cookies']['session_id'])) {
             echo "✓ Cookie sent automatically: {$data['cookies']['session_id']}\n";
+        } else {
+            echo "Failed to retrieve or decode cookie data.\n";
         }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";
@@ -135,21 +164,26 @@ Runtime::run(function () {
     // Demo 6: Headers and compression
     echo "━━━ Demo 6: Custom Headers & Compression ━━━\n";
     try {
-        $response = $client->get('https://httpbin.org/headers', [
-            'headers' => [
-                'X-Custom-Header' => 'Demo-Value',
-                'X-API-Version' => '2.0'
-            ]
-        ]);
+        $uri = new Uri('https://httpbin.org/headers');
+        $request = (new Psr7Request('GET', $uri))
+            ->withHeader('X-Custom-Header', 'Demo-Value')
+            ->withHeader('X-API-Version', '2.0');
 
-        $data = $response->json();
-        echo "Custom headers sent:\n";
-        echo "  X-Custom-Header: {$data['headers']['X-Custom-Header']}\n";
-        echo "  X-Api-Version: {$data['headers']['X-Api-Version']}\n";
+        $response = $client->sendRequest($request);
 
-        if (isset($data['headers']['Accept-Encoding'])) {
-            echo "  Accept-Encoding: {$data['headers']['Accept-Encoding']}\n";
-            echo "  (Compression support auto-enabled)\n";
+        $data = json_decode($response->getBody()->getContents(), true);
+        if ($data !== null) {
+            $responseHeaders = array_change_key_case($data['headers'], CASE_LOWER);
+            echo "Custom headers sent:\n";
+            echo "  X-Custom-Header: " . ($responseHeaders['x-custom-header'] ?? 'N/A') . "\n";
+            echo "  X-Api-Version: " . ($responseHeaders['x-api-version'] ?? 'N/A') . "\n";
+
+            if (isset($responseHeaders['accept-encoding'])) {
+                echo "  Accept-Encoding: {$responseHeaders['accept-encoding']}\n";
+                echo "  (Compression support auto-enabled)\n";
+            }
+        } else {
+            echo "Failed to decode JSON response for headers.\n";
         }
     } catch (\Exception $e) {
         echo "Error: {$e->getMessage()}\n";

@@ -2,16 +2,21 @@
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use Async\Kernel;
 use Async\Network\Http\Client;
-
-echo "=== HTTP Client Test ===\n";
-echo "Testing HTTP/HTTPS client\n\n";
+use Async\Network\Http\Psr7Request;
+use Async\Network\Http\Uri;
+use Async\Kernel;
 
 Kernel::run(function () {
-    // Create HTTP client
-    $client = new Client();
-    $client->setTimeout(30);
+    echo "=== HTTP Client Test ===\n";
+    echo "Testing HTTP/HTTPS client\n\n";
+
+    // Create client with common configurations
+    $client = new Client([
+        'timeout' => 5, // 5 seconds
+        'max_redirects' => 5,
+        'enable_cookies' => true,
+    ]);
 
     // Test 1: HTTP request to baidu.com
     try {
@@ -19,16 +24,15 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending request...\n";
-        $response = $client->get('http://www.baidu.com', [
-            'headers' => [
-                'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
-                'Accept' => 'text/html',
-            ]
-        ]);
+        $uri = new Uri('http://www.baidu.com');
+        $request = (new Psr7Request('GET', $uri))
+            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
+            ->withHeader('Accept', 'text/html');
+        $response = $client->sendRequest($request);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getVersion() . "\n";
-        echo "Body length: " . strlen($response->getBody()) . " bytes\n";
+        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
+        echo "Body length: " . strlen($response->getBody()->getContents()) . " bytes\n";
 
         echo "✓ Test 1 passed!\n\n";
     } catch (Exception $e) {
@@ -41,19 +45,18 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending HTTPS request...\n";
-        $response = $client->get('https://www.baidu.com', [
-            'headers' => [
-                'User-Agent' => 'Mozilla/5.0 (compatible; async-php/1.0)',
-                'Accept' => 'text/html',
-            ]
-        ]);
+        $uri = new Uri('https://www.baidu.com');
+        $request = (new Psr7Request('GET', $uri))
+            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
+            ->withHeader('Accept', 'text/html');
+        $response = $client->sendRequest($request);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getVersion() . "\n";
+        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
 
         // Check for important headers
-        $contentType = $response->getHeader('content-type');
-        $server = $response->getHeader('server');
+        $contentType = $response->getHeaderLine('content-type');
+        $server = $response->getHeaderLine('server');
 
         if ($contentType) {
             echo "Content-Type: " . $contentType . "\n";
@@ -62,7 +65,7 @@ Kernel::run(function () {
             echo "Server: " . $server . "\n";
         }
 
-        $content = $response->getBody();
+        $content = $response->getBody()->getContents();
         echo "Body length: " . strlen($content) . " bytes\n";
 
         // Check if content looks like HTML
@@ -81,19 +84,17 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         echo "Sending request...\n";
-        $response = $client->get('https://api.github.com/', [
-            'headers' => [
-                'Accept' => 'application/json',
-            ]
-        ]);
+        $uri = new Uri('https://api.github.com/');
+        $request = (new Psr7Request('GET', $uri))
+            ->withHeader('User-Agent', 'Mozilla/5.0 (compatible; async-php/1.0)')
+            ->withHeader('Accept', 'application/json');
+        $response = $client->sendRequest($request);
 
         echo "Status: " . $response->getStatusCode() . " " . $response->getReasonPhrase() . "\n";
-        echo "Version: HTTP/" . $response->getVersion() . "\n";
+        echo "Version: HTTP/" . $response->getProtocolVersion() . "\n";
 
-        $content = $response->getBody();
+        $content = $response->getBody()->getContents();
         echo "Body length: " . strlen($content) . " bytes\n";
-
-        // Try to parse JSON
         $json = json_decode($content, true);
         if ($json && is_array($json)) {
             echo "✓ Valid JSON response\n";
