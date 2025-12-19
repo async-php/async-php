@@ -35,7 +35,7 @@ Kernel::run(function () {
         }
     });
 
-    Time::sleep(100); // Give server time to start
+    Time::sleep(0.1); // Give server time to start
 
     echo "[Client] Connecting...\n";
     // stream_socket_client is not hooked by stream_wrapper_register('tcp').

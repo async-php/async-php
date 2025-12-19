@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 use Async\Network\Tcp\Socket as TcpSocket;
 use Async\Network\Tcp\Server as TcpServer;
 use Async\Network\Unix\Socket as UnixSocket;
@@ -54,7 +55,7 @@ function test_net_errors() {
 
 Kernel::run(function () {
     test_net_errors();
-    
+
     // Keep loop alive briefly to let async tasks run
-    Kernel::sleep(500);
+    Time::sleep(0.5);
 });

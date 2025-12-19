@@ -137,7 +137,7 @@ Kernel::run(function () {
     });
 
     // Wait for concurrent tasks
-    Time::sleep(5000);
+    Time::sleep(5);
 
     echo "   Concurrent request results:\n";
     foreach ($results as $key => $title) {

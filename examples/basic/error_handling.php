@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Async\Kernel;
+use Async\Time;
 use Async\FileSystem;
 
 function test_exception_handling() {
@@ -45,5 +46,5 @@ function test_exception_handling() {
 Kernel::run(function () {
     test_exception_handling();
     // Keep main loop alive to allow spawned fibers to run
-    Kernel::sleep(500);
+    Time::sleep(0.5);
 });

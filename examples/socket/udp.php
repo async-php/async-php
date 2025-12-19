@@ -26,7 +26,7 @@ Kernel::run(function () {
         }
     });
 
-    Time::sleep(100);
+    Time::sleep(0.1);
 
     echo "[Client] Sending UDP packet...\n";
     

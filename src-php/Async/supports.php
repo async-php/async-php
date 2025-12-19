@@ -10,14 +10,14 @@ use Async\Time;
 
 if (!function_exists('sleep')) {
     function sleep(int $seconds): int {
-        Time::sleep($seconds * 1000);
+        Time::sleep($seconds);
         return 0;
     }
 }
 
 if (!function_exists('usleep')) {
     function usleep(int $microseconds): void {
-        Time::sleep((int)($microseconds / 1000));
+        Time::sleep($microseconds / 1000000);
     }
 }
 

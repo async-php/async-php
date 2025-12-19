@@ -52,7 +52,7 @@ Kernel::run(function () {
                 fclose($conn);
                 break;
             }
-            Time::sleep(10);
+            Time::sleep(0.01);
         }
     });
     

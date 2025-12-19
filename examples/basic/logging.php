@@ -24,7 +24,7 @@ Kernel::run(function () {
     });
 
     // Main fiber acts as client
-    Time::sleep(500); // Wait for server to start
+    Time::sleep(0.5); // Wait for server to start
     echo "Sending request to trigger logs...\n";
     $ctx = stream_context_create(['http' => ['timeout' => 1]]);
     @file_get_contents("http://$addr", false, $ctx);

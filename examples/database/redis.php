@@ -132,7 +132,7 @@ Kernel::run(function () {
     go(function () use ($redis) {
         for ($i = 1; $i <= 5; $i++) {
             $redis->set("task1:item{$i}", "value{$i}");
-            Time::sleep(10); // Small delay
+            Time::sleep(0.01); // Small delay
         }
         echo "   Task 1 completed\n";
     });
@@ -140,7 +140,7 @@ Kernel::run(function () {
     go(function () use ($redis) {
         for ($i = 1; $i <= 5; $i++) {
             $redis->set("task2:item{$i}", "value{$i}");
-            Time::sleep(10);
+            Time::sleep(0.01);
         }
         echo "   Task 2 completed\n";
     });
@@ -148,14 +148,14 @@ Kernel::run(function () {
     go(function () use ($redis) {
         for ($i = 1; $i <= 5; $i++) {
             $redis->incr("concurrent:counter");
-            Time::sleep(10);
+            Time::sleep(0.01);
         }
         $final = $redis->get("concurrent:counter");
         echo "   Task 3 completed (counter: {$final})\n";
     });
 
     // Wait for concurrent tasks
-    Time::sleep(100);
+    Time::sleep(0.1);
 
     // Verify concurrent operations
     $counter = $redis->get("concurrent:counter");
@@ -163,7 +163,7 @@ Kernel::run(function () {
 
     // Check expiration
     echo "11. Checking expiration (after 5+ seconds)...\n";
-    Time::sleep(6000); // Wait 6 seconds
+    Time::sleep(6); // Wait 6 seconds
     $sessionData = $redis->get('session:123');
     echo "   session:123 = " . ($sessionData === false ? 'expired (false)' : $sessionData) . "\n\n";
 

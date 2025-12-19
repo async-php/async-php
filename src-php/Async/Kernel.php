@@ -32,11 +32,6 @@ class Kernel
         \run($fiber);
     }
 
-    public static function sleep(int $ms): void
-    {
-        \Fiber::suspend(Time::sleep($ms));
-    }
-
     public static function spawn(callable $task): int
     {
         return \go($task);
