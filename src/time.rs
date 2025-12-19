@@ -13,40 +13,69 @@ pub struct AsyncTime;
 
 #[php_impl]
 impl AsyncTime {
-    /// Pauses the current fiber for at least the duration ms (in milliseconds).
-    pub fn sleep(ms: i64) -> RustFuture {
+    /// Pauses the current fiber for the given number of seconds (can be fractional).
+    ///
+    /// # Arguments
+    /// * `seconds` - Time to sleep in seconds.
+    pub fn sleep(seconds: f64) -> RustFuture {
         let future = async move {
-            tokio_sleep(Duration::from_millis(ms as u64)).await;
+            tokio_sleep(Duration::from_secs_f64(seconds)).await;
             Zval::new()
         };
         RustFuture::new(future)
     }
 
-    /// Returns a RustFuture that resolves after the duration ms (in milliseconds).
-    pub fn after(ms: i64) -> RustFuture {
-        Self::sleep(ms)
+    /// Pauses the current fiber for the given number of microseconds.
+    pub fn usleep(micros: i64) -> RustFuture {
+        let future = async move {
+            tokio_sleep(Duration::from_micros(micros as u64)).await;
+            Zval::new()
+        };
+        RustFuture::new(future)
+    }
+
+    /// Wraps a Future with a timeout.
+    ///
+    /// If the future completes before the timeout, its result is returned.
+    /// If the timeout elapses, an exception is thrown.
+    pub fn timeout(seconds: f64, future: &mut RustFuture) -> RustFuture {
+        let duration = Duration::from_secs_f64(seconds);
+        // Take the inner future from the passed RustFuture wrapper
+        let inner = future.take_inner();
+
+        RustFuture::new(async move {
+            if let Some(fut) = inner {
+                match tokio::time::timeout(duration, fut).await {
+                    Ok(result) => result, // Future completed successfully
+                    Err(_) => Err("Operation timed out".to_string()),
+                }
+            } else {
+                Err("Invalid future (already consumed)".to_string())
+            }
+        })
     }
 
     /// Schedules a callback to be executed after seconds.
     pub fn timer(seconds: f64, callback: &Zval) {
         let callback = callback.shallow_clone();
-        let ms = (seconds * 1000.0) as u64;
+        let duration = Duration::from_secs_f64(seconds);
 
         crate::context::spawn_local(async move {
-            tokio_sleep(Duration::from_millis(ms)).await;
+            tokio_sleep(duration).await;
             if let Err(e) = callback.try_call(vec![]) {
                 eprintln!("Timer callback failed: {}", e);
             }
         });
     }
 
-    /// Returns the current time as a Unix timestamp in milliseconds.
-    pub fn now() -> i64 {
+    /// Returns the current time as a Unix timestamp with microsecond precision (float).
+    /// Similar to PHP's microtime(true).
+    pub fn now() -> f64 {
         let start = SystemTime::now();
         let since_the_epoch = start
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
-        since_the_epoch.as_millis() as i64
+        since_the_epoch.as_secs_f64()
     }
 
     /// Creates a new Ticker that sends messages on a channel at intervals.

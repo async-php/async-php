@@ -12,7 +12,7 @@ $main = new Fiber(function () {
     go(function () {
         echo "  [Child] Started. Sleeping 500ms...\n";
         // Child does a long sleep
-        Fiber::suspend(\Async\Time::sleep(500));
+        Fiber::suspend(\Async\Time::sleep(0.5)); // 500ms = 0.5s
         echo "  [Child] Woke up!\n";
         
         echo "  [Child] Done.\n";
@@ -21,7 +21,7 @@ $main = new Fiber(function () {
     // Demonstrate AsyncTime::after
     go(function() {
         echo "    [After] Started. Will fire after 300ms...\n";
-        Fiber::suspend(\Async\Time::after(300));
+        Fiber::suspend(\Async\Time::sleep(0.3)); // 300ms = 0.3s
         echo "    [After] Fired after 300ms!\n";
     });
 
@@ -43,7 +43,7 @@ $main = new Fiber(function () {
     
     // Main continues doing something else concurrently
     for ($i = 0; $i < 4; $i++) {
-        Fiber::suspend(\Async\Time::sleep(200));
+        Fiber::suspend(\Async\Time::sleep(0.2)); // 200ms = 0.2s
         echo "[Main] Tick $i (200ms interval)\n";
     }
     
