@@ -17,9 +17,9 @@ use Async\IO\Wrapper\ReaderWrapper;
  *
  * Usage (Client):
  * ```php
- * $request = new Request('POST', 'https://api.example.com/users');
- * $request->header('Authorization', 'Bearer token')
- *         ->bodyJson(['name' => 'John']);
+ * $request = (new Request('POST', 'https://api.example.com/users'))
+ *     ->withHeader('Authorization', 'Bearer token')
+ *     ->withJson(['name' => 'John']);
  * $response = $client->send($request);
  * ```
  *
@@ -28,7 +28,8 @@ use Async\IO\Wrapper\ReaderWrapper;
  * function handler(Request $req): Response {
  *     $method = $req->method();
  *     $path = $req->path();
- *     $body = $req->body();
+ *     $body = $req->text();
+ *     $data = $req->json();
  *     // ...
  * }
  * ```
@@ -129,14 +130,14 @@ class Request
     }
 
     /**
-     * Get a specific header value
+     * Get a specific header value (first value if multiple exist)
      *
      * @param string $name Header name (case-insensitive)
      * @return string|null First value if exists
      */
-    public function getHeader(string $name): ?string
+    public function header(string $name): ?string
     {
-        $values = $this->getHeaderValues($name);
+        $values = $this->headerValues($name);
         return $values[0] ?? null;
     }
 
@@ -145,7 +146,7 @@ class Request
      *
      * @return list<string>
      */
-    public function getHeaderValues(string $name): array
+    public function headerValues(string $name): array
     {
         $key = strtolower($name);
         return $this->headers[$key] ?? [];
@@ -154,9 +155,9 @@ class Request
     /**
      * Get header line (comma-joined), similar to PSR-7.
      */
-    public function getHeaderLine(string $name): string
+    public function headerLine(string $name): string
     {
-        $values = $this->getHeaderValues($name);
+        $values = $this->headerValues($name);
         return implode(', ', $values);
     }
 
@@ -182,22 +183,14 @@ class Request
     }
 
     /**
-     * Get request body as string (consumes the body).
-     */
-    public function body(): string
-    {
-        return $this->text();
-    }
-
-    /**
      * Get request body as JSON array
      *
      * @return array|null
      */
     public function json(): ?array
     {
-        $body = $this->body();
-        return json_decode($body, true) ?: null;
+        $text = $this->text();
+        return json_decode($text, true) ?: null;
     }
 
     /**
@@ -224,7 +217,7 @@ class Request
      * @param string|null $default
      * @return string|null
      */
-    public function getQuery(string $name, ?string $default = null): ?string
+    public function queryParam(string $name, ?string $default = null): ?string
     {
         $query = $this->query();
         return $query[$name] ?? $default;
@@ -241,13 +234,13 @@ class Request
     // Client-side builder methods
 
     /**
-     * Set a request header (client-side builder)
+     * Set a request header (overwrites existing value)
      *
      * @param string $name
      * @param string $value
      * @return self
      */
-    public function header(string $name, string $value): self
+    public function withHeader(string $name, string $value): self
     {
         $this->headers[strtolower($name)] = [$value];
         return $this;
@@ -256,7 +249,7 @@ class Request
     /**
      * Append a header value without overwriting existing ones.
      */
-    public function appendHeader(string $name, string $value): self
+    public function withAddedHeader(string $name, string $value): self
     {
         $key = strtolower($name);
         $this->headers[$key] ??= [];
@@ -265,16 +258,16 @@ class Request
     }
 
     /**
-     * Set request body as text (client-side builder)
+     * Set request body as text
      *
      * @param string $body
      * @param string|null $contentType
      * @return self
      */
-    public function bodyText(string $body, ?string $contentType = null): self
+    public function withText(string $body, ?string $contentType = null): self
     {
         if ($contentType !== null) {
-            $this->header('Content-Type', $contentType);
+            $this->withHeader('Content-Type', $contentType);
         }
 
         $this->body = self::readerFromString($body);
@@ -283,34 +276,34 @@ class Request
     }
 
     /**
-     * Set request body as JSON (client-side builder)
+     * Set request body as JSON
      *
      * @param array|object $data
      * @return self
      */
-    public function bodyJson(array|object $data): self
+    public function withJson(array|object $data): self
     {
         $json = json_encode($data);
         if ($json === false) {
             throw new \InvalidArgumentException('Failed to encode JSON body');
         }
 
-        $this->header('Content-Type', 'application/json');
+        $this->withHeader('Content-Type', 'application/json');
         $this->body = self::readerFromString($json);
         $this->cachedText = $json;
         return $this;
     }
 
     /**
-     * Set request body as form data (client-side builder)
+     * Set request body as form data
      *
      * @param array<string, string> $data
      * @return self
      */
-    public function bodyForm(array $data): self
+    public function withForm(array $data): self
     {
         $body = http_build_query($data);
-        $this->header('Content-Type', 'application/x-www-form-urlencoded');
+        $this->withHeader('Content-Type', 'application/x-www-form-urlencoded');
         $this->body = self::readerFromString($body);
         $this->cachedText = $body;
         return $this;
@@ -319,7 +312,7 @@ class Request
     /**
      * Set request body as a Reader (streaming).
      */
-    public function bodyStream(Reader $reader): self
+    public function withBody(Reader $reader): self
     {
         $this->body = $reader;
         $this->cachedText = null;
@@ -327,12 +320,12 @@ class Request
     }
 
     /**
-     * Set timeout for this request (client-side builder)
+     * Set timeout for this request
      *
      * @param float $seconds
      * @return self
      */
-    public function timeout(float $seconds): self
+    public function withTimeout(float $seconds): self
     {
         $this->timeoutSeconds = $seconds;
         return $this;
@@ -367,23 +360,6 @@ class Request
         return $kernel;
     }
 
-    /**
-     * Backward-compatible alias.
-     *
-     * @internal
-     */
-    public function getKernel(): KernelRequest
-    {
-        return $this->toKernelRequest();
-    }
-
-    /**
-     * Backward-compatible alias.
-     */
-    public function getBody(): Reader
-    {
-        return $this->bodyReader();
-    }
 
     /** @param array<string, list<string>> $headers */
     private static function normalizeHeaderMap(array $headers): array

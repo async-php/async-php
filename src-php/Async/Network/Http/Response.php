@@ -135,7 +135,7 @@ class Response
      */
     public function header(string $name): ?string
     {
-        $values = $this->getHeaderValues($name);
+        $values = $this->headerValues($name);
         return $values[0] ?? null;
     }
 
@@ -144,7 +144,7 @@ class Response
      *
      * @return list<string>
      */
-    public function getHeaderValues(string $name): array
+    public function headerValues(string $name): array
     {
         $key = strtolower($name);
         return $this->headers[$key] ?? [];
@@ -153,9 +153,9 @@ class Response
     /**
      * Get header line (comma-joined), similar to PSR-7.
      */
-    public function getHeaderLine(string $name): string
+    public function headerLine(string $name): string
     {
-        return implode(', ', $this->getHeaderValues($name));
+        return implode(', ', $this->headerValues($name));
     }
 
     /**
@@ -275,7 +275,7 @@ class Response
      * @param int $status
      * @return self
      */
-    public function setStatus(int $status): self
+    public function withStatus(int $status): self
     {
         $this->status = $status;
         return $this;
@@ -288,7 +288,7 @@ class Response
      * @param string $value
      * @return self
      */
-    public function setHeader(string $name, string $value): self
+    public function withHeader(string $name, string $value): self
     {
         $this->headers[strtolower($name)] = [$value];
         return $this;
@@ -297,7 +297,7 @@ class Response
     /**
      * Append a header value without overwriting existing ones.
      */
-    public function appendHeader(string $name, string $value): self
+    public function withAddedHeader(string $name, string $value): self
     {
         $key = strtolower($name);
         $this->headers[$key] ??= [];
@@ -311,7 +311,7 @@ class Response
      * @param string|Reader $body
      * @return self
      */
-    public function setBody(string|Reader $body): self
+    public function withBody(string|Reader $body): self
     {
         if (is_string($body)) {
             $this->body = self::readerFromString($body);
@@ -330,14 +330,14 @@ class Response
      * @param array|object $data
      * @return self
      */
-    public function setJson(array|object $data): self
+    public function withJson(array|object $data): self
     {
         $json = json_encode($data);
         if ($json === false) {
             throw new \InvalidArgumentException('Failed to encode JSON body');
         }
-        $this->setHeader('Content-Type', 'application/json');
-        $this->setBody($json);
+        $this->withHeader('Content-Type', 'application/json');
+        $this->withBody($json);
         return $this;
     }
 
@@ -347,10 +347,10 @@ class Response
      * @param string $html
      * @return self
      */
-    public function setHtml(string $html): self
+    public function withHtml(string $html): self
     {
-        $this->setHeader('Content-Type', 'text/html; charset=utf-8');
-        $this->setBody($html);
+        $this->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $this->withBody($html);
         return $this;
     }
 
@@ -360,10 +360,10 @@ class Response
      * @param string $text
      * @return self
      */
-    public function setText(string $text): self
+    public function withText(string $text): self
     {
-        $this->setHeader('Content-Type', 'text/plain; charset=utf-8');
-        $this->setBody($text);
+        $this->withHeader('Content-Type', 'text/plain; charset=utf-8');
+        $this->withBody($text);
         return $this;
     }
 
@@ -391,43 +391,6 @@ class Response
         }
 
         return $kernel;
-    }
-
-    /**
-     * Backward-compatible alias.
-     *
-     * @internal
-     */
-    public function getKernel(): KernelResponse
-    {
-        return $this->toKernelResponse();
-    }
-
-    // ===== Compatibility aliases for existing examples =====
-
-    public function getStatusCode(): int
-    {
-        return $this->status();
-    }
-
-    public function getReasonPhrase(): string
-    {
-        return self::reasonPhraseFor($this->status());
-    }
-
-    public function getHeaders(): array
-    {
-        return $this->headers();
-    }
-
-    public function getHeader(string $name): ?string
-    {
-        return $this->header($name);
-    }
-
-    public function getBody(): Reader
-    {
-        return $this->bodyReader();
     }
 
     /** @param array<string, list<string>> $headers */
