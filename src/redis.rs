@@ -36,7 +36,9 @@ impl AsyncRedisClient {
     ///
     /// # Parameters
     /// - `host`: Redis server host (default: "127.0.0.1")
+    ///           Can also be a full Redis URL (e.g., "redis://host:port" or "rediss://host:port")
     /// - `port`: Redis server port (default: 6379)
+    ///           Ignored if host is a full URL
     /// - `timeout`: Connection timeout in seconds (default: 0.0, no timeout)
     /// - `reserved`: Reserved parameter (unused, for compatibility)
     /// - `retry_interval`: Retry interval in milliseconds (unused, for compatibility)
@@ -44,7 +46,14 @@ impl AsyncRedisClient {
     ///
     /// # Example
     /// ```php
+    /// // Standard connection
     /// $redis->connect('127.0.0.1', 6379);
+    ///
+    /// // TLS connection using URL
+    /// $redis->connect('rediss://redis.example.com:6380');
+    ///
+    /// // TLS connection with insecure mode (skip certificate verification)
+    /// $redis->connect('rediss://redis.example.com:6380#insecure');
     /// ```
     #[php]
     pub fn connect(
@@ -65,7 +74,14 @@ impl AsyncRedisClient {
         let error_ref = self.last_error.clone();
 
         let future = async move {
-            let url = format!("redis://{}:{}", host, port);
+            // Check if host is already a full URL
+            let url = if host.starts_with("redis://") || host.starts_with("rediss://") {
+                // Use the provided URL as-is
+                host
+            } else {
+                // Build a standard redis:// URL
+                format!("redis://{}:{}", host, port)
+            };
 
             match redis::Client::open(url) {
                 Ok(client) => {
@@ -101,6 +117,81 @@ impl AsyncRedisClient {
         true
     }
 
+    /// Connect to Redis server with TLS
+    ///
+    /// # Parameters
+    /// - `host`: Redis server host (default: "127.0.0.1")
+    /// - `port`: Redis server port (default: 6380 for TLS)
+    /// - `timeout`: Connection timeout in seconds (default: 0.0, no timeout)
+    /// - `reserved`: Reserved parameter (unused, for compatibility)
+    /// - `retry_interval`: Retry interval in milliseconds (unused, for compatibility)
+    /// - `read_timeout`: Read timeout in seconds (default: 0.0, no timeout)
+    /// - `insecure`: Skip certificate verification (default: false)
+    ///
+    /// # Example
+    /// ```php
+    /// // Connect with TLS (certificate verification enabled)
+    /// $redis->connectTls('redis.example.com', 6380);
+    ///
+    /// // Connect with TLS (skip certificate verification - not recommended for production)
+    /// $redis->connectTls('redis.example.com', 6380, 0.0, null, null, 0.0, true);
+    /// ```
+    #[php]
+    pub fn connect_tls(
+        &mut self,
+        host: Option<String>,
+        port: Option<i64>,
+        timeout: Option<f64>,
+        _reserved: Option<&Zval>,
+        _retry_interval: Option<i64>,
+        read_timeout: Option<f64>,
+        insecure: Option<bool>,
+    ) -> RustFuture {
+        let host = host.unwrap_or_else(|| "127.0.0.1".to_string());
+        let port = port.unwrap_or(6380);
+        let _timeout = timeout.unwrap_or(0.0);
+        let _read_timeout = read_timeout.unwrap_or(0.0);
+        let insecure = insecure.unwrap_or(false);
+
+        let manager_ref = self.manager.clone();
+        let error_ref = self.last_error.clone();
+
+        let future = async move {
+            // Use rediss:// scheme for TLS
+            let mut url = format!("rediss://{}:{}", host, port);
+
+            // Append #insecure if certificate verification should be skipped
+            if insecure {
+                url.push_str("#insecure");
+            }
+
+            match redis::Client::open(url) {
+                Ok(client) => {
+                    match client.get_connection_manager().await {
+                        Ok(manager) => {
+                            *manager_ref.get_mut() = Some(manager);
+                            *error_ref.get_mut() = String::new();
+
+                            let mut z = Zval::new();
+                            z.set_bool(true);
+                            Ok::<Zval, String>(z)
+                        }
+                        Err(e) => {
+                            *error_ref.get_mut() = e.to_string();
+                            Err(format!("Failed to connect with TLS: {}", e))
+                        }
+                    }
+                }
+                Err(e) => {
+                    *error_ref.get_mut() = e.to_string();
+                    Err(format!("Invalid Redis TLS URL: {}", e))
+                }
+            }
+        };
+
+        RustFuture::new(future)
+    }
+
     /// Ping the server
     ///
     /// # Example
@@ -118,7 +209,7 @@ impl AsyncRedisClient {
                 };
 
                 match result {
-                    Ok(response) => Ok(RedisValue::Data(response.into_bytes())),
+                    Ok(response) => Ok(RedisValue::BulkString(response.into_bytes())),
                     Err(e) => Err(e),
                 }
             })
@@ -143,7 +234,7 @@ impl AsyncRedisClient {
                 };
 
                 match result {
-                    Ok(_) => Ok(RedisValue::Data(b"OK".to_vec())),
+                    Ok(_) => Ok(RedisValue::BulkString(b"OK".to_vec())),
                     Err(e) => Err(e),
                 }
             })
@@ -161,7 +252,7 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 conn.get::<_, Option<Vec<u8>>>(&key).await.map(|opt| {
-                    opt.map(RedisValue::Data).unwrap_or(RedisValue::Nil)
+                    opt.map(RedisValue::BulkString).unwrap_or(RedisValue::Nil)
                 })
             })
         })
@@ -360,7 +451,7 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 conn.lpop::<_, Option<Vec<u8>>>(&key, None).await.map(|opt| {
-                    opt.map(RedisValue::Data).unwrap_or(RedisValue::Nil)
+                    opt.map(RedisValue::BulkString).unwrap_or(RedisValue::Nil)
                 })
             })
         })
@@ -377,7 +468,7 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 conn.rpop::<_, Option<Vec<u8>>>(&key, None).await.map(|opt| {
-                    opt.map(RedisValue::Data).unwrap_or(RedisValue::Nil)
+                    opt.map(RedisValue::BulkString).unwrap_or(RedisValue::Nil)
                 })
             })
         })
@@ -410,8 +501,8 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 let values: Vec<Vec<u8>> = conn.lrange(&key, start as isize, stop as isize).await?;
-                Ok(RedisValue::Bulk(
-                    values.into_iter().map(RedisValue::Data).collect()
+                Ok(RedisValue::Array(
+                    values.into_iter().map(RedisValue::BulkString).collect()
                 ))
             })
         })
@@ -444,7 +535,7 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 conn.hget::<_, _, Option<Vec<u8>>>(&key, &field).await.map(|opt| {
-                    opt.map(RedisValue::Data).unwrap_or(RedisValue::Nil)
+                    opt.map(RedisValue::BulkString).unwrap_or(RedisValue::Nil)
                 })
             })
         })
@@ -463,9 +554,9 @@ impl AsyncRedisClient {
                 let result: Vec<(Vec<u8>, Vec<u8>)> = conn.hgetall(&key).await?;
                 let map: Vec<RedisValue> = result
                     .into_iter()
-                    .flat_map(|(k, v)| vec![RedisValue::Data(k), RedisValue::Data(v)])
+                    .flat_map(|(k, v)| vec![RedisValue::BulkString(k), RedisValue::BulkString(v)])
                     .collect();
-                Ok(RedisValue::Bulk(map))
+                Ok(RedisValue::Array(map))
             })
         })
     }
@@ -537,8 +628,8 @@ impl AsyncRedisClient {
         self.execute_command(move |mut conn| {
             Box::pin(async move {
                 let members: Vec<Vec<u8>> = conn.smembers(&key).await?;
-                Ok(RedisValue::Bulk(
-                    members.into_iter().map(RedisValue::Data).collect()
+                Ok(RedisValue::Array(
+                    members.into_iter().map(RedisValue::BulkString).collect()
                 ))
             })
         })
@@ -633,7 +724,7 @@ fn redis_value_to_zval(value: &RedisValue) -> Result<Zval, String> {
             z.set_long(*i);
             Ok(z)
         }
-        RedisValue::Data(bytes) => {
+        RedisValue::BulkString(bytes) => {
             let mut z = Zval::new();
             // Try to convert to string if valid UTF-8, otherwise return as binary
             match String::from_utf8(bytes.clone()) {
@@ -647,7 +738,7 @@ fn redis_value_to_zval(value: &RedisValue) -> Result<Zval, String> {
             }
             Ok(z)
         }
-        RedisValue::Bulk(values) => {
+        RedisValue::Array(values) => {
             let mut arr = ext_php_rs::types::ZendHashTable::new();
             for (i, val) in values.iter().enumerate() {
                 let z = redis_value_to_zval(val)?;
@@ -658,7 +749,7 @@ fn redis_value_to_zval(value: &RedisValue) -> Result<Zval, String> {
             z.set_hashtable(arr);
             Ok(z)
         }
-        RedisValue::Status(s) => {
+        RedisValue::SimpleString(s) => {
             let mut z = Zval::new();
             z.set_string(s, false)
                 .map_err(|e| format!("Failed to set string: {:?}", e))?;
@@ -668,6 +759,45 @@ fn redis_value_to_zval(value: &RedisValue) -> Result<Zval, String> {
             let mut z = Zval::new();
             z.set_bool(true);
             Ok(z)
+        }
+        RedisValue::Map(map) => {
+            let mut arr = ext_php_rs::types::ZendHashTable::new();
+            for (i, (k, v)) in map.iter().enumerate() {
+                let key = redis_value_to_zval(k)?;
+                let val = redis_value_to_zval(v)?;
+                // Use index for now, could be improved to use key as string key
+                arr.insert_at_index(i as i64 * 2, key)
+                    .map_err(|e| format!("Failed to insert key: {:?}", e))?;
+                arr.insert_at_index(i as i64 * 2 + 1, val)
+                    .map_err(|e| format!("Failed to insert value: {:?}", e))?;
+            }
+            let mut z = Zval::new();
+            z.set_hashtable(arr);
+            Ok(z)
+        }
+        RedisValue::Attribute { data, .. } => {
+            // For attributes, just return the data part
+            redis_value_to_zval(data)
+        }
+        RedisValue::Set(values) => {
+            let mut arr = ext_php_rs::types::ZendHashTable::new();
+            for (i, val) in values.iter().enumerate() {
+                let z = redis_value_to_zval(val)?;
+                arr.insert_at_index(i as i64, z)
+                    .map_err(|e| format!("Failed to insert into set: {:?}", e))?;
+            }
+            let mut z = Zval::new();
+            z.set_hashtable(arr);
+            Ok(z)
+        }
+        RedisValue::Double(f) => {
+            let mut z = Zval::new();
+            z.set_double(*f);
+            Ok(z)
+        }
+        // Catch-all for any other variants we might have missed
+        _ => {
+            Err(format!("Unsupported Redis value type: {:?}", value))
         }
     }
 }
