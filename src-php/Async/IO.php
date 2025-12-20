@@ -10,22 +10,8 @@ use Async\IO\Wrapper\ReadWriterWrapper;
 use Async\IO\Wrapper\ReadSeekerWrapper;
 use Async\IO\Wrapper\WriteSeekerWrapper;
 use Async\IO\Wrapper\ReadWriteSeekerWrapper;
-use Async\IO\Adapter\ByteReaderAdapter;
-use Async\IO\Adapter\ByteWriterAdapter;
-use Async\IO\Adapter\StringReaderAdapter;
-use Async\IO\Adapter\StringWriterAdapter;
-use Async\IO\Adapter\RuneReaderAdapter;
-use Async\IO\Adapter\ReaderAtAdapter;
-use Async\IO\Adapter\WriterAtAdapter;
-use Async\IO\Adapter\ReaderFromAdapter;
-use Async\IO\Adapter\WriterToAdapter;
 use Async\IO\Reader;
 use Async\IO\Writer;
-use Async\IO\Seeker;
-use Async\IO\ReadWriter;
-use Async\IO\ReadSeeker;
-use Async\IO\WriteSeeker;
-use Async\IO\ReadWriteSeeker;
 use Async\Kernel\IO\AsyncReader;
 use Async\Kernel\IO\AsyncWriter;
 use Async\Kernel\IO\AsyncSeeker;
@@ -85,119 +71,73 @@ class IO
      */
     public static function copy(Reader $reader, Writer $writer, int $bufferSize = 8192): int
     {
-        return self::asWriterTo($reader, $bufferSize)->writeTo($writer);
+        $totalWritten = 0;
+        while (true) {
+            $data = $reader->read($bufferSize);
+            if ($data === null || $data === '') {
+                break;
+            }
+            $n = $writer->write($data);
+            $totalWritten += $n;
+            if ($n < strlen($data)) {
+                break;
+            }
+        }
+        return $totalWritten;
     }
 
     /**
-     * Wrap a PHP reader object into PhpReader (for tokio async usage)
+     * Wrap a PHP IO object into a PhpIO kernel type (for tokio async usage)
      *
-     * The object should have a read($length) method that returns string|null
+     * Based on the bitflags provided, creates the appropriate PhpIO type:
+     * - READ: PhpReader - requires read($length) method
+     * - WRITE: PhpWriter - requires write($data) and flush() methods
+     * - SEEK: PhpSeeker - requires seek($offset, $whence) method
+     * - BUF: PhpBufReader - requires read_line() method
+     * - READ|WRITE: PhpReadWriter
+     * - READ|SEEK: PhpReadSeeker
+     * - WRITE|SEEK: PhpWriteSeeker
+     * - READ|WRITE|SEEK: PhpReadWriteSeeker
      *
-     * @param object $reader PHP object with read($length) method
-     * @return \Async\Kernel\IO\PhpReader
+     * @param object $io PHP object implementing the required methods
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return \Async\Kernel\IO\PhpReader|\Async\Kernel\IO\PhpWriter|\Async\Kernel\IO\PhpSeeker|\Async\Kernel\IO\PhpBufReader|\Async\Kernel\IO\PhpReadWriter|\Async\Kernel\IO\PhpReadSeeker|\Async\Kernel\IO\PhpWriteSeeker|\Async\Kernel\IO\PhpReadWriteSeeker
      */
-    public static function wrapPhpReader($reader): \Async\Kernel\IO\PhpReader
+    public static function wrapPhpIo(object $io, int $type)
     {
-        [$requestChannel, $responseChannel] = self::spawnIO($reader);
-        return new \Async\Kernel\IO\PhpReader($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
+        [$requestChannel, $responseChannel] = self::spawnIO($io);
+        $reqChan = $requestChannel->unwrap();
+        $resChan = $responseChannel->unwrap();
 
-    /**
-     * Wrap a PHP writer object into PhpWriter (for tokio async usage)
-     *
-     * The object should have write($data) and flush() methods
-     *
-     * @param object $writer PHP object with write($data) and flush() methods
-     * @return \Async\Kernel\IO\PhpWriter
-     */
-    public static function wrapPhpWriter($writer): \Async\Kernel\IO\PhpWriter
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($writer);
-        return new \Async\Kernel\IO\PhpWriter($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
+        // Check for combined types first (most specific to least specific)
+        if (($type & self::READ) && ($type & self::WRITE) && ($type & self::SEEK)) {
+            return new \Async\Kernel\IO\PhpReadWriteSeeker($reqChan, $resChan);
+        }
+        if (($type & self::READ) && ($type & self::SEEK)) {
+            return new \Async\Kernel\IO\PhpReadSeeker($reqChan, $resChan);
+        }
+        if (($type & self::WRITE) && ($type & self::SEEK)) {
+            return new \Async\Kernel\IO\PhpWriteSeeker($reqChan, $resChan);
+        }
+        if (($type & self::READ) && ($type & self::WRITE)) {
+            return new \Async\Kernel\IO\PhpReadWriter($reqChan, $resChan);
+        }
 
-    /**
-     * Wrap a PHP seeker object into PhpSeeker (for tokio async usage)
-     *
-     * The object should have a seek($offset, $whence) method
-     *
-     * @param object $seeker PHP object with seek($offset, $whence) method
-     * @return \Async\Kernel\IO\PhpSeeker
-     */
-    public static function wrapPhpSeeker($seeker): \Async\Kernel\IO\PhpSeeker
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($seeker);
-        return new \Async\Kernel\IO\PhpSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
+        // Check for single types
+        if ($type & self::BUF) {
+            return new \Async\Kernel\IO\PhpBufReader($reqChan, $resChan);
+        }
+        if ($type & self::READ) {
+            return new \Async\Kernel\IO\PhpReader($reqChan, $resChan);
+        }
+        if ($type & self::WRITE) {
+            return new \Async\Kernel\IO\PhpWriter($reqChan, $resChan);
+        }
+        if ($type & self::SEEK) {
+            return new \Async\Kernel\IO\PhpSeeker($reqChan, $resChan);
+        }
 
-    /**
-     * Wrap a PHP buffered reader object into PhpBufReader (for tokio async usage)
-     *
-     * The object should have read_line() and read($length) methods
-     *
-     * @param object $reader PHP object with read_line() and read($length) methods
-     * @return \Async\Kernel\IO\PhpBufReader
-     */
-    public static function wrapPhpBufReader($reader): \Async\Kernel\IO\PhpBufReader
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($reader);
-        return new \Async\Kernel\IO\PhpBufReader($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
-
-    /**
-     * Wrap a PHP read-writer object into PhpReadWriter (for tokio async usage)
-     *
-     * The object should have read($length), write($data), and flush() methods
-     *
-     * @param object $readWriter PHP object implementing read, write, and flush methods
-     * @return \Async\Kernel\IO\PhpReadWriter
-     */
-    public static function wrapPhpReadWriter($readWriter): \Async\Kernel\IO\PhpReadWriter
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($readWriter);
-        return new \Async\Kernel\IO\PhpReadWriter($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
-
-    /**
-     * Wrap a PHP read-seeker object into PhpReadSeeker (for tokio async usage)
-     *
-     * The object should have read($length) and seek($offset, $whence) methods
-     *
-     * @param object $readSeeker PHP object implementing read and seek methods
-     * @return \Async\Kernel\IO\PhpReadSeeker
-     */
-    public static function wrapPhpReadSeeker($readSeeker): \Async\Kernel\IO\PhpReadSeeker
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($readSeeker);
-        return new \Async\Kernel\IO\PhpReadSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
-
-    /**
-     * Wrap a PHP write-seeker object into PhpWriteSeeker (for tokio async usage)
-     *
-     * The object should have write($data), flush(), and seek($offset, $whence) methods
-     *
-     * @param object $writeSeeker PHP object implementing write, flush, and seek methods
-     * @return \Async\Kernel\IO\PhpWriteSeeker
-     */
-    public static function wrapPhpWriteSeeker($writeSeeker): \Async\Kernel\IO\PhpWriteSeeker
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($writeSeeker);
-        return new \Async\Kernel\IO\PhpWriteSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
-    }
-
-    /**
-     * Wrap a PHP read-write-seeker object into PhpReadWriteSeeker (for tokio async usage)
-     *
-     * The object should have read($length), write($data), flush(), and seek($offset, $whence) methods
-     *
-     * @param object $readWriteSeeker PHP object implementing read, write, flush, and seek methods
-     * @return \Async\Kernel\IO\PhpReadWriteSeeker
-     */
-    public static function wrapPhpReadWriteSeeker($readWriteSeeker): \Async\Kernel\IO\PhpReadWriteSeeker
-    {
-        [$requestChannel, $responseChannel] = self::spawnIO($readWriteSeeker);
-        return new \Async\Kernel\IO\PhpReadWriteSeeker($requestChannel->unwrap(), $responseChannel->unwrap());
+        throw new \InvalidArgumentException('Invalid IO type flags: ' . $type);
     }
 
     /**
