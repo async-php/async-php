@@ -178,9 +178,22 @@ impl AsyncRead for PhpIo<ReadOp> {
                 }
 
                 if let Some(bytes) = result.binary() {
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
                     buf.put_slice(&bytes);
                 } else if let Some(s) = result.str() {
-                    buf.put_slice(s.as_bytes());
+                    let bytes = s.as_bytes();
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
+                    buf.put_slice(bytes);
                 } else {
                     return Poll::Ready(Err(IoError::new(
                         ErrorKind::InvalidData,
@@ -513,9 +526,22 @@ impl AsyncRead for PhpIo<ReadWriteOp> {
                 }
 
                 if let Some(bytes) = result.binary() {
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
                     buf.put_slice(&bytes);
                 } else if let Some(s) = result.str() {
-                    buf.put_slice(s.as_bytes());
+                    let bytes = s.as_bytes();
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
+                    buf.put_slice(bytes);
                 } else {
                     return Poll::Ready(Err(IoError::new(
                         ErrorKind::InvalidData,
@@ -663,9 +689,22 @@ impl AsyncRead for PhpIo<ReadSeekOp> {
                 }
 
                 if let Some(bytes) = result.binary() {
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
                     buf.put_slice(&bytes);
                 } else if let Some(s) = result.str() {
-                    buf.put_slice(s.as_bytes());
+                    let bytes = s.as_bytes();
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
+                    buf.put_slice(bytes);
                 } else {
                     return Poll::Ready(Err(IoError::new(
                         ErrorKind::InvalidData,
@@ -926,9 +965,22 @@ impl AsyncRead for PhpIo<ReadWriteSeekOp> {
                 }
 
                 if let Some(bytes) = result.binary() {
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
                     buf.put_slice(&bytes);
                 } else if let Some(s) = result.str() {
-                    buf.put_slice(s.as_bytes());
+                    let bytes = s.as_bytes();
+                    if bytes.len() > buf.remaining() {
+                        return Poll::Ready(Err(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Read response exceeded requested length",
+                        )));
+                    }
+                    buf.put_slice(bytes);
                 } else {
                     return Poll::Ready(Err(IoError::new(
                         ErrorKind::InvalidData,
