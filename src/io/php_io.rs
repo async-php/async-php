@@ -18,6 +18,104 @@ use super::php_bridge::{PhpIoBridge, PhpIoCallFuture, php_io_call_future};
 use super::traits::{AsyncReadSeek, AsyncReadWrite, AsyncReadWriteSeek, AsyncWriteSeek};
 use super::cast::cast_io;
 
+// ==================== Helper Functions ====================
+
+/// Helper to process read response from PHP and write to buffer
+fn process_read_response(result: Zval, buf: &mut tokio::io::ReadBuf<'_>) -> IoResult<()> {
+    if result.is_null() {
+        return Ok(());
+    }
+
+    if let Some(bytes) = result.binary() {
+        if bytes.len() > buf.remaining() {
+            return Err(IoError::new(
+                ErrorKind::InvalidData,
+                "Read response exceeded requested length",
+            ));
+        }
+        buf.put_slice(&bytes);
+    } else if let Some(s) = result.str() {
+        let bytes = s.as_bytes();
+        if bytes.len() > buf.remaining() {
+            return Err(IoError::new(
+                ErrorKind::InvalidData,
+                "Read response exceeded requested length",
+            ));
+        }
+        buf.put_slice(bytes);
+    } else {
+        return Err(IoError::new(
+            ErrorKind::InvalidData,
+            "Invalid read response",
+        ));
+    }
+    Ok(())
+}
+
+/// Helper to create write future
+fn create_write_future(
+    bridge: PhpIoBridge,
+    write_buf: &[u8],
+) -> LocalBoxFuture<'static, IoResult<usize>> {
+    let mut data_zval = Zval::new();
+    data_zval.set_binary(write_buf.to_vec());
+    async move {
+        let result = bridge.call("write", vec![data_zval]).await?;
+        if let Some(n) = result.long() {
+            Ok(n as usize)
+        } else {
+            Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
+        }
+    }
+    .boxed_local()
+}
+
+/// Helper to create flush future
+fn create_flush_future(bridge: PhpIoBridge) -> LocalBoxFuture<'static, IoResult<()>> {
+    async move {
+        bridge.call("flush", vec![]).await?;
+        Ok(())
+    }
+    .boxed_local()
+}
+
+/// Helper to create shutdown future
+fn create_shutdown_future(bridge: PhpIoBridge) -> LocalBoxFuture<'static, IoResult<()>> {
+    async move {
+        bridge.call("close", vec![]).await?;
+        Ok(())
+    }
+    .boxed_local()
+}
+
+/// Helper to create seek future
+fn create_seek_call_future(
+    bridge: PhpIoBridge,
+    pos: SeekFrom,
+) -> PhpIoCallFuture {
+    let (offset, whence) = match pos {
+        SeekFrom::Start(pos) => (pos as i64, 0),
+        SeekFrom::Current(off) => (off, 1),
+        SeekFrom::End(off) => (off, 2),
+    };
+
+    let mut offset_zval = Zval::new();
+    let _ = offset_zval.set_long(offset);
+    let mut whence_zval = Zval::new();
+    let _ = whence_zval.set_long(whence);
+
+    php_io_call_future(bridge, "seek".to_string(), vec![offset_zval, whence_zval])
+}
+
+/// Helper to process seek result
+fn process_seek_result(result: Zval) -> IoResult<u64> {
+    if let Some(pos) = result.long() {
+        Ok(pos as u64)
+    } else {
+        Err(IoError::new(ErrorKind::InvalidData, "Invalid seek response"))
+    }
+}
+
 // ==================== Generic PhpIo Implementation ====================
 
 /// Trait defining an IO operation that can be called via PHP bridge
@@ -176,30 +274,7 @@ impl AsyncRead for PhpIo<ReadOp> {
                     this.state.eof = true;
                     return Poll::Ready(Ok(()));
                 }
-
-                if let Some(bytes) = result.binary() {
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(&bytes);
-                } else if let Some(s) = result.str() {
-                    let bytes = s.as_bytes();
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(bytes);
-                } else {
-                    return Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid read response",
-                    )));
-                }
+                process_read_response(result, buf)?;
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Err(e)) => {
@@ -217,20 +292,7 @@ impl AsyncWrite for PhpIo<WriteOp> {
         let this = self.project();
 
         if this.state.pending_write.is_none() {
-            let mut data_zval = Zval::new();
-            data_zval.set_binary(write_buf.to_vec());
-            let bridge = this.bridge.clone();
-            this.state.pending_write = Some(
-                async move {
-                    let result = bridge.call("write", vec![data_zval]).await?;
-                    if let Some(n) = result.long() {
-                        Ok(n as usize)
-                    } else {
-                        Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
-                    }
-                }
-                .boxed_local(),
-            );
+            this.state.pending_write = Some(create_write_future(this.bridge.clone(), write_buf));
         }
 
         let poll_result = this.state.pending_write.as_mut()
@@ -251,14 +313,7 @@ impl AsyncWrite for PhpIo<WriteOp> {
         let this = self.project();
 
         if this.state.pending_flush.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.pending_flush = Some(
-                async move {
-                    let _ = bridge.call("flush", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.pending_flush = Some(create_flush_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.pending_flush.as_mut()
@@ -279,14 +334,7 @@ impl AsyncWrite for PhpIo<WriteOp> {
         let this = self.project();
 
         if this.state.pending_shutdown.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.pending_shutdown = Some(
-                async move {
-                    let _ = bridge.call("close", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.pending_shutdown = Some(create_shutdown_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.pending_shutdown.as_mut()
@@ -320,22 +368,7 @@ impl AsyncSeek for PhpIo<SeekOp> {
                 None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
             };
 
-            let (offset, whence) = match seek {
-                SeekFrom::Start(pos) => (pos as i64, 0),
-                SeekFrom::Current(off) => (off, 1),
-                SeekFrom::End(off) => (off, 2),
-            };
-
-            let mut offset_zval = Zval::new();
-            let _ = offset_zval.set_long(offset);
-            let mut whence_zval = Zval::new();
-            let _ = whence_zval.set_long(whence);
-
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
-                "seek".to_string(),
-                vec![offset_zval, whence_zval],
-            )));
+            this.pending.set(Some(create_seek_call_future(this.bridge.clone(), seek)));
         }
 
         let poll_result = this.pending.as_mut().as_pin_mut()
@@ -345,14 +378,7 @@ impl AsyncSeek for PhpIo<SeekOp> {
         match poll_result {
             Poll::Ready(Ok(result)) => {
                 this.pending.set(None);
-                if let Some(pos) = result.long() {
-                    Poll::Ready(Ok(pos as u64))
-                } else {
-                    Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid seek response",
-                    )))
-                }
+                Poll::Ready(process_seek_result(result))
             }
             Poll::Ready(Err(e)) => {
                 this.pending.set(None);
@@ -525,29 +551,7 @@ impl AsyncRead for PhpIo<ReadWriteOp> {
                     return Poll::Ready(Ok(()));
                 }
 
-                if let Some(bytes) = result.binary() {
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(&bytes);
-                } else if let Some(s) = result.str() {
-                    let bytes = s.as_bytes();
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(bytes);
-                } else {
-                    return Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid read response",
-                    )));
-                }
+                process_read_response(result, buf)?;
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Err(e)) => {
@@ -564,20 +568,7 @@ impl AsyncWrite for PhpIo<ReadWriteOp> {
         let this = self.project();
 
         if this.state.1.pending_write.is_none() {
-            let mut data_zval = Zval::new();
-            data_zval.set_binary(write_buf.to_vec());
-            let bridge = this.bridge.clone();
-            this.state.1.pending_write = Some(
-                async move {
-                    let result = bridge.call("write", vec![data_zval]).await?;
-                    if let Some(n) = result.long() {
-                        Ok(n as usize)
-                    } else {
-                        Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
-                    }
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_write = Some(create_write_future(this.bridge.clone(), write_buf));
         }
 
         let poll_result = this.state.1.pending_write.as_mut()
@@ -598,14 +589,7 @@ impl AsyncWrite for PhpIo<ReadWriteOp> {
         let this = self.project();
 
         if this.state.1.pending_flush.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.1.pending_flush = Some(
-                async move {
-                    let _ = bridge.call("flush", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_flush = Some(create_flush_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.1.pending_flush.as_mut()
@@ -626,14 +610,7 @@ impl AsyncWrite for PhpIo<ReadWriteOp> {
         let this = self.project();
 
         if this.state.1.pending_shutdown.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.1.pending_shutdown = Some(
-                async move {
-                    let _ = bridge.call("close", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_shutdown = Some(create_shutdown_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.1.pending_shutdown.as_mut()
@@ -688,29 +665,7 @@ impl AsyncRead for PhpIo<ReadSeekOp> {
                     return Poll::Ready(Ok(()));
                 }
 
-                if let Some(bytes) = result.binary() {
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(&bytes);
-                } else if let Some(s) = result.str() {
-                    let bytes = s.as_bytes();
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(bytes);
-                } else {
-                    return Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid read response",
-                    )));
-                }
+                process_read_response(result, buf)?;
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Err(e)) => {
@@ -737,22 +692,7 @@ impl AsyncSeek for PhpIo<ReadSeekOp> {
                 None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
             };
 
-            let (offset, whence) = match seek {
-                SeekFrom::Start(pos) => (pos as i64, 0),
-                SeekFrom::Current(off) => (off, 1),
-                SeekFrom::End(off) => (off, 2),
-            };
-
-            let mut offset_zval = Zval::new();
-            let _ = offset_zval.set_long(offset);
-            let mut whence_zval = Zval::new();
-            let _ = whence_zval.set_long(whence);
-
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
-                "seek".to_string(),
-                vec![offset_zval, whence_zval],
-            )));
+            this.pending.set(Some(create_seek_call_future(this.bridge.clone(), seek)));
         }
 
         let poll_result = this.pending.as_mut().as_pin_mut()
@@ -762,14 +702,7 @@ impl AsyncSeek for PhpIo<ReadSeekOp> {
         match poll_result {
             Poll::Ready(Ok(result)) => {
                 this.pending.set(None);
-                if let Some(pos) = result.long() {
-                    Poll::Ready(Ok(pos as u64))
-                } else {
-                    Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid seek response",
-                    )))
-                }
+                Poll::Ready(process_seek_result(result))
             }
             Poll::Ready(Err(e)) => {
                 this.pending.set(None);
@@ -785,20 +718,7 @@ impl AsyncWrite for PhpIo<WriteSeekOp> {
         let this = self.project();
 
         if this.state.0.pending_write.is_none() {
-            let mut data_zval = Zval::new();
-            data_zval.set_binary(write_buf.to_vec());
-            let bridge = this.bridge.clone();
-            this.state.0.pending_write = Some(
-                async move {
-                    let result = bridge.call("write", vec![data_zval]).await?;
-                    if let Some(n) = result.long() {
-                        Ok(n as usize)
-                    } else {
-                        Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
-                    }
-                }
-                .boxed_local(),
-            );
+            this.state.0.pending_write = Some(create_write_future(this.bridge.clone(), write_buf));
         }
 
         let poll_result = this.state.0.pending_write.as_mut()
@@ -819,14 +739,7 @@ impl AsyncWrite for PhpIo<WriteSeekOp> {
         let this = self.project();
 
         if this.state.0.pending_flush.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.0.pending_flush = Some(
-                async move {
-                    let _ = bridge.call("flush", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.0.pending_flush = Some(create_flush_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.0.pending_flush.as_mut()
@@ -847,14 +760,7 @@ impl AsyncWrite for PhpIo<WriteSeekOp> {
         let this = self.project();
 
         if this.state.0.pending_shutdown.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.0.pending_shutdown = Some(
-                async move {
-                    let _ = bridge.call("close", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.0.pending_shutdown = Some(create_shutdown_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.0.pending_shutdown.as_mut()
@@ -887,22 +793,7 @@ impl AsyncSeek for PhpIo<WriteSeekOp> {
                 None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
             };
 
-            let (offset, whence) = match seek {
-                SeekFrom::Start(pos) => (pos as i64, 0),
-                SeekFrom::Current(off) => (off, 1),
-                SeekFrom::End(off) => (off, 2),
-            };
-
-            let mut offset_zval = Zval::new();
-            let _ = offset_zval.set_long(offset);
-            let mut whence_zval = Zval::new();
-            let _ = whence_zval.set_long(whence);
-
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
-                "seek".to_string(),
-                vec![offset_zval, whence_zval],
-            )));
+            this.pending.set(Some(create_seek_call_future(this.bridge.clone(), seek)));
         }
 
         let poll_result = this.pending.as_mut().as_pin_mut()
@@ -912,14 +803,7 @@ impl AsyncSeek for PhpIo<WriteSeekOp> {
         match poll_result {
             Poll::Ready(Ok(result)) => {
                 this.pending.set(None);
-                if let Some(pos) = result.long() {
-                    Poll::Ready(Ok(pos as u64))
-                } else {
-                    Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid seek response",
-                    )))
-                }
+                Poll::Ready(process_seek_result(result))
             }
             Poll::Ready(Err(e)) => {
                 this.pending.set(None);
@@ -964,29 +848,7 @@ impl AsyncRead for PhpIo<ReadWriteSeekOp> {
                     return Poll::Ready(Ok(()));
                 }
 
-                if let Some(bytes) = result.binary() {
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(&bytes);
-                } else if let Some(s) = result.str() {
-                    let bytes = s.as_bytes();
-                    if bytes.len() > buf.remaining() {
-                        return Poll::Ready(Err(IoError::new(
-                            ErrorKind::InvalidData,
-                            "Read response exceeded requested length",
-                        )));
-                    }
-                    buf.put_slice(bytes);
-                } else {
-                    return Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid read response",
-                    )));
-                }
+                process_read_response(result, buf)?;
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Err(e)) => {
@@ -1003,20 +865,7 @@ impl AsyncWrite for PhpIo<ReadWriteSeekOp> {
         let this = self.project();
 
         if this.state.1.pending_write.is_none() {
-            let mut data_zval = Zval::new();
-            data_zval.set_binary(write_buf.to_vec());
-            let bridge = this.bridge.clone();
-            this.state.1.pending_write = Some(
-                async move {
-                    let result = bridge.call("write", vec![data_zval]).await?;
-                    if let Some(n) = result.long() {
-                        Ok(n as usize)
-                    } else {
-                        Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
-                    }
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_write = Some(create_write_future(this.bridge.clone(), write_buf));
         }
 
         let poll_result = this.state.1.pending_write.as_mut()
@@ -1037,14 +886,7 @@ impl AsyncWrite for PhpIo<ReadWriteSeekOp> {
         let this = self.project();
 
         if this.state.1.pending_flush.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.1.pending_flush = Some(
-                async move {
-                    let _ = bridge.call("flush", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_flush = Some(create_flush_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.1.pending_flush.as_mut()
@@ -1065,14 +907,7 @@ impl AsyncWrite for PhpIo<ReadWriteSeekOp> {
         let this = self.project();
 
         if this.state.1.pending_shutdown.is_none() {
-            let bridge = this.bridge.clone();
-            this.state.1.pending_shutdown = Some(
-                async move {
-                    let _ = bridge.call("close", vec![]).await?;
-                    Ok(())
-                }
-                .boxed_local(),
-            );
+            this.state.1.pending_shutdown = Some(create_shutdown_future(this.bridge.clone()));
         }
 
         let poll_result = this.state.1.pending_shutdown.as_mut()
@@ -1105,22 +940,7 @@ impl AsyncSeek for PhpIo<ReadWriteSeekOp> {
                 None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
             };
 
-            let (offset, whence) = match seek {
-                SeekFrom::Start(pos) => (pos as i64, 0),
-                SeekFrom::Current(off) => (off, 1),
-                SeekFrom::End(off) => (off, 2),
-            };
-
-            let mut offset_zval = Zval::new();
-            let _ = offset_zval.set_long(offset);
-            let mut whence_zval = Zval::new();
-            let _ = whence_zval.set_long(whence);
-
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
-                "seek".to_string(),
-                vec![offset_zval, whence_zval],
-            )));
+            this.pending.set(Some(create_seek_call_future(this.bridge.clone(), seek)));
         }
 
         let poll_result = this.pending.as_mut().as_pin_mut()
@@ -1130,14 +950,7 @@ impl AsyncSeek for PhpIo<ReadWriteSeekOp> {
         match poll_result {
             Poll::Ready(Ok(result)) => {
                 this.pending.set(None);
-                if let Some(pos) = result.long() {
-                    Poll::Ready(Ok(pos as u64))
-                } else {
-                    Poll::Ready(Err(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Invalid seek response",
-                    )))
-                }
+                Poll::Ready(process_seek_result(result))
             }
             Poll::Ready(Err(e)) => {
                 this.pending.set(None);
