@@ -7,18 +7,18 @@
 //!
 //! ```php
 //! // Create a reader from string
-//! $reader = BytesReader::from_string("Hello, World!");
-//! $request->body_stream($reader->as_reader());
+//! $reader = BytesReader::fromString("Hello, World!");
+//! $request->bodyStream($reader->asReader());
 //!
 //! // Create a reader from binary data
 //! $data = file_get_contents('data.bin');
-//! $reader = BytesReader::from_bytes($data);
-//! $request->body_stream($reader->as_reader());
+//! $reader = BytesReader::fromBytes($data);
+//! $request->bodyStream($reader->asReader());
 //!
 //! // Create a writer to collect data
 //! $writer = BytesWriter::new();
 //! // ... write data ...
-//! $contents = $writer->to_bytes();
+//! $contents = $writer->toBytes();
 //! ```
 
 use ext_php_rs::prelude::*;
@@ -118,8 +118,8 @@ impl AsyncSeek for BytesCursor {
 ///
 /// # PHP Example
 /// ```php
-/// $reader = BytesReader::from_string("Hello, World!");
-/// $data = $reader->as_reader()->read(5); // "Hello"
+/// $reader = BytesReader::fromString("Hello, World!");
+/// $data = $reader->asReader()->read(5); // "Hello"
 /// ```
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\BytesReader")]
@@ -194,9 +194,9 @@ impl BytesReader {
 /// # PHP Example
 /// ```php
 /// $writer = BytesWriter::new();
-/// $writer->as_writer()->write("Hello");
-/// $writer->as_writer()->write(" World");
-/// $contents = $writer->to_bytes(); // "Hello World"
+/// $writer->asWriter()->write("Hello");
+/// $writer->asWriter()->write(" World");
+/// $contents = $writer->toBytes(); // "Hello World"
 /// ```
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\BytesWriter")]
