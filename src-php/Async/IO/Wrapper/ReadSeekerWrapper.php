@@ -3,13 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\ReadSeeker;
+use Async\IO\AsyncIO;
 use Async\Kernel\IO\AsyncReadSeeker;
 use Fiber;
 
 /**
  * ReadSeekerWrapper wraps AsyncReadSeeker and implements ReadSeeker interface
  */
-class ReadSeekerWrapper implements ReadSeeker
+class ReadSeekerWrapper implements ReadSeeker, AsyncIO
 {
     private AsyncReadSeeker $inner;
 

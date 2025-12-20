@@ -3,13 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\WriteSeeker;
+use Async\IO\AsyncIO;
 use Async\Kernel\IO\AsyncWriteSeeker;
 use Fiber;
 
 /**
  * WriteSeekerWrapper wraps AsyncWriteSeeker and implements WriteSeeker interface
  */
-class WriteSeekerWrapper implements WriteSeeker
+class WriteSeekerWrapper implements WriteSeeker, AsyncIO
 {
     private AsyncWriteSeeker $inner;
 

@@ -4,6 +4,7 @@ namespace Async\Network\Http;
 
 use Async\IO;
 use Async\IO\Reader;
+use Async\IO\AsyncIO;
 use Async\Kernel\IO\BytesReader;
 use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
 use Async\IO\Wrapper\ReaderWrapper;
@@ -399,16 +400,13 @@ class Request
 
     private static function toKernelAsyncReader(Reader $reader): \Async\Kernel\IO\AsyncReader
     {
-        // Fast path: if reader is a wrapper, directly unwrap to get AsyncReader (zero-cost)
-        if (method_exists($reader, 'unwrap')) {
+        // Fast path: if reader implements AsyncIO, use unwrap() for zero-cost conversion
+        if ($reader instanceof AsyncIO) {
             $kernel = $reader->unwrap();
             if ($kernel instanceof \Async\Kernel\IO\AsyncReader) {
                 return $kernel;
             }
-        }
-
-        // Medium path: if reader has castTo, use it directly (avoids wrapPhpIo overhead)
-        if (method_exists($reader, 'castTo')) {
+            // Fallback to castTo if unwrap doesn't return AsyncReader
             $kernel = $reader->castTo(IO::READ);
             if ($kernel instanceof \Async\Kernel\IO\AsyncReader) {
                 return $kernel;

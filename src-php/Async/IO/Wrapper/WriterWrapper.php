@@ -3,13 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\Writer;
+use Async\IO\AsyncIO;
 use Async\Kernel\IO\AsyncWriter;
 use Fiber;
 
 /**
  * WriterWrapper wraps AsyncWriter and implements Writer interface
  */
-class WriterWrapper implements Writer
+class WriterWrapper implements Writer, AsyncIO
 {
     private AsyncWriter $inner;
 

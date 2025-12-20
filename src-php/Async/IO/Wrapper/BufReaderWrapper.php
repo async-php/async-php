@@ -3,13 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\BufReader;
+use Async\IO\AsyncIO;
 use Async\Kernel\IO\AsyncBufReader;
 use Fiber;
 
 /**
  * BufReaderWrapper wraps AsyncBufReader and implements BufReader interface
  */
-class BufReaderWrapper implements BufReader
+class BufReaderWrapper implements BufReader, AsyncIO
 {
     private AsyncBufReader $inner;
 
