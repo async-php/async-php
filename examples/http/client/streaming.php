@@ -18,9 +18,7 @@ Kernel::run(function () {
 
         echo "Sending request...\n";
         $response = $client->get('http://www.baidu.com', [
-            'headers' => [
-                'User-Agent' => 'async-php/1.0',
-            ]
+            'User-Agent' => 'async-php/1.0',
         ]);
 
         echo "Status: {$response->status()}\n";
@@ -66,9 +64,7 @@ Kernel::run(function () {
         echo "Method 1: Streaming read\n";
         $start = microtime(true);
         $response1 = $client->get('https://api.github.com/', [
-            'headers' => [
-                'Accept' => 'application/json',
-            ]
+            'Accept' => 'application/json',
         ]);
 
         $content1 = '';
@@ -89,9 +85,7 @@ Kernel::run(function () {
         echo "Method 2: readAll\n";
         $start = microtime(true);
         $response2 = $client->get('https://api.github.com/', [
-            'headers' => [
-                'Accept' => 'application/json',
-            ]
+            'Accept' => 'application/json',
         ]);
 
         $content2 = $response2->text();
