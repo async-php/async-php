@@ -16,9 +16,9 @@
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use Async\Network\Http\Server;
+use Async\Network\Http\Request;
+use Async\Network\Http\Response;
 use Async\Network\Tcp\Listener;
-use Async\Kernel\Network\Http\HttpRequest;
-use Async\Kernel\Network\Http\HttpResponse;
 
 // Main server function
 function main(): void
@@ -58,7 +58,7 @@ function main(): void
             try {
                 // Serve HTTP on this connection using zero-copy IO
                 // The connection's native tokio TcpStream is used directly
-                $server->serve($conn, function(HttpRequest $req) use ($peerAddr): HttpResponse {
+                $server->serve($conn, function(Request $req) use ($peerAddr): Response {
                     $method = $req->method();
                     $path = $req->path();
                     $query = $req->queryString();
@@ -66,7 +66,7 @@ function main(): void
                     echo "[$peerAddr] $method $path" . ($query ? "?$query" : "") . "\n";
 
                     // Create response
-                    $resp = new HttpResponse();
+                    $resp = new Response();
                     $resp->withStatus(200);
                     $resp->withHeader('Content-Type', 'text/plain');
                     $resp->withHeader('Server', 'Async-PHP/1.0');
@@ -100,8 +100,8 @@ function mainConvenience(): void
     $server = new Server();
 
     // This does the same as main() but in one call
-    $server->listenAndServe('127.0.0.1:9001', function(HttpRequest $req): HttpResponse {
-        $resp = new HttpResponse();
+    $server->listenAndServe('127.0.0.1:9001', function(Request $req): Response {
+        $resp = new Response();
         $resp->withStatus(200);
         $resp->withHeader('Content-Type', 'text/html');
         $resp->withBody('<h1>Hello from Async PHP!</h1>');
@@ -110,6 +110,9 @@ function mainConvenience(): void
 }
 
 // Run the server
-main();
+$fiber = new Fiber(function() {
+    main();
+});
+run($fiber);
 // Or use the convenience method:
 // mainConvenience();

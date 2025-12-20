@@ -5,6 +5,7 @@ namespace Async\Network\Http;
 use Async\Kernel\Network\Http\HttpServer as KernelHttpServer;
 use Async\Kernel\IO\AsyncReadWriter;
 use Async\IO;
+use Async\IO\TokioIO;
 use Fiber;
 
 /**
@@ -97,10 +98,23 @@ class Server
      */
     public function serve($conn, callable $handler): bool
     {
+        // Try to get AsyncReadWriter from connection
         if ($conn instanceof AsyncReadWriter) {
             $io = $conn;
         } elseif (is_callable([$conn, 'castTo'])) {
-            $io = $conn->castTo(IO::READ | IO::WRITE);
+            // Use castTo to get AsyncReadWriter (works for TokioIO objects like Socket, TlsStream, etc.)
+            $casted = $conn->castTo(IO::READ | IO::WRITE);
+
+            // Check if result is TokioIO wrapper, unwrap it
+            if ($casted instanceof TokioIO) {
+                $io = $casted->unwrap();
+            } elseif ($casted instanceof AsyncReadWriter) {
+                $io = $casted;
+            } else {
+                throw new \InvalidArgumentException(
+                    'castTo() must return TokioIO or AsyncReadWriter, got: ' . get_class($casted)
+                );
+            }
         } else {
             throw new \InvalidArgumentException(
                 'Connection must be AsyncReadWriter or support castTo(IO::READ|IO::WRITE)'
@@ -108,7 +122,9 @@ class Server
         }
 
         if (!$io instanceof AsyncReadWriter) {
-            throw new \InvalidArgumentException('castTo() must return AsyncReadWriter for HTTP serving');
+            throw new \InvalidArgumentException(
+                'Failed to obtain AsyncReadWriter from connection, got: ' . get_class($io)
+            );
         }
 
         // Wrap the user handler to convert Request/Response to kernel types

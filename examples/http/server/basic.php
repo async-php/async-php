@@ -9,9 +9,9 @@
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use Async\Network\Http\Server;
+use Async\Network\Http\Request;
+use Async\Network\Http\Response;
 use Async\Network\Tcp\Listener;
-use Async\Kernel\Network\Http\HttpRequest;
-use Async\Kernel\Network\Http\HttpResponse;
 
 function testServer(): void
 {
@@ -35,7 +35,7 @@ function testServer(): void
 
         go(function() use ($server, $conn, $peerAddr, &$requestCount) {
             try {
-                $server->serve($conn, function(HttpRequest $req) use ($peerAddr, &$requestCount): HttpResponse {
+                $server->serve($conn, function(Request $req) use ($peerAddr, &$requestCount): Response {
                     $requestCount++;
                     $method = $req->method();
                     $path = $req->path();
@@ -43,7 +43,7 @@ function testServer(): void
 
                     echo "[Request #$requestCount] [$peerAddr] $method $path" . ($query ? "?$query" : "") . "\n";
 
-                    $resp = new HttpResponse();
+                    $resp = new Response();
                     $resp->withHeader('Server', 'Async-PHP/1.0 Zero-Copy');
 
                     // Route handling
