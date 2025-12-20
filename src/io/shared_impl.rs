@@ -22,7 +22,14 @@ where
     pub fn read_impl(&self, length: i64) -> RustFuture {
         let inner = self.clone();
         let future = async move {
-            let mut buf = vec![0u8; length as usize];
+            let length = usize::try_from(length)
+                .map_err(|_| "read length must be non-negative".to_string())?;
+            if length == 0 {
+                let mut z = Zval::new();
+                z.set_binary(Vec::<u8>::new());
+                return Ok::<Zval, String>(z);
+            }
+            let mut buf = vec![0u8; length];
             let n = inner.get_mut().read(&mut buf).await.map_err(|e| e.to_string())?;
 
             if n == 0 {
@@ -77,10 +84,15 @@ where
         let inner = self.clone();
         let future = async move {
             let seek_from = match whence {
-                0 => SeekFrom::Start(offset as u64),
+                0 => {
+                    if offset < 0 {
+                        return Err("seek offset must be non-negative for SEEK_SET".to_string());
+                    }
+                    SeekFrom::Start(offset as u64)
+                }
                 1 => SeekFrom::Current(offset),
                 2 => SeekFrom::End(offset),
-                _ => SeekFrom::Start(offset as u64),
+                _ => return Err(format!("invalid whence value: {}", whence)),
             };
 
             let new_pos = inner.get_mut().seek(seek_from).await.map_err(|e| e.to_string())?;
