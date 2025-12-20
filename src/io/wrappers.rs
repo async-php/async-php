@@ -3,10 +3,13 @@
 /// These wrappers provide PHP-accessible classes for AsyncRead, AsyncWrite, and AsyncSeek
 
 use ext_php_rs::prelude::*;
+use ext_php_rs::types::Zval;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 
 use crate::future::RustFuture;
 use crate::util::Shared;
+
+use super::cast::{cast_io, AsyncIO};
 
 // ==================== AsyncReader ====================
 
@@ -38,11 +41,23 @@ impl AsyncReader {
     }
 }
 
+impl AsyncIO for AsyncReader {
+    fn as_reader(&self) -> PhpResult<AsyncReader> {
+        Ok(AsyncReader::from_shared(self.inner.clone()))
+    }
+}
+
 #[php_impl]
 impl AsyncReader {
     /// Read up to length bytes
     pub fn read(&mut self, length: i64) -> RustFuture {
         self.inner.read_impl(length)
+    }
+
+    /// Cast this reader into a specific Kernel IO wrapper by bitflags
+    #[php]
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        cast_io(self, ty)
     }
 }
 
@@ -76,6 +91,12 @@ impl AsyncWriter {
     }
 }
 
+impl AsyncIO for AsyncWriter {
+    fn as_writer(&self) -> PhpResult<AsyncWriter> {
+        Ok(AsyncWriter::from_shared(self.inner.clone()))
+    }
+}
+
 #[php_impl]
 impl AsyncWriter {
     /// Write data
@@ -86,6 +107,12 @@ impl AsyncWriter {
     /// Flush buffered data
     pub fn flush(&mut self) -> RustFuture {
         self.inner.flush_impl()
+    }
+
+    /// Cast this writer into a specific Kernel IO wrapper by bitflags
+    #[php]
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        cast_io(self, ty)
     }
 }
 
@@ -119,10 +146,22 @@ impl AsyncSeeker {
     }
 }
 
+impl AsyncIO for AsyncSeeker {
+    fn as_seeker(&self) -> PhpResult<AsyncSeeker> {
+        Ok(AsyncSeeker::from_shared(self.inner.clone()))
+    }
+}
+
 #[php_impl]
 impl AsyncSeeker {
     /// Seek to a position
     pub fn seek(&mut self, offset: i64, whence: i64) -> RustFuture {
         self.inner.seek_impl(offset, whence)
+    }
+
+    /// Cast this seeker into a specific Kernel IO wrapper by bitflags
+    #[php]
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        cast_io(self, ty)
     }
 }

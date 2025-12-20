@@ -6,19 +6,19 @@ use ext_php_rs::convert::IntoZval;
 use futures::FutureExt;
 
 #[php_const]
-#[php(name = "Async\\Kernel\\IO\\READ")]
+#[php(name = "ASYNC_READ")]
 pub const IO_READ: i64 = 1;
 
 #[php_const]
-#[php(name = "Async\\Kernel\\IO\\WRITE")]
+#[php(name = "ASYNC_WRITE")]
 pub const IO_WRITE: i64 = 2;
 
 #[php_const]
-#[php(name = "Async\\Kernel\\IO\\SEEK")]
+#[php(name = "ASYNC_SEEK")]
 pub const IO_SEEK: i64 = 4;
 
 #[php_const]
-#[php(name = "Async\\Kernel\\IO\\BUF")]
+#[php(name = "ASYNC_BUF")]
 pub const IO_BUF: i64 = 8;
 
 mod future;
