@@ -442,7 +442,7 @@ impl AsyncTlsStream {
     /// Cast this stream into a specific Kernel IO wrapper by bitflags.
     #[php]
     pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
-        let io: Shared<Box<dyn crate::io::AsyncReadWrite>> =
+        let io: Shared<Box<dyn crate::io::AsyncReadWrite + Unpin + Send>> =
             Shared::new(Box::new(self.inner.clone()));
         cast_io(&io, ty)
     }

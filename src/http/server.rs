@@ -27,9 +27,9 @@ where
     }
 }
 
-/// Adapter to convert Shared<Box<dyn AsyncReadWrite>> to tokio::io traits
+/// Adapter to convert Shared<Box<dyn AsyncReadWrite + Unpin + Send>> to tokio::io traits
 struct SharedIoAdapter {
-    inner: Shared<Box<dyn AsyncReadWrite>>,
+    inner: Shared<Box<dyn AsyncReadWrite + Unpin + Send>>,
 }
 
 impl tokio::io::AsyncRead for SharedIoAdapter {

@@ -1264,7 +1264,7 @@ impl PhpReadWriter {
     #[php]
     pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rw = PhpReadWriter(self.0.clone());
-        let io: Shared<Box<dyn AsyncReadWrite>> = Shared::new(Box::new(rw));
+        let io: Shared<Box<dyn AsyncReadWrite + Unpin + Send>> = Shared::new(Box::new(rw));
         cast_io(&io, ty)
     }
 }
@@ -1311,7 +1311,7 @@ impl PhpReadSeeker {
     #[php]
     pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rs = PhpReadSeeker(self.0.clone());
-        let io: Shared<Box<dyn AsyncReadSeek>> = Shared::new(Box::new(rs));
+        let io: Shared<Box<dyn AsyncReadSeek + Unpin + Send>> = Shared::new(Box::new(rs));
         cast_io(&io, ty)
     }
 }
@@ -1354,7 +1354,7 @@ impl PhpWriteSeeker {
     #[php]
     pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let ws = PhpWriteSeeker(self.0.clone());
-        let io: Shared<Box<dyn AsyncWriteSeek>> = Shared::new(Box::new(ws));
+        let io: Shared<Box<dyn AsyncWriteSeek + Unpin + Send>> = Shared::new(Box::new(ws));
         cast_io(&io, ty)
     }
 }
@@ -1401,7 +1401,7 @@ impl PhpReadWriteSeeker {
     #[php]
     pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rws = PhpReadWriteSeeker(self.0.clone());
-        let io: Shared<Box<dyn AsyncReadWriteSeek>> = Shared::new(Box::new(rws));
+        let io: Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>> = Shared::new(Box::new(rws));
         cast_io(&io, ty)
     }
 }

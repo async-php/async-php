@@ -12,25 +12,25 @@ use super::traits::{AsyncReadSeek, AsyncReadWrite, AsyncReadWriteSeek, AsyncWrit
 
 // ==================== AsyncReadWriter ====================
 
-/// AsyncReadWriter wraps Shared<Box<dyn AsyncReadWrite>>
+/// AsyncReadWriter wraps Shared<Box<dyn AsyncReadWrite + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncReadWriter")]
 pub struct AsyncReadWriter {
-    inner: Shared<Box<dyn AsyncReadWrite>>,
+    inner: Shared<Box<dyn AsyncReadWrite + Unpin + Send>>,
 }
 
 impl AsyncReadWriter {
-    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWrite>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWrite + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
-    pub fn new<T: AsyncReadWrite + 'static>(io: T) -> Self {
+    pub fn new<T: AsyncReadWrite + Unpin + Send + 'static>(io: T) -> Self {
         Self {
             inner: Shared::new(Box::new(io)),
         }
     }
 
-    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWrite>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWrite + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -55,25 +55,25 @@ impl AsyncReadWriter {
 
 // ==================== AsyncReadSeeker ====================
 
-/// AsyncReadSeeker wraps Shared<Box<dyn AsyncReadSeek>>
+/// AsyncReadSeeker wraps Shared<Box<dyn AsyncReadSeek + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncReadSeeker")]
 pub struct AsyncReadSeeker {
-    inner: Shared<Box<dyn AsyncReadSeek>>,
+    inner: Shared<Box<dyn AsyncReadSeek + Unpin + Send>>,
 }
 
 impl AsyncReadSeeker {
-    pub fn from_shared(shared: Shared<Box<dyn AsyncReadSeek>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadSeek + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
-    pub fn new<T: AsyncReadSeek + 'static>(io: T) -> Self {
+    pub fn new<T: AsyncReadSeek + Unpin + Send + 'static>(io: T) -> Self {
         Self {
             inner: Shared::new(Box::new(io)),
         }
     }
 
-    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadSeek>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadSeek + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -93,25 +93,25 @@ impl AsyncReadSeeker {
 
 // ==================== AsyncWriteSeeker ====================
 
-/// AsyncWriteSeeker wraps Shared<Box<dyn AsyncWriteSeek>>
+/// AsyncWriteSeeker wraps Shared<Box<dyn AsyncWriteSeek + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncWriteSeeker")]
 pub struct AsyncWriteSeeker {
-    inner: Shared<Box<dyn AsyncWriteSeek>>,
+    inner: Shared<Box<dyn AsyncWriteSeek + Unpin + Send>>,
 }
 
 impl AsyncWriteSeeker {
-    pub fn from_shared(shared: Shared<Box<dyn AsyncWriteSeek>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncWriteSeek + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
-    pub fn new<T: AsyncWriteSeek + 'static>(io: T) -> Self {
+    pub fn new<T: AsyncWriteSeek + Unpin + Send + 'static>(io: T) -> Self {
         Self {
             inner: Shared::new(Box::new(io)),
         }
     }
 
-    pub fn get_inner(&self) -> Shared<Box<dyn AsyncWriteSeek>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncWriteSeek + Unpin + Send>> {
         self.inner.clone()
     }
 }
@@ -136,25 +136,25 @@ impl AsyncWriteSeeker {
 
 // ==================== AsyncReadWriteSeeker ====================
 
-/// AsyncReadWriteSeeker wraps Shared<Box<dyn AsyncReadWriteSeek>>
+/// AsyncReadWriteSeeker wraps Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>>
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\AsyncReadWriteSeeker")]
 pub struct AsyncReadWriteSeeker {
-    inner: Shared<Box<dyn AsyncReadWriteSeek>>,
+    inner: Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>>,
 }
 
 impl AsyncReadWriteSeeker {
-    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWriteSeek>>) -> Self {
+    pub fn from_shared(shared: Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>>) -> Self {
         Self { inner: shared }
     }
 
-    pub fn new<T: AsyncReadWriteSeek + 'static>(io: T) -> Self {
+    pub fn new<T: AsyncReadWriteSeek + Unpin + Send + 'static>(io: T) -> Self {
         Self {
             inner: Shared::new(Box::new(io)),
         }
     }
 
-    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWriteSeek>> {
+    pub fn get_inner(&self) -> Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>> {
         self.inner.clone()
     }
 }

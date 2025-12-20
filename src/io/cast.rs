@@ -174,7 +174,7 @@ impl AsyncIO for Shared<Box<dyn AsyncBufRead + Unpin + Send>> {
     }
 }
 
-impl AsyncIO for Shared<Box<dyn AsyncReadWrite>> {
+impl AsyncIO for Shared<Box<dyn AsyncReadWrite + Unpin + Send>> {
     fn as_read_writer(&self) -> PhpResult<AsyncReadWriter> {
         Ok(AsyncReadWriter::from_shared(self.clone()))
     }
@@ -194,7 +194,7 @@ impl AsyncIO for Shared<Box<dyn AsyncReadWrite>> {
     }
 }
 
-impl AsyncIO for Shared<Box<dyn AsyncReadSeek>> {
+impl AsyncIO for Shared<Box<dyn AsyncReadSeek + Unpin + Send>> {
     fn as_read_seeker(&self) -> PhpResult<AsyncReadSeeker> {
         Ok(AsyncReadSeeker::from_shared(self.clone()))
     }
@@ -214,7 +214,7 @@ impl AsyncIO for Shared<Box<dyn AsyncReadSeek>> {
     }
 }
 
-impl AsyncIO for Shared<Box<dyn AsyncWriteSeek>> {
+impl AsyncIO for Shared<Box<dyn AsyncWriteSeek + Unpin + Send>> {
     fn as_write_seeker(&self) -> PhpResult<AsyncWriteSeeker> {
         Ok(AsyncWriteSeeker::from_shared(self.clone()))
     }
@@ -230,7 +230,7 @@ impl AsyncIO for Shared<Box<dyn AsyncWriteSeek>> {
     }
 }
 
-impl AsyncIO for Shared<Box<dyn AsyncReadWriteSeek>> {
+impl AsyncIO for Shared<Box<dyn AsyncReadWriteSeek + Unpin + Send>> {
     fn as_read_write_seeker(&self) -> PhpResult<AsyncReadWriteSeeker> {
         Ok(AsyncReadWriteSeeker::from_shared(self.clone()))
     }
