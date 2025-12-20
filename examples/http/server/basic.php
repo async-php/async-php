@@ -44,23 +44,23 @@ function testServer(): void
                     echo "[Request #$requestCount] [$peerAddr] $method $path" . ($query ? "?$query" : "") . "\n";
 
                     $resp = new HttpResponse();
-                    $resp->setHeader('Server', 'Async-PHP/1.0 Zero-Copy');
+                    $resp->withHeader('Server', 'Async-PHP/1.0 Zero-Copy');
 
                     // Route handling
                     if ($path === '/' || $path === '') {
-                        $resp->setStatus(200);
-                        $resp->setHeader('Content-Type', 'text/plain');
-                        $resp->setBody("Hello from Async PHP Zero-Copy HTTP Server!\n\nRequest #$requestCount\nClient: $peerAddr\n");
+                        $resp->withStatus(200);
+                        $resp->withHeader('Content-Type', 'text/plain');
+                        $resp->withBody("Hello from Async PHP Zero-Copy HTTP Server!\n\nRequest #$requestCount\nClient: $peerAddr\n");
                     }
                     elseif ($path === '/echo') {
-                        $resp->setStatus(200);
-                        $resp->setHeader('Content-Type', 'text/plain');
+                        $resp->withStatus(200);
+                        $resp->withHeader('Content-Type', 'text/plain');
                         $message = $query ? urldecode(str_replace('message=', '', $query)) : 'No message';
-                        $resp->setBody("Echo: $message\n");
+                        $resp->withBody("Echo: $message\n");
                     }
                     elseif ($path === '/json') {
-                        $resp->setStatus(200);
-                        $resp->setHeader('Content-Type', 'application/json');
+                        $resp->withStatus(200);
+                        $resp->withHeader('Content-Type', 'application/json');
                         $data = [
                             'status' => 'ok',
                             'server' => 'Async-PHP Zero-Copy',
@@ -69,24 +69,24 @@ function testServer(): void
                             'method' => $method,
                             'path' => $path,
                         ];
-                        $resp->setBody(json_encode($data, JSON_PRETTY_PRINT) . "\n");
+                        $resp->withBody(json_encode($data, JSON_PRETTY_PRINT) . "\n");
                     }
                     elseif ($path === '/headers') {
-                        $resp->setStatus(200);
-                        $resp->setHeader('Content-Type', 'text/plain');
+                        $resp->withStatus(200);
+                        $resp->withHeader('Content-Type', 'text/plain');
                         $body = "Request Headers:\n";
-                        $headers = $req->getHeaders();
+                        $headers = $req->headers();
                         foreach ($headers as $name => $values) {
                             foreach ($values as $value) {
                                 $body .= "  $name: $value\n";
                             }
                         }
-                        $resp->setBody($body);
+                        $resp->withBody($body);
                     }
                     else {
-                        $resp->setStatus(404);
-                        $resp->setHeader('Content-Type', 'text/plain');
-                        $resp->setBody("404 Not Found: $path\n");
+                        $resp->withStatus(404);
+                        $resp->withHeader('Content-Type', 'text/plain');
+                        $resp->withBody("404 Not Found: $path\n");
                     }
 
                     return $resp;

@@ -23,8 +23,8 @@ Kernel::run(function () {
         'User-Agent' => 'Async-PHP-Demo/1.0'
     ]);
     
-    echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
-    echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n\n";
+    echo "Status: {$response->status()}\n";
+    echo "Content-Type: {$response->headerLine('Content-Type')}\n\n";
 
     // Example 2: GET with query parameters
     echo "2. GET with query parameters:\n";
@@ -64,7 +64,7 @@ Kernel::run(function () {
 
     $response = $client->post('https://httpbin.org/post', $body);
 
-    if ($response->getStatusCode() === 200) {
+    if ($response->status() === 200) {
         $data = json_decode($response->text(), true);
         echo "POST successful!\n";
         if (isset($data['json'])) {
@@ -94,14 +94,14 @@ Kernel::run(function () {
     echo str_repeat('-', 60) . "\n";
 
     $response = $client->get('https://www.baidu.com');
-    $isSuccess = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
-    $contentType = $response->getHeaderLine('Content-Type');
+    $isSuccess = $response->status() >= 200 && $response->status() < 300;
+    $contentType = $response->headerLine('Content-Type');
     $isHtml = strpos($contentType, 'html') !== false;
     
     echo "Is successful (2xx): " . ($isSuccess ? 'Yes' : 'No') . "\n";
     echo "Is HTML: " . ($isHtml ? 'Yes' : 'No') . "\n";
-    echo "Content length: " . ($response->getHeaderLine('Content-Length') ?: 'Unknown') . "\n";
-    echo "Server: " . ($response->getHeaderLine('Server') ?: 'Unknown') . "\n\n";
+    echo "Content length: " . ($response->headerLine('Content-Length') ?: 'Unknown') . "\n";
+    echo "Server: " . ($response->headerLine('Server') ?: 'Unknown') . "\n\n";
 
     echo str_repeat('=', 60) . "\n";
     echo "Demo completed successfully!\n";

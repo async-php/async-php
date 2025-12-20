@@ -7,8 +7,8 @@ Kernel::run(function () {
     $client = new Client();
     $response = $client->get('http://www.baidu.com');
     
-    echo "Content-Encoding: " . ($response->getHeader('content-encoding') ?? 'none') . "\n";
-    echo "Content-Type: " . ($response->getHeader('content-type') ?? 'none') . "\n";
+    echo "Content-Encoding: " . ($response->header('content-encoding') ?? 'none') . "\n";
+    echo "Content-Type: " . ($response->header('content-type') ?? 'none') . "\n";
     
     // Read first chunk to see if it's compressed
     $chunk = $response->readChunk(10);

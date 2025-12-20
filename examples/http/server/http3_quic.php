@@ -79,9 +79,9 @@ Kernel::run(function () use ($certFile, $keyFile) {
 
         // Simple routing
         if ($path === '/') {
-            $response->setStatus(200);
-            $response->setHeader('Content-Type', 'text/html; charset=utf-8');
-            $response->setBody(<<<HTML
+            $response->withStatus(200);
+            $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+            $response->withBody(<<<HTML
 <!DOCTYPE html>
 <html>
 <head>
@@ -142,9 +142,9 @@ Kernel::run(function () use ($certFile, $keyFile) {
 </html>
 HTML);
         } elseif ($path === '/api/info') {
-            $response->setStatus(200);
-            $response->setHeader('Content-Type', 'application/json');
-            $response->setBody(json_encode([
+            $response->withStatus(200);
+            $response->withHeader('Content-Type', 'application/json');
+            $response->withBody(json_encode([
                 'server' => 'Async-PHP HTTP/3',
                 'protocol' => 'HTTP/3',
                 'transport' => 'QUIC',
@@ -165,18 +165,18 @@ HTML);
 
             $message = $params['message'] ?? 'No message provided';
 
-            $response->setStatus(200);
-            $response->setHeader('Content-Type', 'application/json');
-            $response->setBody(json_encode([
+            $response->withStatus(200);
+            $response->withHeader('Content-Type', 'application/json');
+            $response->withBody(json_encode([
                 'echo' => $message,
                 'method' => $method,
                 'path' => $path,
                 'query' => $params
             ], JSON_PRETTY_PRINT));
         } else {
-            $response->setStatus(404);
-            $response->setHeader('Content-Type', 'application/json');
-            $response->setBody(json_encode([
+            $response->withStatus(404);
+            $response->withHeader('Content-Type', 'application/json');
+            $response->withBody(json_encode([
                 'error' => 'Not Found',
                 'path' => $path
             ]));

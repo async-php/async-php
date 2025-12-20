@@ -21,14 +21,14 @@ Kernel::run(function () {
 
         $response = $client->get('http://www.baidu.com');
 
-        echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
-        echo "Version: HTTP/{$response->getProtocolVersion()}\n";
-        echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n";
+        echo "Status: {$response->status()}\n";
+        echo "Version: HTTP/{$response->version()}\n";
+        echo "Content-Type: {$response->headerLine('Content-Type')}\n";
         
         $body = $response->text();
         echo "Body length: " . strlen($body) . " bytes\n";
         
-        $success = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        $success = $response->status() >= 200 && $response->status() < 300;
         echo "Is successful: " . ($success ? 'Yes' : 'No') . "\n";
         echo "✓ Test 1 passed!\n\n";
     } catch (Exception $e) {
@@ -46,10 +46,10 @@ Kernel::run(function () {
             'Accept' => 'text/html',
         ]);
 
-        echo "Status: {$response->getStatusCode()}\n";
-        echo "Server: " . ($response->getHeaderLine('Server') ?: 'Unknown') . "\n";
+        echo "Status: {$response->status()}\n";
+        echo "Server: " . ($response->headerLine('Server') ?: 'Unknown') . "\n";
         
-        $contentType = $response->getHeaderLine('Content-Type');
+        $contentType = $response->headerLine('Content-Type');
         $isHtml = strpos($contentType, 'html') !== false;
         echo "Is HTML: " . ($isHtml ? 'Yes' : 'No') . "\n";
         echo "✓ Test 2 passed!\n\n";
@@ -75,10 +75,10 @@ Kernel::run(function () {
             'Accept' => 'application/vnd.github.v3+json'
         ]);
 
-        echo "Status: {$response->getStatusCode()}\n";
-        echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n";
+        echo "Status: {$response->status()}\n";
+        echo "Content-Type: {$response->headerLine('Content-Type')}\n";
 
-        $contentType = $response->getHeaderLine('Content-Type');
+        $contentType = $response->headerLine('Content-Type');
         if (strpos($contentType, 'json') !== false) {
             $data = json_decode($response->text(), true);
             if (isset($data['total_count'])) {
@@ -107,10 +107,10 @@ Kernel::run(function () {
              'Accept' => 'application/json'
         ]);
 
-        echo "Status: {$response->getStatusCode()}\n";
+        echo "Status: {$response->status()}\n";
 
-        $contentType = $response->getHeaderLine('Content-Type');
-        if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
+        $contentType = $response->headerLine('Content-Type');
+        if ($response->status() === 200 && strpos($contentType, 'json') !== false) {
             $data = json_decode($response->text(), true);
             echo "API endpoints available: " . count($data) . "\n";
             echo "✓ Valid JSON response\n";
@@ -137,10 +137,10 @@ Kernel::run(function () {
             'Content-Type' => 'application/json' // Explicit content type just in case
         ]);
 
-        echo "Status: {$response->getStatusCode()}\n";
+        echo "Status: {$response->status()}\n";
 
-        $contentType = $response->getHeaderLine('Content-Type');
-        if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
+        $contentType = $response->headerLine('Content-Type');
+        if ($response->status() === 200 && strpos($contentType, 'json') !== false) {
             $data = json_decode($response->text(), true);
             
             // httpbin.org echoes back the JSON we sent
@@ -162,8 +162,8 @@ Kernel::run(function () {
 
         $response = $client->head('https://www.baidu.com');
 
-        echo "Status: {$response->getStatusCode()}\n";
-        echo "Content-Length: " . ($response->getHeaderLine('Content-Length') ?: 'Unknown') . "\n";
+        echo "Status: {$response->status()}\n";
+        echo "Content-Length: " . ($response->headerLine('Content-Length') ?: 'Unknown') . "\n";
         
         $body = $response->text();
         echo "Body is empty: " . ($body === '' ? 'Yes' : 'No') . "\n";
@@ -179,10 +179,10 @@ Kernel::run(function () {
 
         $response = $client->get('https://httpbin.org/status/404');
 
-        echo "Status: {$response->getStatusCode()}\n";
-        $isClientError = $response->getStatusCode() >= 400 && $response->getStatusCode() < 500;
+        echo "Status: {$response->status()}\n";
+        $isClientError = $response->status() >= 400 && $response->status() < 500;
         echo "Is client error: " . ($isClientError ? 'Yes' : 'No') . "\n";
-        echo "Is successful: " . ($response->getStatusCode() === 200 ? 'Yes' : 'No') . "\n";
+        echo "Is successful: " . ($response->status() === 200 ? 'Yes' : 'No') . "\n";
         echo "✓ Test 8 passed!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 8 failed: {$e->getMessage()}\n\n";

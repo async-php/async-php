@@ -51,13 +51,13 @@ Kernel::run(function () {
                 };
 
                 if ($path === '/json') {
-                    $resp->setStatus(200)->setJson($body);
+                    $resp->withStatus(200)->withJson($body);
                 } elseif ($path === '/text') {
-                    $resp->setStatus(200)->setText($body);
+                    $resp->withStatus(200)->withText($body);
                 } elseif (in_array($path, ['/', ''])) {
-                    $resp->setStatus(200)->setHtml($body);
+                    $resp->withStatus(200)->withHtml($body);
                 } else {
-                    $resp->setStatus(404)->setText($body);
+                    $resp->withStatus(404)->withText($body);
                 }
 
                 return $resp;

@@ -9,7 +9,7 @@ Kernel::run(function () {
     
     $response = $client->get('http://www.baidu.com');
     
-    echo "Content-Encoding: " . ($response->getHeader('content-encoding') ?? 'none') . "\n";
+    echo "Content-Encoding: " . ($response->header('content-encoding') ?? 'none') . "\n";
     
     // Read first chunk
     $chunk = $response->readChunk(100);

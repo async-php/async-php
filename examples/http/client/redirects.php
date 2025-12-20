@@ -30,8 +30,8 @@ Kernel::run(function () {
     try {
         $response = $client->get('https://httpbin.org/redirect/5');
         echo "✓ Successfully followed 5 redirects\n";
-        echo "  Final status: {$response->getStatusCode()}\n";
-        echo "  Response OK: " . ($response->getStatusCode() === 200 ? 'Yes' : 'No') . "\n";
+        echo "  Final status: {$response->status()}\n";
+        echo "  Response OK: " . ($response->status() === 200 ? 'Yes' : 'No') . "\n";
     } catch (\Exception $e) {
         echo "✗ Failed: {$e->getMessage()}\n";
     }
@@ -50,7 +50,7 @@ Kernel::run(function () {
         // This should throw an error or return the last response depending on implementation
         // Reqwest usually returns error on too many redirects
         $response = $client2->get('https://httpbin.org/redirect/5');
-        echo "  Status: {$response->getStatusCode()}\n";
+        echo "  Status: {$response->status()}\n";
         echo "  Note: Did not error on max redirect limit\n";
     } catch (\Exception $e) {
         echo "✓ Error (expected): " . substr($e->getMessage(), 0, 100) . "...\n";
@@ -68,14 +68,14 @@ Kernel::run(function () {
 
     try {
         $response = $client3->get('https://httpbin.org/redirect/1');
-        echo "  Status: {$response->getStatusCode()}\n";
+        echo "  Status: {$response->status()}\n";
         
-        $statusCode = $response->getStatusCode();
+        $statusCode = $response->status();
         $isRedirect = $statusCode >= 300 && $statusCode < 400;
         echo "  Is redirect: " . ($isRedirect ? 'Yes' : 'No') . "\n";
 
         if ($isRedirect) {
-            $location = $response->getHeaderLine('Location');
+            $location = $response->headerLine('Location');
             echo "  Location header: {$location}\n";
             echo "✓ Redirect not followed (as expected)\n";
         }
@@ -96,7 +96,7 @@ Kernel::run(function () {
     try {
         $response = $client4->get('https://httpbin.org/relative-redirect/2');
         echo "✓ Successfully handled relative URL redirects\n";
-        echo "  Final status: {$response->getStatusCode()}\n";
+        echo "  Final status: {$response->status()}\n";
     } catch (\Exception $e) {
         echo "✗ Failed: {$e->getMessage()}\n";
     }
@@ -114,7 +114,7 @@ Kernel::run(function () {
     try {
         $response = $client5->get('https://httpbin.org/absolute-redirect/2');
         echo "✓ Successfully handled absolute URL redirects\n";
-        echo "  Final status: {$response->getStatusCode()}\n";
+        echo "  Final status: {$response->status()}\n";
     } catch (\Exception $e) {
         echo "✗ Failed: {$e->getMessage()}\n";
     }

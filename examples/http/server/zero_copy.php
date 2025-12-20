@@ -67,9 +67,9 @@ function main(): void
 
                     // Create response
                     $resp = new HttpResponse();
-                    $resp->setStatus(200);
-                    $resp->setHeader('Content-Type', 'text/plain');
-                    $resp->setHeader('Server', 'Async-PHP/1.0');
+                    $resp->withStatus(200);
+                    $resp->withHeader('Content-Type', 'text/plain');
+                    $resp->withHeader('Server', 'Async-PHP/1.0');
 
                     // Build response body
                     $body = "Hello from Async PHP!\n\n";
@@ -81,7 +81,7 @@ function main(): void
                     $body .= "This response was generated with ZERO memory copies!\n";
                     $body .= "The connection uses native tokio IO directly.\n";
 
-                    $resp->setBody($body);
+                    $resp->withBody($body);
 
                     return $resp;
                 });
@@ -102,9 +102,9 @@ function mainConvenience(): void
     // This does the same as main() but in one call
     $server->listenAndServe('127.0.0.1:9001', function(HttpRequest $req): HttpResponse {
         $resp = new HttpResponse();
-        $resp->setStatus(200);
-        $resp->setHeader('Content-Type', 'text/html');
-        $resp->setBody('<h1>Hello from Async PHP!</h1>');
+        $resp->withStatus(200);
+        $resp->withHeader('Content-Type', 'text/html');
+        $resp->withBody('<h1>Hello from Async PHP!</h1>');
         return $resp;
     });
 }

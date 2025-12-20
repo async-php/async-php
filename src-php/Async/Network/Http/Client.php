@@ -4,6 +4,7 @@ namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpClient as KernelClient;
 use Async\Kernel\Network\Http\HttpRequest as KernelRequest;
+use Async\Kernel\IO\BytesReader;
 use Fiber;
 
 /**
@@ -96,9 +97,13 @@ class Client
 
         if ($body !== null) {
             if (is_array($body)) {
-                $kernelRequest->bodyJson(json_encode($body));
+                $json = json_encode($body);
+                $reader = BytesReader::fromString($json);
+                $kernelRequest->setHeader('Content-Type', 'application/json');
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             } elseif (is_string($body)) {
-                $kernelRequest->bodyText($body);
+                $reader = BytesReader::fromString($body);
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             }
         }
 
@@ -124,9 +129,13 @@ class Client
 
         if ($body !== null) {
             if (is_array($body)) {
-                $kernelRequest->bodyJson(json_encode($body));
+                $json = json_encode($body);
+                $reader = BytesReader::fromString($json);
+                $kernelRequest->setHeader('Content-Type', 'application/json');
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             } elseif (is_string($body)) {
-                $kernelRequest->bodyText($body);
+                $reader = BytesReader::fromString($body);
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             }
         }
 
@@ -152,9 +161,13 @@ class Client
 
         if ($body !== null) {
             if (is_array($body)) {
-                $kernelRequest->bodyJson(json_encode($body));
+                $json = json_encode($body);
+                $reader = BytesReader::fromString($json);
+                $kernelRequest->setHeader('Content-Type', 'application/json');
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             } elseif (is_string($body)) {
-                $kernelRequest->bodyText($body);
+                $reader = BytesReader::fromString($body);
+                $kernelRequest->setBody($reader->castTo(\Async\IO::READ));
             }
         }
 

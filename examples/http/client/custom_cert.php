@@ -18,7 +18,7 @@ Kernel::run(function () {
         echo str_repeat('=', 70) . "\n";
 
         $response = $client->get('https://www.baidu.com');
-        echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
+        echo "Status: {$response->status()}\n";
         echo "✓ Test 1 passed with default certificates!\n\n";
     } catch (Exception $e) {
         echo "✗ Test 1 failed: {$e->getMessage()}\n\n";
@@ -75,7 +75,7 @@ Kernel::run(function () {
 
         // Test that we can still make requests with system defaults
         $response = $client->get('https://www.baidu.com');
-        echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
+        echo "Status: {$response->status()}\n";
         echo "✓ Test 4 passed! Back to using system certificates\n\n";
     } catch (Exception $e) {
         echo "✗ Test 4 failed: {$e->getMessage()}\n\n";

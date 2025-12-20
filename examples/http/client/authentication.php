@@ -31,7 +31,7 @@ Kernel::run(function () {
         
         $body = $response->text();
         $data = json_decode($body, true);
-        $statusCode = $response->getStatusCode();
+        $statusCode = $response->status();
 
         if ($statusCode === 200) {
             echo "✓ Authentication successful\n";
@@ -58,11 +58,11 @@ Kernel::run(function () {
             'Authorization' => $authHeaderWrong
         ]);
 
-        if ($response->getStatusCode() === 401) {
+        if ($response->status() === 401) {
             echo "✓ Correctly rejected with 401 Unauthorized\n";
-            echo "  Status: {$response->getStatusCode()}\n";
+            echo "  Status: {$response->status()}\n";
         } else {
-            echo "✗ Unexpected status: {$response->getStatusCode()}\n";
+            echo "✗ Unexpected status: {$response->status()}\n";
         }
     } catch (\Exception $e) {
         echo "  Exception (expected): {$e->getMessage()}\n";
@@ -84,7 +84,7 @@ Kernel::run(function () {
         $body = $response->text();
         $data = json_decode($body, true);
 
-        if ($response->getStatusCode() === 200 && $data['authenticated']) {
+        if ($response->status() === 200 && $data['authenticated']) {
             echo "✓ Bearer token authentication successful\n";
             echo "  Token received: {$data['token']}\n";
             echo "  Authenticated: true\n";

@@ -9,8 +9,7 @@ echo "=== HTTP Streaming Response Test ===\n";
 echo "Testing streaming/chunked response body reading\n\n";
 
 Kernel::run(function () {
-    $client = new Client();
-    $client->setTimeout(30);
+    $client = new Client(['timeout' => 30]);
 
     // Test 1: Stream reading from a regular response
     try {
@@ -24,7 +23,7 @@ Kernel::run(function () {
             ]
         ]);
 
-        echo "Status: {$response->getStatusCode()} {$response->getReasonPhrase()}\n";
+        echo "Status: {$response->status()}\n";
         echo "Reading body in chunks...\n";
 
         $totalBytes = 0;
@@ -114,7 +113,7 @@ Kernel::run(function () {
 
         $response = $client->get('http://www.baidu.com');
 
-        $contentLength = $response->getHeader('content-length');
+        $contentLength = $response->header('content-length');
         $expectedSize = $contentLength ? (int)$contentLength : null;
 
         echo "Starting download";

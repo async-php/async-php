@@ -35,12 +35,12 @@ Kernel::run(function () {
         // httpbin.org/redirect/3 will redirect 3 times
         $response = $client->get('https://httpbin.org/redirect/3');
 
-        $passed = $response->getStatusCode() === 200;
+        $passed = $response->status() === 200;
         printTest("Follow 3 redirects", $passed);
 
         if ($passed) {
             echo "  Final URL reached successfully\n";
-            echo "  Status: {$response->getStatusCode()}\n";
+            echo "  Status: {$response->status()}\n";
         }
     } catch (\Exception $e) {
         printTest("Follow redirects", false);
@@ -58,7 +58,7 @@ Kernel::run(function () {
 
         // Should stop at max redirects (usually returns the 302 response)
         printTest("Respect max redirects", true);
-        echo "  Status: {$response->getStatusCode()}\n";
+        echo "  Status: {$response->status()}\n";
     } catch (\Exception $e) {
         // Or it might throw error
         printTest("Respect max redirects", true); 
@@ -79,7 +79,7 @@ Kernel::run(function () {
             'Authorization' => 'Basic ' . base64_encode('user:passwd')
         ]);
 
-        $passed = $response->getStatusCode() === 200;
+        $passed = $response->status() === 200;
         printTest("Basic Auth", $passed);
 
         if ($passed) {
@@ -101,7 +101,7 @@ Kernel::run(function () {
             'Authorization' => 'Bearer my-secret-token-12345'
         ]);
 
-        $passed = $response->getStatusCode() === 200;
+        $passed = $response->status() === 200;
         printTest("Bearer Token", $passed);
 
         if ($passed) {
@@ -129,7 +129,7 @@ Kernel::run(function () {
         // Set a cookie
         $response1 = $client->get('https://httpbin.org/cookies/set?test_cookie=hello_world');
         echo "  Step 1: Set cookie\n";
-        echo "    Status: {$response1->getStatusCode()}\n";
+        echo "    Status: {$response1->status()}\n";
 
         // Cookie should be automatically sent in next request
         $response2 = $client->get('https://httpbin.org/cookies');
@@ -161,7 +161,7 @@ Kernel::run(function () {
         echo "\nTesting request with compression...\n";
         $response = $client->get('https://httpbin.org/gzip');
 
-        $passed = $response->getStatusCode() === 200;
+        $passed = $response->status() === 200;
         printTest("Request compressed response", $passed);
 
         if ($passed) {
