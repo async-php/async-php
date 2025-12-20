@@ -67,13 +67,11 @@ class Request
         $headers = $kernelRequest->headers();
         $req->headers = self::normalizeHeaderMap($headers);
 
-        if (method_exists($kernelRequest, 'body')) {
-            $kernelReader = $kernelRequest->body();
-            if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
-                /** @var ReaderWrapper $reader */
-                $reader = IO::kernelToWrapper($kernelReader);
-                $req->body = $reader;
-            }
+        $kernelReader = $kernelRequest->body();
+        if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
+            /** @var ReaderWrapper $reader */
+            $reader = IO::kernelToWrapper($kernelReader);
+            $req->body = $reader;
         }
 
         return $req;
@@ -355,23 +353,15 @@ class Request
             foreach ($values as $i => $value) {
                 if ($i === 0) {
                     $kernel->setHeader($name, $value);
-                    continue;
-                }
-                if (method_exists($kernel, 'appendHeader')) {
-                    $kernel->appendHeader($name, $value);
                 } else {
-                    $kernel->setHeader($name, $value);
+                    $kernel->appendHeader($name, $value);
                 }
             }
         }
 
         if ($this->body !== null) {
             $kernelAsyncReader = self::toKernelAsyncReader($this->body);
-            if (method_exists($kernel, 'bodyStream')) {
-                $kernel->bodyStream($kernelAsyncReader);
-            } elseif (method_exists($kernel, 'setBody')) {
-                $kernel->setBody($kernelAsyncReader);
-            }
+            $kernel->setBody($kernelAsyncReader);
         }
 
         return $kernel;

@@ -87,13 +87,11 @@ class Response
         $headers = $kernelResponse->headers();
         $resp->headers = self::normalizeHeaderMap($headers);
 
-        if (method_exists($kernelResponse, 'body')) {
-            $kernelReader = $kernelResponse->body();
-            if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
-                /** @var ReaderWrapper $reader */
-                $reader = IO::kernelToWrapper($kernelReader);
-                $resp->body = $reader;
-            }
+        $kernelReader = $kernelResponse->body();
+        if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
+            /** @var ReaderWrapper $reader */
+            $reader = IO::kernelToWrapper($kernelReader);
+            $resp->body = $reader;
         }
 
         return $resp;
@@ -381,25 +379,15 @@ class Response
             foreach ($values as $i => $value) {
                 if ($i === 0) {
                     $kernel->setHeader($name, $value);
-                    continue;
-                }
-                if (method_exists($kernel, 'appendHeader')) {
-                    $kernel->appendHeader($name, $value);
                 } else {
-                    $kernel->setHeader($name, $value);
+                    $kernel->appendHeader($name, $value);
                 }
             }
         }
 
         if ($this->body !== null) {
             $kernelAsyncReader = self::toKernelAsyncReader($this->body);
-            if (method_exists($kernel, 'setBodyStream')) {
-                $kernel->setBodyStream($kernelAsyncReader);
-            } elseif (method_exists($kernel, 'setBody')) {
-                $kernel->setBody($kernelAsyncReader);
-            } else {
-                $kernel->setBody($this->text());
-            }
+            $kernel->setBody($kernelAsyncReader);
         }
 
         return $kernel;
