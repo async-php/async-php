@@ -43,206 +43,36 @@ class IO
     /**
      * Kernel IO cast bitflags (re-exported for userland).
      *
-     * Values are defined by the extension as namespaced constants:
-     * - \Async\Kernel\IO\READ
-     * - \Async\Kernel\IO\WRITE
-     * - \Async\Kernel\IO\SEEK
-     * - \Async\Kernel\IO\BUF
+     * Values are defined by the extension as constants:
+     * - ASYNC_READ
+     * - ASYNC_WRITE
+     * - ASYNC_SEEK
+     * - ASYNC_BUF
      */
-    public static int $READ = \Async\Kernel\IO\READ;
-    public static int $WRITE = \Async\Kernel\IO\WRITE;
-    public static int $SEEK = \Async\Kernel\IO\SEEK;
-    public static int $BUF = \Async\Kernel\IO\BUF;
+    public const READ = ASYNC_READ;
+    public const WRITE = ASYNC_WRITE;
+    public const SEEK = ASYNC_SEEK;
+    public const BUF = ASYNC_BUF;
 
     /**
-     * Wrap AsyncReader into a ReaderWrapper
+     * Convert kernel IO object to wrapper object based on its type
      *
-     * @param AsyncReader $reader The kernel async reader
-     * @return ReaderWrapper Reader interface implementation
+     * @param object $kernelIo Kernel IO object (AsyncReader, AsyncWriter, etc.)
+     * @return ReaderWrapper|WriterWrapper|SeekerWrapper|BufReaderWrapper|ReadWriterWrapper|ReadSeekerWrapper|WriteSeekerWrapper|ReadWriteSeekerWrapper
      */
-    public static function wrapReader(AsyncReader $reader): ReaderWrapper
+    public static function kernelToWrapper(object $kernelIo)
     {
-        return new ReaderWrapper($reader);
-    }
-
-    /**
-     * Wrap AsyncWriter into a WriterWrapper
-     *
-     * @param AsyncWriter $writer The kernel async writer
-     * @return WriterWrapper Writer interface implementation
-     */
-    public static function wrapWriter(AsyncWriter $writer): WriterWrapper
-    {
-        return new WriterWrapper($writer);
-    }
-
-    /**
-     * Wrap AsyncSeeker into a SeekerWrapper
-     *
-     * @param AsyncSeeker $seeker The kernel async seeker
-     * @return SeekerWrapper Seeker interface implementation
-     */
-    public static function wrapSeeker(AsyncSeeker $seeker): SeekerWrapper
-    {
-        return new SeekerWrapper($seeker);
-    }
-
-    /**
-     * Wrap AsyncBufReader into a BufReaderWrapper
-     *
-     * @param AsyncBufReader $reader The kernel async buffered reader
-     * @return BufReaderWrapper BufReader interface implementation
-     */
-    public static function wrapBufReader(AsyncBufReader $reader): BufReaderWrapper
-    {
-        return new BufReaderWrapper($reader);
-    }
-
-    /**
-     * Wrap AsyncReadWriter into a ReadWriterWrapper
-     *
-     * @param AsyncReadWriter $readWriter The kernel async read-writer
-     * @return ReadWriterWrapper ReadWriter interface implementation
-     */
-    public static function wrapReadWriter(AsyncReadWriter $readWriter): ReadWriterWrapper
-    {
-        return new ReadWriterWrapper($readWriter);
-    }
-
-    /**
-     * Wrap AsyncReadSeeker into a ReadSeekerWrapper
-     *
-     * @param AsyncReadSeeker $readSeeker The kernel async read-seeker
-     * @return ReadSeekerWrapper ReadSeeker interface implementation
-     */
-    public static function wrapReadSeeker(AsyncReadSeeker $readSeeker): ReadSeekerWrapper
-    {
-        return new ReadSeekerWrapper($readSeeker);
-    }
-
-    /**
-     * Wrap AsyncWriteSeeker into a WriteSeekerWrapper
-     *
-     * @param AsyncWriteSeeker $writeSeeker The kernel async write-seeker
-     * @return WriteSeekerWrapper WriteSeeker interface implementation
-     */
-    public static function wrapWriteSeeker(AsyncWriteSeeker $writeSeeker): WriteSeekerWrapper
-    {
-        return new WriteSeekerWrapper($writeSeeker);
-    }
-
-    /**
-     * Wrap AsyncReadWriteSeeker into a ReadWriteSeekerWrapper
-     *
-     * @param AsyncReadWriteSeeker $readWriteSeeker The kernel async read-write-seeker
-     * @return ReadWriteSeekerWrapper ReadWriteSeeker interface implementation
-     */
-    public static function wrapReadWriteSeeker(AsyncReadWriteSeeker $readWriteSeeker): ReadWriteSeekerWrapper
-    {
-        return new ReadWriteSeekerWrapper($readWriteSeeker);
-    }
-
-    /**
-     * Create a ByteReader adapter from a Reader
-     *
-     * @param Reader $reader The reader to adapt
-     * @return ByteReaderAdapter ByteScanner implementation
-     */
-    public static function asByteReader(Reader $reader): ByteReaderAdapter
-    {
-        return new ByteReaderAdapter($reader);
-    }
-
-    /**
-     * Create a ByteWriter adapter from a Writer
-     *
-     * @param Writer $writer The writer to adapt
-     * @return ByteWriterAdapter ByteWriter implementation
-     */
-    public static function asByteWriter(Writer $writer): ByteWriterAdapter
-    {
-        return new ByteWriterAdapter($writer);
-    }
-
-    /**
-     * Create a StringReader adapter from a Reader
-     *
-     * @param Reader $reader The reader to adapt
-     * @return StringReaderAdapter StringReader implementation
-     */
-    public static function asStringReader(Reader $reader): StringReaderAdapter
-    {
-        return new StringReaderAdapter($reader);
-    }
-
-    /**
-     * Create a StringWriter adapter from a Writer
-     *
-     * @param Writer $writer The writer to adapt
-     * @return StringWriterAdapter StringWriter implementation
-     */
-    public static function asStringWriter(Writer $writer): StringWriterAdapter
-    {
-        return new StringWriterAdapter($writer);
-    }
-
-    /**
-     * Create a RuneReader adapter from a Reader
-     *
-     * @param Reader $reader The reader to adapt
-     * @return RuneReaderAdapter RuneScanner implementation
-     */
-    public static function asRuneReader(Reader $reader): RuneReaderAdapter
-    {
-        return new RuneReaderAdapter($reader);
-    }
-
-    /**
-     * Create a ReaderAt adapter from a Reader and Seeker
-     *
-     * @param Reader $reader The reader to adapt
-     * @param Seeker $seeker The seeker for positioning
-     * @return ReaderAtAdapter ReaderAt implementation
-     */
-    public static function asReaderAt(Reader $reader, Seeker $seeker): ReaderAtAdapter
-    {
-        return new ReaderAtAdapter($reader, $seeker);
-    }
-
-    /**
-     * Create a WriterAt adapter from a Writer and Seeker
-     *
-     * @param Writer $writer The writer to adapt
-     * @param Seeker $seeker The seeker for positioning
-     * @return WriterAtAdapter WriterAt implementation
-     */
-    public static function asWriterAt(Writer $writer, Seeker $seeker): WriterAtAdapter
-    {
-        return new WriterAtAdapter($writer, $seeker);
-    }
-
-    /**
-     * Create a ReaderFrom adapter from a Writer
-     *
-     * @param Writer $writer The writer to copy data into
-     * @param int $bufferSize Buffer size for copying (default 8192)
-     * @return ReaderFromAdapter ReaderFrom implementation
-     */
-    public static function asReaderFrom(Writer $writer, int $bufferSize = 8192): ReaderFromAdapter
-    {
-        return new ReaderFromAdapter($writer, $bufferSize);
-    }
-
-    /**
-     * Create a WriterTo adapter from a Reader
-     *
-     * @param Reader $reader The reader to copy data from
-     * @param int $bufferSize Buffer size for copying (default 8192)
-     * @return WriterToAdapter WriterTo implementation
-     */
-    public static function asWriterTo(Reader $reader, int $bufferSize = 8192): WriterToAdapter
-    {
-        return new WriterToAdapter($reader, $bufferSize);
+        return match (true) {
+            $kernelIo instanceof AsyncReadWriteSeeker => new ReadWriteSeekerWrapper($kernelIo),
+            $kernelIo instanceof AsyncReadSeeker => new ReadSeekerWrapper($kernelIo),
+            $kernelIo instanceof AsyncWriteSeeker => new WriteSeekerWrapper($kernelIo),
+            $kernelIo instanceof AsyncReadWriter => new ReadWriterWrapper($kernelIo),
+            $kernelIo instanceof AsyncBufReader => new BufReaderWrapper($kernelIo),
+            $kernelIo instanceof AsyncReader => new ReaderWrapper($kernelIo),
+            $kernelIo instanceof AsyncWriter => new WriterWrapper($kernelIo),
+            $kernelIo instanceof AsyncSeeker => new SeekerWrapper($kernelIo),
+            default => throw new \InvalidArgumentException('Unknown kernel IO type: ' . get_class($kernelIo)),
+        };
     }
 
     /**

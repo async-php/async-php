@@ -52,4 +52,16 @@ class ReadWriteSeekerWrapper implements ReadWriteSeeker
     {
         return $this->inner;
     }
+
+    /**
+     * Cast to a different IO wrapper based on bitflags.
+     *
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return mixed Wrapper IO object
+     */
+    public function castTo(int $type)
+    {
+        $kernelIo = $this->inner->castTo($type);
+        return \Async\IO::kernelToWrapper($kernelIo);
+    }
 }

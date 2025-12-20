@@ -131,12 +131,14 @@ class TlsStream implements Reader, Writer, Closer
     }
 
     /**
-     * Cast underlying kernel stream into a Kernel IO wrapper by bitflags.
+     * Cast to an IO wrapper based on bitflags.
      *
-     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return mixed Wrapper IO object (ReaderWrapper/WriterWrapper/ReadWriterWrapper/...)
      */
     public function castTo(int $type)
     {
-        return $this->inner->castTo($type);
+        $kernelIo = $this->inner->castTo($type);
+        return IO::kernelToWrapper($kernelIo);
     }
 }

@@ -182,12 +182,23 @@ class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
     }
 
     /**
-     * Cast underlying kernel stream into a Kernel IO wrapper by bitflags.
+     * Get the underlying kernel TcpStream
+     * @internal
+     */
+    public function unwrap(): KernelTcpStream
+    {
+        return $this->inner;
+    }
+
+    /**
+     * Cast to an IO wrapper based on bitflags.
      *
-     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return mixed Wrapper IO object (ReaderWrapper/WriterWrapper/ReadWriterWrapper/...)
      */
     public function castTo(int $type)
     {
-        return $this->inner->castTo($type);
+        $kernelIo = $this->inner->castTo($type);
+        return IO::kernelToWrapper($kernelIo);
     }
 }

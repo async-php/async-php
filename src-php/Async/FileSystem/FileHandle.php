@@ -172,12 +172,23 @@ class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, 
     }
 
     /**
-     * Cast underlying kernel handle into a Kernel IO wrapper by bitflags.
+     * Get the underlying kernel FileHandle
+     * @internal
+     */
+    public function unwrap(): KernelFileHandle
+    {
+        return $this->inner;
+    }
+
+    /**
+     * Cast to an IO wrapper based on bitflags.
      *
-     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return mixed Wrapper IO object (ReaderWrapper/WriterWrapper/ReadWriterWrapper/...)
      */
     public function castTo(int $type)
     {
-        return $this->inner->castTo($type);
+        $kernelIo = $this->inner->castTo($type);
+        return IO::kernelToWrapper($kernelIo);
     }
 }
