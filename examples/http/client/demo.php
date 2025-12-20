@@ -42,7 +42,7 @@ Kernel::run(function () {
         'Accept' => 'application/vnd.github.v3+json'
     ]);
 
-    $data = json_decode((string)$response->getBody(), true);
+    $data = json_decode($response->text(), true);
     if (isset($data['total_count'])) {
         echo "Found {$data['total_count']} repositories\n";
         echo "Top 5 PHP repositories:\n";
@@ -65,7 +65,7 @@ Kernel::run(function () {
     $response = $client->post('https://httpbin.org/post', $body);
 
     if ($response->getStatusCode() === 200) {
-        $data = json_decode((string)$response->getBody(), true);
+        $data = json_decode($response->text(), true);
         echo "POST successful!\n";
         if (isset($data['json'])) {
             echo "Sent data: " . json_encode($data['json']) . "\n";
@@ -82,7 +82,7 @@ Kernel::run(function () {
         'User-Agent' => 'async-php-demo/1.0',
     ]);
 
-    $user = json_decode((string)$response->getBody(), true);
+    $user = json_decode($response->text(), true);
     if (isset($user['login'])) {
         echo "User: {$user['login']}\n";
         echo "Name: {$user['name']}\n";

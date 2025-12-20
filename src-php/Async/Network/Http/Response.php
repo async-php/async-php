@@ -2,14 +2,18 @@
 
 namespace Async\Network\Http;
 
+use Async\IO;
+use Async\IO\Reader;
+use Async\Kernel\IO\BytesReader;
 use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
-use Fiber;
+use Async\IO\Wrapper\ReaderWrapper;
 
 /**
- * HTTP Response - Wraps kernel HttpResponse and hides async Future details
+ * HTTP Response (userland) - kernel-agnostic.
  *
- * This class provides a simple interface for both server and client responses,
- * automatically handling Fiber suspension for async operations.
+ * - Does not hold Async\Kernel\Network\Http\HttpResponse directly.
+ * - Convert via Response::fromKernelResponse() and Response->toKernelResponse().
+ * - Body is represented as Async\IO\Reader for streaming.
  *
  * Usage (Server):
  * ```php
@@ -30,17 +34,77 @@ use Fiber;
  */
 class Response
 {
-    private KernelResponse $kernel;
-    private ?string $cachedBody = null;
+    private int $status = 200;
+    private ?string $version = null;
+
+    /** @var array<string, list<string>> */
+    private array $headers = [];
+
+    private ?Reader $body = null;
+    private ?string $cachedText = null;
 
     /**
      * Create a Response
-     *
-     * @param KernelResponse|null $kernelResponse Optional kernel response (for client responses)
      */
-    public function __construct(?KernelResponse $kernelResponse = null)
+    public function __construct(int $status = 200, mixed $headersOrBody = [], mixed $body = null)
     {
-        $this->kernel = $kernelResponse ?? new KernelResponse();
+        $this->status = $status;
+
+        if (is_array($headersOrBody)) {
+            foreach ($headersOrBody as $name => $value) {
+                if (is_array($value)) {
+                    foreach ($value as $v) {
+                        $this->addHeader((string)$name, (string)$v);
+                    }
+                } else {
+                    $this->addHeader((string)$name, (string)$value);
+                }
+            }
+        } elseif (is_string($headersOrBody) || $headersOrBody instanceof Reader) {
+            $body = $headersOrBody;
+        } elseif ($headersOrBody !== null) {
+            throw new \InvalidArgumentException('Second argument must be headers array or body');
+        }
+
+        if (is_string($body) || $body instanceof Reader) {
+            $this->setBody($body);
+        } elseif ($body !== null) {
+            throw new \InvalidArgumentException('Body must be string, Reader, or null');
+        }
+    }
+
+    /**
+     * Create a userland Response from a kernel response (client-side).
+     *
+     * Note: this consumes the kernel response body and turns it into a Reader.
+     */
+    public static function fromKernelResponse(KernelResponse $kernelResponse): self
+    {
+        $resp = new self((int)$kernelResponse->status());
+        $resp->version = $kernelResponse->version();
+
+        if (method_exists($kernelResponse, 'getHeaders')) {
+            /** @var array<string, list<string>> $headers */
+            $headers = $kernelResponse->getHeaders();
+            $resp->headers = self::normalizeHeaderMap($headers);
+        } else {
+            /** @var array<string, string> $headers */
+            $headers = $kernelResponse->headers();
+            foreach ($headers as $name => $value) {
+                $resp->headers[strtolower((string)$name)] = [(string)$value];
+            }
+        }
+
+        if (method_exists($kernelResponse, 'stream')) {
+            $kernelReader = $kernelResponse->stream();
+            if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
+                /** @var ReaderWrapper $reader */
+                $reader = IO::kernelToWrapper($kernelReader);
+                $resp->body = $reader;
+            }
+        }
+
+        return $resp;
     }
 
     /**
@@ -50,7 +114,7 @@ class Response
      */
     public function status(): int
     {
-        return $this->kernel->status();
+        return $this->status;
     }
 
     /**
@@ -60,17 +124,17 @@ class Response
      */
     public function version(): string
     {
-        return $this->kernel->version();
+        return $this->version ?? '';
     }
 
     /**
      * Get response headers
      *
-     * @return array<string, string>
+     * @return array<string, list<string>>
      */
     public function headers(): array
     {
-        return $this->kernel->headers();
+        return $this->headers;
     }
 
     /**
@@ -81,31 +145,48 @@ class Response
      */
     public function header(string $name): ?string
     {
-        $headers = $this->headers();
-        $name = strtolower($name);
-
-        foreach ($headers as $key => $value) {
-            if (strtolower($key) === $name) {
-                return $value;
-            }
-        }
-
-        return null;
+        $values = $this->getHeaderValues($name);
+        return $values[0] ?? null;
     }
 
     /**
-     * Get response body as text (auto-suspends for async read)
+     * Get all header values for a name (case-insensitive).
      *
-     * @return string
+     * @return list<string>
+     */
+    public function getHeaderValues(string $name): array
+    {
+        $key = strtolower($name);
+        return $this->headers[$key] ?? [];
+    }
+
+    /**
+     * Get header line (comma-joined), similar to PSR-7.
+     */
+    public function getHeaderLine(string $name): string
+    {
+        return implode(', ', $this->getHeaderValues($name));
+    }
+
+    /**
+     * Get response body reader (streaming).
+     */
+    public function bodyReader(): Reader
+    {
+        return $this->body ?? self::emptyReader();
+    }
+
+    /**
+     * Read the whole response body as string (consumes the body).
      */
     public function text(): string
     {
-        if ($this->cachedBody !== null) {
-            return $this->cachedBody;
+        if ($this->cachedText !== null) {
+            return $this->cachedText;
         }
 
-        $this->cachedBody = $this->kernel->text();
-        return $this->cachedBody;
+        $this->cachedText = self::readAll($this->bodyReader());
+        return $this->cachedText;
     }
 
     /**
@@ -116,7 +197,7 @@ class Response
     public function json(): ?array
     {
         $text = $this->text();
-        return json_decode($text, true);
+        return json_decode($text, true) ?: null;
     }
 
     /**
@@ -126,7 +207,12 @@ class Response
      */
     public function contentLength(): ?int
     {
-        return $this->kernel->contentLength();
+        $v = $this->header('content-length');
+        if ($v === null) {
+            return null;
+        }
+        $n = (int)$v;
+        return $n > 0 ? $n : null;
     }
 
     /**
@@ -173,6 +259,24 @@ class Response
         return $status >= 500 && $status < 600;
     }
 
+    /**
+     * Read a chunk from the body reader.
+     *
+     * @return string|null Null when EOF.
+     */
+    public function readChunk(int $length): ?string
+    {
+        return $this->bodyReader()->read($length);
+    }
+
+    /**
+     * Drop the body reader (early terminate).
+     */
+    public function closeBody(): void
+    {
+        $this->body = self::emptyReader();
+    }
+
     // Server-side methods for building responses
 
     /**
@@ -183,7 +287,7 @@ class Response
      */
     public function setStatus(int $status): self
     {
-        $this->kernel->setStatus($status);
+        $this->status = $status;
         return $this;
     }
 
@@ -196,20 +300,37 @@ class Response
      */
     public function setHeader(string $name, string $value): self
     {
-        $this->kernel->setHeader($name, $value);
+        $this->headers[strtolower($name)] = [$value];
+        return $this;
+    }
+
+    /**
+     * Append a header value without overwriting existing ones.
+     */
+    public function addHeader(string $name, string $value): self
+    {
+        $key = strtolower($name);
+        $this->headers[$key] ??= [];
+        $this->headers[$key][] = $value;
         return $this;
     }
 
     /**
      * Set response body (server-side)
      *
-     * @param string $body
+     * @param string|Reader $body
      * @return self
      */
-    public function setBody(string $body): self
+    public function setBody(string|Reader $body): self
     {
-        $this->kernel->setBody($body);
-        $this->cachedBody = $body;
+        if (is_string($body)) {
+            $this->body = self::readerFromString($body);
+            $this->cachedText = $body;
+            return $this;
+        }
+
+        $this->body = $body;
+        $this->cachedText = null;
         return $this;
     }
 
@@ -222,6 +343,9 @@ class Response
     public function setJson(array|object $data): self
     {
         $json = json_encode($data);
+        if ($json === false) {
+            throw new \InvalidArgumentException('Failed to encode JSON body');
+        }
         $this->setHeader('Content-Type', 'application/json');
         $this->setBody($json);
         return $this;
@@ -254,13 +378,148 @@ class Response
     }
 
     /**
-     * Get the underlying kernel response
+     * Convert to kernel response (for returning from server handlers).
+     */
+    public function toKernelResponse(): KernelResponse
+    {
+        $kernel = new KernelResponse();
+        $kernel->setStatus($this->status);
+
+        foreach ($this->headers as $name => $values) {
+            foreach ($values as $i => $value) {
+                if ($i === 0) {
+                    $kernel->setHeader($name, $value);
+                    continue;
+                }
+                if (method_exists($kernel, 'addHeader')) {
+                    $kernel->addHeader($name, $value);
+                } else {
+                    $kernel->setHeader($name, $value);
+                }
+            }
+        }
+
+        if ($this->body !== null) {
+            $kernelAsyncReader = self::toKernelAsyncReader($this->body);
+            if (method_exists($kernel, 'setBodyStream')) {
+                $kernel->setBodyStream($kernelAsyncReader);
+            } elseif (method_exists($kernel, 'set_body_stream')) {
+                $kernel->set_body_stream($kernelAsyncReader);
+            } else {
+                $kernel->setBody($this->text());
+            }
+        }
+
+        return $kernel;
+    }
+
+    /**
+     * Backward-compatible alias.
      *
      * @internal
-     * @return KernelResponse
      */
     public function getKernel(): KernelResponse
     {
-        return $this->kernel;
+        return $this->toKernelResponse();
+    }
+
+    // ===== Compatibility aliases for existing examples =====
+
+    public function getStatusCode(): int
+    {
+        return $this->status();
+    }
+
+    public function getReasonPhrase(): string
+    {
+        return self::reasonPhraseFor($this->status());
+    }
+
+    public function getHeaders(): array
+    {
+        return $this->headers();
+    }
+
+    public function getHeader(string $name): ?string
+    {
+        return $this->header($name);
+    }
+
+    public function getBody(): Reader
+    {
+        return $this->bodyReader();
+    }
+
+    /** @param array<string, list<string>> $headers */
+    private static function normalizeHeaderMap(array $headers): array
+    {
+        $out = [];
+        foreach ($headers as $name => $values) {
+            $key = strtolower((string)$name);
+            $out[$key] = array_values(array_map('strval', $values));
+        }
+        return $out;
+    }
+
+    private static function emptyReader(): Reader
+    {
+        return self::readerFromString('');
+    }
+
+    private static function readerFromString(string $bytes): Reader
+    {
+        $bytesReader = BytesReader::fromBytes($bytes);
+        $kernelReader = $bytesReader->castTo(IO::READ);
+        return IO::kernelToWrapper($kernelReader);
+    }
+
+    private static function readAll(Reader $reader): string
+    {
+        $buf = '';
+        while (true) {
+            $chunk = $reader->read(8192);
+            if ($chunk === null || $chunk === '') {
+                break;
+            }
+            $buf .= $chunk;
+        }
+        return $buf;
+    }
+
+    private static function toKernelAsyncReader(Reader $reader): \Async\Kernel\IO\AsyncReader
+    {
+        $phpReader = IO::wrapPhpIo($reader, IO::READ);
+        $kernelReader = $phpReader->castTo(IO::READ);
+
+        if (!$kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
+            throw new \RuntimeException('Failed to convert Reader to kernel AsyncReader');
+        }
+
+        return $kernelReader;
+    }
+
+    private static function reasonPhraseFor(int $status): string
+    {
+        return match ($status) {
+            200 => 'OK',
+            201 => 'Created',
+            202 => 'Accepted',
+            204 => 'No Content',
+            301 => 'Moved Permanently',
+            302 => 'Found',
+            303 => 'See Other',
+            307 => 'Temporary Redirect',
+            308 => 'Permanent Redirect',
+            400 => 'Bad Request',
+            401 => 'Unauthorized',
+            403 => 'Forbidden',
+            404 => 'Not Found',
+            409 => 'Conflict',
+            429 => 'Too Many Requests',
+            500 => 'Internal Server Error',
+            502 => 'Bad Gateway',
+            503 => 'Service Unavailable',
+            default => '',
+        };
     }
 }

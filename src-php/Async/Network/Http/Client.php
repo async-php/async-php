@@ -75,7 +75,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -103,7 +103,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -131,7 +131,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -159,7 +159,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -178,7 +178,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -197,7 +197,7 @@ class Client
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
-        return new Response($kernelResponse);
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**
@@ -228,8 +228,8 @@ class Client
      */
     public function send(Request $request): Response
     {
-        $kernelResponse = Fiber::suspend($this->kernel->send($request->getKernel()));
-        return new Response($kernelResponse);
+        $kernelResponse = Fiber::suspend($this->kernel->send($request->toKernelRequest()));
+        return Response::fromKernelResponse($kernelResponse);
     }
 
     /**

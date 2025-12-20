@@ -110,6 +110,26 @@ impl HttpResponse {
         headers
     }
 
+    /// Get all headers preserving multiple values.
+    /// Returns: array<string, array<string>> (header name => array of values)
+    #[php]
+    pub fn get_headers(&self) -> HashMap<String, Vec<String>> {
+        let mut result = HashMap::new();
+        let headers = self.inner.get_ref().headers();
+
+        for (name, value) in headers.iter() {
+            let name_str = name.to_string();
+            let value_str = value.to_str().unwrap_or("").to_string();
+
+            result
+                .entry(name_str)
+                .or_insert_with(Vec::new)
+                .push(value_str);
+        }
+
+        result
+    }
+
     #[php]
     pub fn header(&self, name: String) -> Option<String> {
         let name = name.to_lowercase();
@@ -238,6 +258,21 @@ impl HttpResponse {
         Ok(())
     }
 
+    /// Append a header value (preserves existing values for the same header name).
+    #[php]
+    pub fn add_header(&mut self, name: String, value: String) -> PhpResult<()> {
+        use http::header::{HeaderName, HeaderValue};
+
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| format!("Invalid header name: {e}"))?;
+        let value = HeaderValue::from_str(&value)
+            .map_err(|e| format!("Invalid header value: {e}"))?;
+
+        let resp = self.inner.get_mut();
+        resp.headers_mut().append(name, value);
+        Ok(())
+    }
+
     /// Set the response body from a string
     #[php]
     pub fn set_body(&mut self, body: String) -> PhpResult<()> {
@@ -250,6 +285,46 @@ impl HttpResponse {
 
         let resp = self.inner.get_mut();
         *resp.body_mut() = full_body;
+        Ok(())
+    }
+
+    /// Set the response body from raw bytes (binary-safe).
+    #[php]
+    pub fn set_body_bytes(&mut self, data: &Zval) -> PhpResult<()> {
+        let bytes = if let Some(bin) = data.binary() {
+            Bytes::from(bin.to_vec())
+        } else if let Some(s) = data.str() {
+            Bytes::from(s.as_bytes().to_vec())
+        } else {
+            return Err(PhpException::default("Body must be string or binary".to_string()));
+        };
+
+        use http_body_util::Full;
+        let full_body = Full::new(bytes)
+            .map_err(|err: Infallible| match err {})
+            .boxed();
+
+        let resp = self.inner.get_mut();
+        *resp.body_mut() = full_body;
+        Ok(())
+    }
+
+    /// Set the response body from an AsyncReader (streaming, zero-copy friendly).
+    #[php]
+    pub fn set_body_stream(&mut self, reader: &AsyncReader) -> PhpResult<()> {
+        use futures::TryStreamExt;
+        use http_body::Frame;
+        use http_body_util::StreamBody;
+        use sync_wrapper::SyncStream;
+        use tokio_util::io::ReaderStream;
+
+        let stream = ReaderStream::new(reader.get_inner())
+            .map_ok(Frame::data)
+            .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>);
+        let body = StreamBody::new(SyncStream::new(stream)).boxed();
+
+        let resp = self.inner.get_mut();
+        *resp.body_mut() = body;
         Ok(())
     }
 }

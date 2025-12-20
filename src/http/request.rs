@@ -12,12 +12,17 @@ use std::time::Duration;
 use url::Url;
 
 use crate::util::Shared;
+use crate::future::RustFuture;
+use crate::io::AsyncReader;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RequestTimeout(pub Duration);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RequestSent;
+
+#[derive(Clone, Copy, Debug)]
+struct BodyConsumed;
 
 pub(crate) fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
     Empty::<Bytes>::new()
@@ -66,6 +71,21 @@ impl HttpRequest {
             inner: Shared::new(request),
         })
     }
+
+    pub(crate) fn take_body(&mut self) -> Result<BoxBody<Bytes, Box<dyn Error + Send>>, String> {
+        let req = self.inner.get_mut();
+
+        if req.extensions().get::<RequestSent>().is_some() {
+            return Err("Request already sent or invalidated".to_string());
+        }
+
+        if req.extensions().get::<BodyConsumed>().is_some() {
+            return Err("Request body already consumed".to_string());
+        }
+
+        req.extensions_mut().insert(BodyConsumed);
+        Ok(std::mem::replace(req.body_mut(), empty_body()))
+    }
 }
 
 #[php_impl]
@@ -78,6 +98,17 @@ impl HttpRequest {
     #[php]
     pub fn header(&mut self, name: String, value: String) -> PhpResult<()> {
         set_header(self.inner.get_mut(), name, value)?;
+        Ok(())
+    }
+
+    /// Append a header value (preserves existing values for the same header name).
+    #[php]
+    pub fn add_header(&mut self, name: String, value: String) -> PhpResult<()> {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|e| format!("Invalid header name: {e}"))?;
+        let value = HeaderValue::from_str(&value)
+            .map_err(|e| format!("Invalid header value: {e}"))?;
+        self.inner.get_mut().headers_mut().append(name, value);
         Ok(())
     }
 
@@ -187,6 +218,68 @@ impl HttpRequest {
         let req = self.inner.get_mut();
         *req.body_mut() = body;
         Ok(())
+    }
+
+    // ==================== Body read methods (server-side) ====================
+
+    /// Read request body as UTF-8 string (consumes the body).
+    #[php]
+    pub fn text(&mut self) -> RustFuture {
+        let body = match self.take_body() {
+            Ok(b) => b,
+            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
+        };
+
+        RustFuture::new(async move {
+            let collected = body.collect().await.map_err(|e| e.to_string())?;
+            let bytes = collected.to_bytes();
+            let text = String::from_utf8(bytes.to_vec())
+                .map_err(|e| format!("Failed to decode UTF-8: {e}"))?;
+
+            let mut zval = Zval::new();
+            zval.set_string(&text, false)
+                .map_err(|e| format!("Failed to set string: {:?}", e))?;
+            Ok::<Zval, String>(zval)
+        })
+    }
+
+    /// Alias of `text()` for compatibility.
+    #[php]
+    pub fn body(&mut self) -> RustFuture {
+        self.text()
+    }
+
+    /// Read request body as bytes (consumes the body).
+    #[php]
+    pub fn bytes(&mut self) -> RustFuture {
+        let body = match self.take_body() {
+            Ok(b) => b,
+            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
+        };
+
+        RustFuture::new(async move {
+            let collected = body.collect().await.map_err(|e| e.to_string())?;
+            let bytes = collected.to_bytes();
+
+            let mut zval = Zval::new();
+            zval.set_binary(bytes.to_vec());
+            Ok::<Zval, String>(zval)
+        })
+    }
+
+    /// Get request body as an AsyncReader (consumes the body).
+    #[php]
+    pub fn stream(&mut self) -> PhpResult<AsyncReader> {
+        let body = self.take_body()?;
+        use futures::StreamExt;
+        use std::io;
+
+        let stream = body
+            .into_data_stream()
+            .map(|result| result.map_err(|e| io::Error::other(e.to_string())));
+        let reader = tokio_util::io::StreamReader::new(stream);
+
+        Ok(AsyncReader::new(reader))
     }
 
     // ==================== Server-side getter methods ====================

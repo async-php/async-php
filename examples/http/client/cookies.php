@@ -36,7 +36,7 @@ Kernel::run(function () {
 
         // Retrieve cookies to verify it was stored
         $response = $client->get('https://httpbin.org/cookies');
-        $data = json_decode((string)$response->getBody(), true);
+        $data = json_decode($response->text(), true);
 
         if (isset($data['cookies']['session']) && $data['cookies']['session'] === 'abc123') {
             echo "✓ Cookie stored and sent automatically\n";
@@ -63,7 +63,7 @@ Kernel::run(function () {
 
         // Retrieve all cookies
         $response = $client->get('https://httpbin.org/cookies');
-        $data = json_decode((string)$response->getBody(), true);
+        $data = json_decode($response->text(), true);
 
         $cookieCount = count($data['cookies']);
         echo "  Step 2: Retrieved {$cookieCount} cookies\n";
@@ -99,7 +99,7 @@ Kernel::run(function () {
 
         for ($i = 1; $i <= 3; $i++) {
             $response = $client->get('https://httpbin.org/cookies');
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             $count = count($data['cookies']);
             echo "    Request {$i}: {$count} cookies sent\n";
         }
@@ -125,7 +125,7 @@ Kernel::run(function () {
 
         // Try to retrieve - should not be there
         $response = $client2->get('https://httpbin.org/cookies');
-        $data = json_decode((string)$response->getBody(), true);
+        $data = json_decode($response->text(), true);
 
         if (empty($data['cookies'])) {
             echo "✓ Cookies not stored (as expected, jar disabled)\n";

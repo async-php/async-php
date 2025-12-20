@@ -25,7 +25,7 @@ Kernel::run(function () {
         echo "Version: HTTP/{$response->getProtocolVersion()}\n";
         echo "Content-Type: {$response->getHeaderLine('Content-Type')}\n";
         
-        $body = (string)$response->getBody();
+        $body = $response->text();
         echo "Body length: " . strlen($body) . " bytes\n";
         
         $success = $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
@@ -80,7 +80,7 @@ Kernel::run(function () {
 
         $contentType = $response->getHeaderLine('Content-Type');
         if (strpos($contentType, 'json') !== false) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             if (isset($data['total_count'])) {
                 echo "Total count: {$data['total_count']}\n";
             }
@@ -111,7 +111,7 @@ Kernel::run(function () {
 
         $contentType = $response->getHeaderLine('Content-Type');
         if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             echo "API endpoints available: " . count($data) . "\n";
             echo "✓ Valid JSON response\n";
         }
@@ -141,7 +141,7 @@ Kernel::run(function () {
 
         $contentType = $response->getHeaderLine('Content-Type');
         if ($response->getStatusCode() === 200 && strpos($contentType, 'json') !== false) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             
             // httpbin.org echoes back the JSON we sent
             if (isset($data['json']['name'])) {
@@ -165,7 +165,7 @@ Kernel::run(function () {
         echo "Status: {$response->getStatusCode()}\n";
         echo "Content-Length: " . ($response->getHeaderLine('Content-Length') ?: 'Unknown') . "\n";
         
-        $body = (string)$response->getBody();
+        $body = $response->text();
         echo "Body is empty: " . ($body === '' ? 'Yes' : 'No') . "\n";
         echo "✓ Test 7 passed!\n\n";
     } catch (Exception $e) {

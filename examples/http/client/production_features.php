@@ -83,7 +83,7 @@ Kernel::run(function () {
         printTest("Basic Auth", $passed);
 
         if ($passed) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             echo "  Authenticated: " . ($data['authenticated'] ? 'true' : 'false') . "\n";
             echo "  User: {$data['user']}\n";
         }
@@ -105,7 +105,7 @@ Kernel::run(function () {
         printTest("Bearer Token", $passed);
 
         if ($passed) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             echo "  Authenticated: " . ($data['authenticated'] ? 'true' : 'false') . "\n";
             echo "  Token: {$data['token']}\n";
         }
@@ -133,7 +133,7 @@ Kernel::run(function () {
 
         // Cookie should be automatically sent in next request
         $response2 = $client->get('https://httpbin.org/cookies');
-        $data = json_decode((string)$response2->getBody(), true);
+        $data = json_decode($response2->text(), true);
 
         $passed = isset($data['cookies']['test_cookie']) &&
                   $data['cookies']['test_cookie'] === 'hello_world';
@@ -165,7 +165,7 @@ Kernel::run(function () {
         printTest("Request compressed response", $passed);
 
         if ($passed) {
-            $data = json_decode((string)$response->getBody(), true);
+            $data = json_decode($response->text(), true);
             echo "  Response decoded: " . ((isset($data['gzipped']) && $data['gzipped']) ? 'Yes' : 'No') . "\n";
         }
     } catch (\Exception $e) {

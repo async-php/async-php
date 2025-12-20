@@ -6,11 +6,11 @@ use Async\Network\Http\Client;
 Kernel::run(function () {
     $client = new Client();
     
-    echo "=== Test 1: getBody() with auto-decompression ===\n";
+    echo "=== Test 1: text() with auto-decompression ===\n";
     $response = $client->get('http://www.baidu.com');
     
     echo "Content-Encoding: " . ($response->getHeader('content-encoding') ?? 'none') . "\n";
-    $body = $response->getBody();
+    $body = $response->text();
     echo "Body length: " . strlen($body) . " bytes\n";
     echo "First 100 chars: " . substr($body, 0, 100) . "\n";
     echo "Is HTML? " . (strpos($body, '<!DOCTYPE') !== false ? "YES ✓" : "NO ✗") . "\n\n";

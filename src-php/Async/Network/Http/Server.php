@@ -84,10 +84,10 @@ class Server
      * This uses the connection's native tokio IO for maximum performance.
      *
      * Supported connection types (zero-copy):
-     * - Tcp\Socket::castTo(IO::$READ|IO::$WRITE)
-     * - Unix\Socket::castTo(IO::$READ|IO::$WRITE)
-     * - Tls\TlsStream::castTo(IO::$READ|IO::$WRITE)
-     * - FileSystem\FileHandle::castTo(IO::$READ|IO::$WRITE)
+     * - Tcp\Socket::castTo(IO::READ|IO::WRITE)
+     * - Unix\Socket::castTo(IO::READ|IO::WRITE)
+     * - Tls\TlsStream::castTo(IO::READ|IO::WRITE)
+     * - FileSystem\FileHandle::castTo(IO::READ|IO::WRITE)
      *
      * Also supports generic AsyncReadWriter from PHP bridges (with overhead)
      *
@@ -100,10 +100,10 @@ class Server
         if ($conn instanceof AsyncReadWriter) {
             $io = $conn;
         } elseif (is_callable([$conn, 'castTo'])) {
-            $io = $conn->castTo(IO::$READ | IO::$WRITE);
+            $io = $conn->castTo(IO::READ | IO::WRITE);
         } else {
             throw new \InvalidArgumentException(
-                'Connection must be AsyncReadWriter or support castTo(IO::$READ|IO::$WRITE)'
+                'Connection must be AsyncReadWriter or support castTo(IO::READ|IO::WRITE)'
             );
         }
 
@@ -113,9 +113,9 @@ class Server
 
         // Wrap the user handler to convert Request/Response to kernel types
         $kernelHandler = function($kernelRequest) use ($handler) {
-            $request = new Request($kernelRequest);
+            $request = Request::fromKernelRequest($kernelRequest);
             $response = $handler($request);
-            return $response->getKernel();
+            return $response->toKernelResponse();
         };
 
         // Serve the connection

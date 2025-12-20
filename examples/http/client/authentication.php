@@ -29,7 +29,7 @@ Kernel::run(function () {
             'Authorization' => $authHeader
         ]);
         
-        $body = (string)$response->getBody();
+        $body = $response->text();
         $data = json_decode($body, true);
         $statusCode = $response->getStatusCode();
 
@@ -81,7 +81,7 @@ Kernel::run(function () {
             'Authorization' => "Bearer $token"
         ]);
         
-        $body = (string)$response->getBody();
+        $body = $response->text();
         $data = json_decode($body, true);
 
         if ($response->getStatusCode() === 200 && $data['authenticated']) {
@@ -107,7 +107,7 @@ Kernel::run(function () {
             'Authorization' => 'Basic ' . base64_encode('testuser:testpass')
         ]);
         
-        $body = (string)$response->getBody();
+        $body = $response->text();
         $data = json_decode($body, true);
 
         if (isset($data['headers']['Authorization'])) {

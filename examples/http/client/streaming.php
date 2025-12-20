@@ -95,7 +95,7 @@ Kernel::run(function () {
             ]
         ]);
 
-        $content2 = $response2->getBody();
+        $content2 = $response2->text();
         $time2 = microtime(true) - $start;
 
         echo "  Read all at once: " . strlen($content2) . " bytes\n";
