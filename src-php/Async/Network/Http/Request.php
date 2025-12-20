@@ -399,13 +399,30 @@ class Request
 
     private static function toKernelAsyncReader(Reader $reader): \Async\Kernel\IO\AsyncReader
     {
-        $phpReader = IO::wrapPhpIo($reader, IO::READ);
-        $kernelReader = $phpReader->castTo(IO::READ);
+        // Fast path: if reader is a wrapper, directly unwrap to get AsyncReader (zero-cost)
+        if (method_exists($reader, 'unwrap')) {
+            $kernel = $reader->unwrap();
+            if ($kernel instanceof \Async\Kernel\IO\AsyncReader) {
+                return $kernel;
+            }
+        }
 
-        if (!$kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
+        // Medium path: if reader has castTo, use it directly (avoids wrapPhpIo overhead)
+        if (method_exists($reader, 'castTo')) {
+            $kernel = $reader->castTo(IO::READ);
+            if ($kernel instanceof \Async\Kernel\IO\AsyncReader) {
+                return $kernel;
+            }
+        }
+
+        // Slow path: wrap as PHP IO and cast (fallback for arbitrary PHP IO objects)
+        $phpReader = IO::wrapPhpIo($reader, IO::READ);
+        $kernel = $phpReader->castTo(IO::READ);
+
+        if (!$kernel instanceof \Async\Kernel\IO\AsyncReader) {
             throw new \RuntimeException('Failed to convert Reader to kernel AsyncReader');
         }
 
-        return $kernelReader;
+        return $kernel;
     }
 }
