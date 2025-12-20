@@ -10,6 +10,7 @@ use Async\IO\ReaderAt;
 use Async\IO\WriterAt;
 use Async\IO\ReaderFrom;
 use Async\IO\WriterTo;
+use Async\IO;
 use Async\Kernel\FileSystem\FileHandle as KernelFileHandle;
 use Fiber;
 
@@ -168,5 +169,15 @@ class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, 
         }
 
         return $totalWritten;
+    }
+
+    /**
+     * Cast underlying kernel handle into a Kernel IO wrapper by bitflags.
+     *
+     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     */
+    public function castTo(int $type)
+    {
+        return $this->inner->castTo($type);
     }
 }

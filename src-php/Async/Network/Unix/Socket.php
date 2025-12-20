@@ -2,6 +2,7 @@
 
 namespace Async\Network\Unix;
 
+use Async\IO;
 use Async\Kernel\Network\UnixStream as KernelUnixStream;
 use Fiber;
 
@@ -66,6 +67,16 @@ class Socket
     public function peerCred(): ?array
     {
         return $this->inner->peer_cred() ?: null;
+    }
+
+    /**
+     * Cast underlying kernel stream into a Kernel IO wrapper by bitflags.
+     *
+     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     */
+    public function castTo(int $type)
+    {
+        return $this->inner->castTo($type);
     }
 
     /**

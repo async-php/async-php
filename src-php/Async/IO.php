@@ -41,6 +41,20 @@ use Async\Kernel\IO\AsyncReadWriteSeeker;
 class IO
 {
     /**
+     * Kernel IO cast bitflags (re-exported for userland).
+     *
+     * Values are defined by the extension as namespaced constants:
+     * - \Async\Kernel\IO\READ
+     * - \Async\Kernel\IO\WRITE
+     * - \Async\Kernel\IO\SEEK
+     * - \Async\Kernel\IO\BUF
+     */
+    public static int $READ = \Async\Kernel\IO\READ;
+    public static int $WRITE = \Async\Kernel\IO\WRITE;
+    public static int $SEEK = \Async\Kernel\IO\SEEK;
+    public static int $BUF = \Async\Kernel\IO\BUF;
+
+    /**
      * Wrap AsyncReader into a ReaderWrapper
      *
      * @param AsyncReader $reader The kernel async reader

@@ -2,6 +2,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
+use crate::async_io::cast_io;
 use crate::util::Shared;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -438,34 +439,12 @@ impl AsyncTlsStream {
             .unwrap_or_default()
     }
 
-    /// Extract as AsyncReader (returns \Async\Kernel\IO\AsyncReader)
+    /// Cast this stream into a specific Kernel IO wrapper by bitflags.
     #[php]
-    pub fn as_reader(&self) -> crate::io::AsyncReader {
-        use crate::io::AsyncReader;
-        use crate::util::Shared;
-        let trait_object: Shared<Box<dyn tokio::io::AsyncRead + Unpin + Send>> =
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        let io: Shared<Box<dyn crate::io::AsyncReadWrite>> =
             Shared::new(Box::new(self.inner.clone()));
-        AsyncReader::from_shared(trait_object)
-    }
-
-    /// Extract as AsyncWriter (returns \Async\Kernel\IO\AsyncWriter)
-    #[php]
-    pub fn as_writer(&self) -> crate::io::AsyncWriter {
-        use crate::io::AsyncWriter;
-        use crate::util::Shared;
-        let trait_object: Shared<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> =
-            Shared::new(Box::new(self.inner.clone()));
-        AsyncWriter::from_shared(trait_object)
-    }
-
-    /// Extract as AsyncReadWriter (returns \Async\Kernel\IO\AsyncReadWriter)
-    #[php]
-    pub fn as_read_writer(&self) -> crate::io::AsyncReadWriter {
-        use crate::io::AsyncReadWriter;
-        use crate::util::Shared;
-        let trait_object: Shared<Box<dyn crate::io::AsyncReadWrite>> =
-            Shared::new(Box::new(self.inner.clone()));
-        AsyncReadWriter::from_shared(trait_object)
+        cast_io(&io, ty)
     }
 }
 

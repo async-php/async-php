@@ -5,6 +5,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
+use crate::async_io::cast_io;
 use crate::util::{Shared, tuple2};
 use crate::channel::AsyncChannel;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncSeek, AsyncBufRead, AsyncReadExt, AsyncWriteExt, AsyncSeekExt, AsyncBufReadExt};
@@ -1679,11 +1680,10 @@ impl PhpReader {
     }
 
     #[php]
-    pub fn as_reader(&self) -> AsyncReader {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let reader = PhpReader(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncRead + Unpin + Send>> =
-            Shared::new(Box::new(reader));
-        AsyncReader::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncRead + Unpin + Send>> = Shared::new(Box::new(reader));
+        cast_io(&io, ty)
     }
 }
 
@@ -1713,11 +1713,10 @@ impl PhpWriter {
     }
 
     #[php]
-    pub fn as_writer(&self) -> AsyncWriter {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let writer = PhpWriter(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncWrite + Unpin + Send>> =
-            Shared::new(Box::new(writer));
-        AsyncWriter::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncWrite + Unpin + Send>> = Shared::new(Box::new(writer));
+        cast_io(&io, ty)
     }
 }
 
@@ -1751,11 +1750,10 @@ impl PhpSeeker {
     }
 
     #[php]
-    pub fn as_seeker(&self) -> AsyncSeeker {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let seeker = PhpSeeker(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncSeek + Unpin + Send>> =
-            Shared::new(Box::new(seeker));
-        AsyncSeeker::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncSeek + Unpin + Send>> = Shared::new(Box::new(seeker));
+        cast_io(&io, ty)
     }
 }
 
@@ -1785,11 +1783,10 @@ impl PhpBufReader {
     }
 
     #[php]
-    pub fn as_buf_reader(&self) -> AsyncBufReader {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let reader = PhpBufReader(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncBufRead + Unpin + Send>> =
-            Shared::new(Box::new(reader));
-        AsyncBufReader::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncBufRead + Unpin + Send>> = Shared::new(Box::new(reader));
+        cast_io(&io, ty)
     }
 }
 
@@ -1829,11 +1826,10 @@ impl PhpReadWriter {
     }
 
     #[php]
-    pub fn as_read_writer(&self) -> AsyncReadWriter {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rw = PhpReadWriter(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncReadWrite>> =
-            Shared::new(Box::new(rw));
-        AsyncReadWriter::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncReadWrite>> = Shared::new(Box::new(rw));
+        cast_io(&io, ty)
     }
 }
 
@@ -1877,11 +1873,10 @@ impl PhpReadSeeker {
     }
 
     #[php]
-    pub fn as_read_seeker(&self) -> AsyncReadSeeker {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rs = PhpReadSeeker(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncReadSeek>> =
-            Shared::new(Box::new(rs));
-        AsyncReadSeeker::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncReadSeek>> = Shared::new(Box::new(rs));
+        cast_io(&io, ty)
     }
 }
 
@@ -1921,11 +1916,10 @@ impl PhpWriteSeeker {
     }
 
     #[php]
-    pub fn as_write_seeker(&self) -> AsyncWriteSeeker {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let ws = PhpWriteSeeker(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncWriteSeek>> =
-            Shared::new(Box::new(ws));
-        AsyncWriteSeeker::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncWriteSeek>> = Shared::new(Box::new(ws));
+        cast_io(&io, ty)
     }
 }
 
@@ -1969,11 +1963,10 @@ impl PhpReadWriteSeeker {
     }
 
     #[php]
-    pub fn as_read_write_seeker(&self) -> AsyncReadWriteSeeker {
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
         let rws = PhpReadWriteSeeker(self.0.clone());
-        let trait_object: Shared<Box<dyn AsyncReadWriteSeek>> =
-            Shared::new(Box::new(rws));
-        AsyncReadWriteSeeker::from_shared(trait_object)
+        let io: Shared<Box<dyn AsyncReadWriteSeek>> = Shared::new(Box::new(rws));
+        cast_io(&io, ty)
     }
 }
 

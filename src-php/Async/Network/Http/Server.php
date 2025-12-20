@@ -4,6 +4,7 @@ namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpServer as KernelHttpServer;
 use Async\Kernel\IO\AsyncReadWriter;
+use Async\IO;
 use Fiber;
 
 /**
@@ -83,10 +84,10 @@ class Server
      * This uses the connection's native tokio IO for maximum performance.
      *
      * Supported connection types (zero-copy):
-     * - Tcp\Socket::asReadWriter()
-     * - Unix\Socket::asReadWriter()
-     * - Tls\TlsStream::asReadWriter()
-     * - FileSystem\FileHandle::asReadWriter()
+     * - Tcp\Socket::castTo(IO::$READ|IO::$WRITE)
+     * - Unix\Socket::castTo(IO::$READ|IO::$WRITE)
+     * - Tls\TlsStream::castTo(IO::$READ|IO::$WRITE)
+     * - FileSystem\FileHandle::castTo(IO::$READ|IO::$WRITE)
      *
      * Also supports generic AsyncReadWriter from PHP bridges (with overhead)
      *
@@ -96,15 +97,18 @@ class Server
      */
     public function serve($conn, callable $handler): bool
     {
-        // If $conn is a socket/stream object with asReadWriter(), use it
-        if (method_exists($conn, 'asReadWriter')) {
-            $io = $conn->asReadWriter();
-        } elseif ($conn instanceof AsyncReadWriter) {
+        if ($conn instanceof AsyncReadWriter) {
             $io = $conn;
+        } elseif (is_callable([$conn, 'castTo'])) {
+            $io = $conn->castTo(IO::$READ | IO::$WRITE);
         } else {
             throw new \InvalidArgumentException(
-                'Connection must be AsyncReadWriter or have asReadWriter() method'
+                'Connection must be AsyncReadWriter or support castTo(IO::$READ|IO::$WRITE)'
             );
+        }
+
+        if (!$io instanceof AsyncReadWriter) {
+            throw new \InvalidArgumentException('castTo() must return AsyncReadWriter for HTTP serving');
         }
 
         // Wrap the user handler to convert Request/Response to kernel types

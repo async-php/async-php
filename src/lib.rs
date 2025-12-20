@@ -5,6 +5,22 @@ use ext_php_rs::zend::ClassEntry;
 use ext_php_rs::convert::IntoZval; 
 use futures::FutureExt;
 
+#[php_const]
+#[php(name = "Async\\Kernel\\IO\\READ")]
+pub const IO_READ: i64 = 1;
+
+#[php_const]
+#[php(name = "Async\\Kernel\\IO\\WRITE")]
+pub const IO_WRITE: i64 = 2;
+
+#[php_const]
+#[php(name = "Async\\Kernel\\IO\\SEEK")]
+pub const IO_SEEK: i64 = 4;
+
+#[php_const]
+#[php(name = "Async\\Kernel\\IO\\BUF")]
+pub const IO_BUF: i64 = 8;
+
 mod future;
 mod io;
 mod bytes;
@@ -12,6 +28,7 @@ mod net;
 mod fs;
 mod http;
 mod channel;
+mod async_io;
 mod pdo;
 mod curl;
 mod redis;
@@ -410,4 +427,8 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .function(wrap_function!(sql_compile_placeholders))
         .function(wrap_function!(pdo_dsn_to_sqlx))
         .function(wrap_function!(pdo_normalize_param_key))
+        .constant(wrap_constant!(IO_READ))
+        .constant(wrap_constant!(IO_WRITE))
+        .constant(wrap_constant!(IO_SEEK))
+        .constant(wrap_constant!(IO_BUF))
 }

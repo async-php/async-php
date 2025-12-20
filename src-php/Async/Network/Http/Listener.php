@@ -15,7 +15,7 @@ interface Listener
     /**
      * Accept a new incoming connection
      *
-     * The returned connection should support asReadWriter() for zero-copy HTTP serving
+     * The returned connection should support castTo(IO::$READ|IO::$WRITE) for zero-copy HTTP serving
      *
      * @return mixed Connection object (Socket, TlsStream, etc.)
      */

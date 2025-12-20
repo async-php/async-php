@@ -29,7 +29,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 
-use crate::io::{AsyncReader, AsyncSeeker, AsyncWriter};
+use crate::async_io::cast_io;
 use crate::util::Shared;
 
 // ==================== BytesCursor (newtype wrapper) ====================
@@ -176,20 +176,12 @@ impl BytesReader {
         self.inner.get_mut().set_position(0);
     }
 
-    /// Extract as AsyncReader
+    /// Cast this buffer into a specific Kernel IO wrapper by bitflags.
     #[php]
-    pub fn as_reader(&self) -> AsyncReader {
-        let trait_object: Shared<Box<dyn AsyncRead + Unpin + Send>> =
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        let io: Shared<Box<dyn crate::io::AsyncReadSeek>> =
             Shared::new(Box::new(self.inner.clone()));
-        AsyncReader::from_shared(trait_object)
-    }
-
-    /// Extract as AsyncSeeker
-    #[php]
-    pub fn as_seeker(&self) -> AsyncSeeker {
-        let trait_object: Shared<Box<dyn AsyncSeek + Unpin + Send>> =
-            Shared::new(Box::new(self.inner.clone()));
-        AsyncSeeker::from_shared(trait_object)
+        cast_io(&io, ty)
     }
 }
 
@@ -267,27 +259,11 @@ impl BytesWriter {
         String::from_utf8(self.to_bytes()).ok()
     }
 
-    /// Extract as AsyncWriter
+    /// Cast this buffer into a specific Kernel IO wrapper by bitflags.
     #[php]
-    pub fn as_writer(&self) -> AsyncWriter {
-        let trait_object: Shared<Box<dyn AsyncWrite + Unpin + Send>> =
+    pub fn cast_to(&self, ty: i64) -> PhpResult<Zval> {
+        let io: Shared<Box<dyn crate::io::AsyncReadWriteSeek>> =
             Shared::new(Box::new(self.inner.clone()));
-        AsyncWriter::from_shared(trait_object)
-    }
-
-    /// Extract as AsyncReader (to read back written data)
-    #[php]
-    pub fn as_reader(&self) -> AsyncReader {
-        let trait_object: Shared<Box<dyn AsyncRead + Unpin + Send>> =
-            Shared::new(Box::new(self.inner.clone()));
-        AsyncReader::from_shared(trait_object)
-    }
-
-    /// Extract as AsyncSeeker
-    #[php]
-    pub fn as_seeker(&self) -> AsyncSeeker {
-        let trait_object: Shared<Box<dyn AsyncSeek + Unpin + Send>> =
-            Shared::new(Box::new(self.inner.clone()));
-        AsyncSeeker::from_shared(trait_object)
+        cast_io(&io, ty)
     }
 }

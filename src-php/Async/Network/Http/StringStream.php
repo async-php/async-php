@@ -3,6 +3,7 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\IO\BytesReader;
+use Async\IO;
 use Fiber;
 
 /**
@@ -36,11 +37,11 @@ class StringStream
 
             // Reset to beginning and read all
             $this->reader->reset();
-            $future = $this->reader->asReader()->read($this->size);
+            $future = $this->reader->castTo(IO::$READ)->read($this->size);
             $contents = Fiber::suspend($future) ?? '';
 
             // Restore position
-            $seeker = $this->reader->asSeeker();
+            $seeker = $this->reader->castTo(IO::$SEEK);
             $future = $seeker->seek($currentPos, SEEK_SET);
             Fiber::suspend($future);
 
@@ -83,7 +84,7 @@ class StringStream
 
     public function seek($offset, $whence = SEEK_SET): void
     {
-        $seeker = $this->reader->asSeeker();
+        $seeker = $this->reader->castTo(IO::$SEEK);
         $future = $seeker->seek($offset, $whence);
         Fiber::suspend($future);
     }
@@ -114,7 +115,7 @@ class StringStream
             return '';
         }
 
-        $asyncReader = $this->reader->asReader();
+        $asyncReader = $this->reader->castTo(IO::$READ);
         $future = $asyncReader->read($length);
         $data = Fiber::suspend($future);
 

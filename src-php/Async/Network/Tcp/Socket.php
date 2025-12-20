@@ -7,6 +7,7 @@ use Async\IO\Writer;
 use Async\IO\Closer;
 use Async\IO\ReaderFrom;
 use Async\IO\WriterTo;
+use Async\IO;
 use Async\Kernel\Network\TcpStream as KernelTcpStream;
 use Fiber;
 
@@ -181,11 +182,12 @@ class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
     }
 
     /**
-     * Extract as AsyncReadWriter for zero-copy IO operations
-     * @return \Async\Kernel\IO\AsyncReadWriter
+     * Cast underlying kernel stream into a Kernel IO wrapper by bitflags.
+     *
+     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
      */
-    public function asReadWriter()
+    public function castTo(int $type)
     {
-        return $this->inner->asReadWriter();
+        return $this->inner->castTo($type);
     }
 }

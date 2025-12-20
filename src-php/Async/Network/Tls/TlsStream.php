@@ -5,6 +5,7 @@ namespace Async\Network\Tls;
 use Async\IO\Reader;
 use Async\IO\Writer;
 use Async\IO\Closer;
+use Async\IO;
 use Async\Kernel\Network\TlsStream as KernelTlsStream;
 use Fiber;
 
@@ -127,5 +128,15 @@ class TlsStream implements Reader, Writer, Closer
     public function unwrap(): KernelTlsStream
     {
         return $this->inner;
+    }
+
+    /**
+     * Cast underlying kernel stream into a Kernel IO wrapper by bitflags.
+     *
+     * @return mixed Kernel IO object (AsyncReader/AsyncWriter/AsyncReadWriter/...)
+     */
+    public function castTo(int $type)
+    {
+        return $this->inner->castTo($type);
     }
 }
