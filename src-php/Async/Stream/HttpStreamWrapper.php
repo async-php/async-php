@@ -154,9 +154,9 @@ class HttpStreamWrapper
         }
 
         $normalizedHeaders = [];
-        foreach ($kernelResponse->get_headers() as $header) {
-            if (is_array($header) && count($header) === 2) {
-                $normalizedHeaders[strtolower((string)$header[0])] = (string)$header[1];
+        foreach ($kernelResponse->headers() as $name => $values) {
+            if (is_array($values) && count($values) > 0) {
+                $normalizedHeaders[strtolower((string)$name)] = (string)$values[0];
             }
         }
 

@@ -63,14 +63,12 @@ class Request
         $req = new self($kernelRequest->method(), $kernelRequest->uri());
         $req->version = $kernelRequest->version();
 
-        if (method_exists($kernelRequest, 'getHeaders')) {
-            /** @var array<string, list<string>> $headers */
-            $headers = $kernelRequest->getHeaders();
-            $req->headers = self::normalizeHeaderMap($headers);
-        }
+        /** @var array<string, list<string>> $headers */
+        $headers = $kernelRequest->headers();
+        $req->headers = self::normalizeHeaderMap($headers);
 
-        if (method_exists($kernelRequest, 'stream')) {
-            $kernelReader = $kernelRequest->stream();
+        if (method_exists($kernelRequest, 'body')) {
+            $kernelReader = $kernelRequest->body();
             if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
                 /** @var ReaderWrapper $reader */
                 $reader = IO::kernelToWrapper($kernelReader);
@@ -260,7 +258,7 @@ class Request
     /**
      * Append a header value without overwriting existing ones.
      */
-    public function addHeader(string $name, string $value): self
+    public function appendHeader(string $name, string $value): self
     {
         $key = strtolower($name);
         $this->headers[$key] ??= [];
@@ -350,19 +348,19 @@ class Request
         $kernel = new KernelRequest($this->method, $this->uri);
 
         if ($this->timeoutSeconds !== null) {
-            $kernel->timeout($this->timeoutSeconds);
+            $kernel->setTimeout($this->timeoutSeconds);
         }
 
         foreach ($this->headers as $name => $values) {
             foreach ($values as $i => $value) {
                 if ($i === 0) {
-                    $kernel->header($name, $value);
+                    $kernel->setHeader($name, $value);
                     continue;
                 }
-                if (method_exists($kernel, 'addHeader')) {
-                    $kernel->addHeader($name, $value);
+                if (method_exists($kernel, 'appendHeader')) {
+                    $kernel->appendHeader($name, $value);
                 } else {
-                    $kernel->header($name, $value);
+                    $kernel->setHeader($name, $value);
                 }
             }
         }
@@ -371,8 +369,8 @@ class Request
             $kernelAsyncReader = self::toKernelAsyncReader($this->body);
             if (method_exists($kernel, 'bodyStream')) {
                 $kernel->bodyStream($kernelAsyncReader);
-            } elseif (method_exists($kernel, 'body_stream')) {
-                $kernel->body_stream($kernelAsyncReader);
+            } elseif (method_exists($kernel, 'setBody')) {
+                $kernel->setBody($kernelAsyncReader);
             }
         }
 

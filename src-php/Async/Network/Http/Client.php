@@ -71,7 +71,7 @@ class Client
         $kernelRequest = new KernelRequest('GET', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
@@ -91,7 +91,7 @@ class Client
         $kernelRequest = new KernelRequest('POST', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         if ($body !== null) {
@@ -119,7 +119,7 @@ class Client
         $kernelRequest = new KernelRequest('PUT', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         if ($body !== null) {
@@ -147,7 +147,7 @@ class Client
         $kernelRequest = new KernelRequest('PATCH', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         if ($body !== null) {
@@ -174,7 +174,7 @@ class Client
         $kernelRequest = new KernelRequest('DELETE', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));
@@ -193,7 +193,7 @@ class Client
         $kernelRequest = new KernelRequest('HEAD', $url);
 
         foreach ($headers as $name => $value) {
-            $kernelRequest->header($name, $value);
+            $kernelRequest->setHeader($name, $value);
         }
 
         $kernelResponse = Fiber::suspend($this->kernel->send($kernelRequest));

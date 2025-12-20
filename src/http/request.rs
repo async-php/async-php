@@ -4,7 +4,7 @@ use ext_php_rs::types::Zval;
 use http::header::{HeaderName, HeaderValue};
 use http::{Request, Uri};
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use http_body_util::{BodyExt, Empty, StreamBody};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
@@ -26,12 +26,6 @@ struct BodyConsumed;
 
 pub(crate) fn empty_body() -> BoxBody<Bytes, Box<dyn Error + Send>> {
     Empty::<Bytes>::new()
-        .map_err(|err: Infallible| match err {})
-        .boxed()
-}
-
-fn full_body(bytes: Bytes) -> BoxBody<Bytes, Box<dyn Error + Send>> {
-    Full::new(bytes)
         .map_err(|err: Infallible| match err {})
         .boxed()
 }
@@ -96,14 +90,14 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn header(&mut self, name: String, value: String) -> PhpResult<()> {
+    pub fn set_header(&mut self, name: String, value: String) -> PhpResult<()> {
         set_header(self.inner.get_mut(), name, value)?;
         Ok(())
     }
 
     /// Append a header value (preserves existing values for the same header name).
     #[php]
-    pub fn add_header(&mut self, name: String, value: String) -> PhpResult<()> {
+    pub fn append_header(&mut self, name: String, value: String) -> PhpResult<()> {
         let name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|e| format!("Invalid header name: {e}"))?;
         let value = HeaderValue::from_str(&value)
@@ -113,7 +107,7 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn headers(&mut self, headers: HashMap<String, String>) -> PhpResult<()> {
+    pub fn set_headers(&mut self, headers: HashMap<String, String>) -> PhpResult<()> {
         let request = self.inner.get_mut();
         for (name, value) in headers {
             set_header(request, name, value)?;
@@ -122,7 +116,7 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn query(&mut self, name: String, value: String) -> PhpResult<()> {
+    pub fn set_query(&mut self, name: String, value: String) -> PhpResult<()> {
         let request = self.inner.get_mut();
         let mut url = Url::parse(&request.uri().to_string())
             .map_err(|e| format!("Invalid URL: {e}"))?;
@@ -132,7 +126,7 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn query_params(&mut self, params: HashMap<String, String>) -> PhpResult<()> {
+    pub fn set_query_params(&mut self, params: HashMap<String, String>) -> PhpResult<()> {
         let request = self.inner.get_mut();
         let mut url = Url::parse(&request.uri().to_string())
             .map_err(|e| format!("Invalid URL: {e}"))?;
@@ -147,7 +141,7 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn timeout(&mut self, seconds: f64) -> PhpResult<()> {
+    pub fn set_timeout(&mut self, seconds: f64) -> PhpResult<()> {
         let secs = if seconds.is_sign_negative() { 0.0 } else { seconds };
         let req = self.inner.get_mut();
         req.extensions_mut()
@@ -156,55 +150,7 @@ impl HttpRequest {
     }
 
     #[php]
-    pub fn body_text(&mut self, text: String, content_type: Option<String>) -> PhpResult<()> {
-        let req = self.inner.get_mut();
-        if let Some(ct) = content_type {
-            set_header(req, "Content-Type".to_string(), ct)?;
-        }
-        *req.body_mut() = full_body(Bytes::from(text));
-        Ok(())
-    }
-
-    #[php]
-    pub fn body_json(&mut self, json: String) -> PhpResult<()> {
-        let _: serde_json::Value = serde_json::from_str(&json)
-            .map_err(|e| format!("Invalid JSON: {e}"))?;
-        let req = self.inner.get_mut();
-        set_header(req, "Content-Type".to_string(), "application/json".to_string())?;
-        *req.body_mut() = full_body(Bytes::from(json));
-        Ok(())
-    }
-
-    #[php]
-    pub fn body_form(&mut self, form: HashMap<String, String>) -> PhpResult<()> {
-        let req = self.inner.get_mut();
-        set_header(req, "Content-Type".to_string(), "application/x-www-form-urlencoded".to_string())?;
-        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-        for (k, v) in form {
-            serializer.append_pair(&k, &v);
-        }
-        let encoded = serializer.finish();
-        *req.body_mut() = full_body(Bytes::from(encoded));
-        Ok(())
-    }
-
-    #[php]
-    pub fn body_bytes(&mut self, data: &Zval) -> PhpResult<()> {
-        let bytes = if let Some(bin) = data.binary() {
-            Bytes::from(bin.to_vec())
-        } else if let Some(s) = data.str() {
-            Bytes::from(s.as_bytes().to_vec())
-        } else {
-            return Err(PhpException::default("Body must be string or binary".to_string()));
-        };
-
-        let req = self.inner.get_mut();
-        *req.body_mut() = full_body(bytes);
-        Ok(())
-    }
-
-    #[php]
-    pub fn body_stream(&mut self, reader: &crate::io::AsyncReader) -> PhpResult<()> {
+    pub fn set_body(&mut self, reader: &crate::io::AsyncReader) -> PhpResult<()> {
         use futures::TryStreamExt;
         use http_body::Frame;
         use sync_wrapper::SyncStream;
@@ -243,12 +189,6 @@ impl HttpRequest {
         })
     }
 
-    /// Alias of `text()` for compatibility.
-    #[php]
-    pub fn body(&mut self) -> RustFuture {
-        self.text()
-    }
-
     /// Read request body as bytes (consumes the body).
     #[php]
     pub fn bytes(&mut self) -> RustFuture {
@@ -269,7 +209,7 @@ impl HttpRequest {
 
     /// Get request body as an AsyncReader (consumes the body).
     #[php]
-    pub fn stream(&mut self) -> PhpResult<AsyncReader> {
+    pub fn body(&mut self) -> PhpResult<AsyncReader> {
         let body = self.take_body()?;
         use futures::StreamExt;
         use std::io;
@@ -317,7 +257,7 @@ impl HttpRequest {
     /// Get all headers as an array
     /// Returns: array<string, array<string>> (header name => array of values)
     #[php]
-    pub fn get_headers(&self) -> HashMap<String, Vec<String>> {
+    pub fn headers(&self) -> HashMap<String, Vec<String>> {
         let mut result = HashMap::new();
         let headers = self.inner.get_ref().headers();
 
@@ -337,7 +277,7 @@ impl HttpRequest {
     /// Get a specific header value
     /// Returns the first value if multiple values exist
     #[php]
-    pub fn get_header(&self, name: String) -> Option<String> {
+    pub fn header_line(&self, name: String) -> Option<String> {
         self.inner
             .get_ref()
             .headers()

@@ -53,10 +53,10 @@ Kernel::run(function () {
         // Check for important headers
         $headers = $response->headers();
         if (isset($headers['content-type'])) {
-            echo "Content-Type: " . $headers['content-type'] . "\n";
+            echo "Content-Type: " . implode(', ', $headers['content-type']) . "\n";
         }
         if (isset($headers['server'])) {
-            echo "Server: " . $headers['server'] . "\n";
+            echo "Server: " . implode(', ', $headers['server']) . "\n";
         }
 
         $content = $response->text();

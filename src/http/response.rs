@@ -99,21 +99,10 @@ impl HttpResponse {
         format!("{:?}", self.inner.get_ref().version())
     }
 
-    #[php]
-    pub fn headers(&self) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        for (name, value) in self.inner.get_ref().headers() {
-            if let Ok(value_str) = value.to_str() {
-                headers.insert(name.as_str().to_lowercase(), value_str.to_string());
-            }
-        }
-        headers
-    }
-
     /// Get all headers preserving multiple values.
     /// Returns: array<string, array<string>> (header name => array of values)
     #[php]
-    pub fn get_headers(&self) -> HashMap<String, Vec<String>> {
+    pub fn headers(&self) -> HashMap<String, Vec<String>> {
         let mut result = HashMap::new();
         let headers = self.inner.get_ref().headers();
 
@@ -131,7 +120,7 @@ impl HttpResponse {
     }
 
     #[php]
-    pub fn header(&self, name: String) -> Option<String> {
+    pub fn header_line(&self, name: String) -> Option<String> {
         let name = name.to_lowercase();
         self.inner
             .get_ref()
@@ -143,12 +132,12 @@ impl HttpResponse {
 
     #[php]
     pub fn content_type(&self) -> Option<String> {
-        self.header("content-type".to_string())
+        self.header_line("content-type".to_string())
     }
 
     #[php]
     pub fn content_length(&self) -> Option<i64> {
-        self.header("content-length".to_string())
+        self.header_line("content-length".to_string())
             .and_then(|s| s.parse().ok())
     }
 
@@ -173,28 +162,6 @@ impl HttpResponse {
     }
 
     #[php]
-    pub fn json(&mut self) -> RustFuture {
-        let body = match self.take_body() {
-            Ok(b) => b,
-            Err(e) => return RustFuture::new(async move { Err::<Zval, String>(e) }),
-        };
-
-        RustFuture::new(async move {
-            let collected = body.collect().await.map_err(|e| e.to_string())?;
-            let bytes = collected.to_bytes();
-            let json_value: serde_json::Value = serde_json::from_slice(&bytes)
-                .map_err(|e| format!("Failed to parse JSON: {e}"))?;
-            let json_str = serde_json::to_string(&json_value)
-                .map_err(|e| format!("Failed to serialize JSON: {e}"))?;
-
-            let mut zval = Zval::new();
-            zval.set_string(&json_str, false)
-                .map_err(|e| format!("Failed to set string: {:?}", e))?;
-            Ok::<Zval, String>(zval)
-        })
-    }
-
-    #[php]
     pub fn bytes(&mut self) -> RustFuture {
         let body = match self.take_body() {
             Ok(b) => b,
@@ -212,7 +179,7 @@ impl HttpResponse {
     }
 
     #[php]
-    pub fn stream(&mut self) -> PhpResult<AsyncReader> {
+    pub fn body(&mut self) -> PhpResult<AsyncReader> {
         let body = self.take_body()?;
         use std::io;
         use futures::StreamExt;
@@ -260,7 +227,7 @@ impl HttpResponse {
 
     /// Append a header value (preserves existing values for the same header name).
     #[php]
-    pub fn add_header(&mut self, name: String, value: String) -> PhpResult<()> {
+    pub fn append_header(&mut self, name: String, value: String) -> PhpResult<()> {
         use http::header::{HeaderName, HeaderValue};
 
         let name = HeaderName::from_bytes(name.as_bytes())
@@ -273,45 +240,9 @@ impl HttpResponse {
         Ok(())
     }
 
-    /// Set the response body from a string
-    #[php]
-    pub fn set_body(&mut self, body: String) -> PhpResult<()> {
-        use bytes::Bytes;
-        use http_body_util::Full;
-
-        let full_body = Full::new(Bytes::from(body))
-            .map_err(|err: Infallible| match err {})
-            .boxed();
-
-        let resp = self.inner.get_mut();
-        *resp.body_mut() = full_body;
-        Ok(())
-    }
-
-    /// Set the response body from raw bytes (binary-safe).
-    #[php]
-    pub fn set_body_bytes(&mut self, data: &Zval) -> PhpResult<()> {
-        let bytes = if let Some(bin) = data.binary() {
-            Bytes::from(bin.to_vec())
-        } else if let Some(s) = data.str() {
-            Bytes::from(s.as_bytes().to_vec())
-        } else {
-            return Err(PhpException::default("Body must be string or binary".to_string()));
-        };
-
-        use http_body_util::Full;
-        let full_body = Full::new(bytes)
-            .map_err(|err: Infallible| match err {})
-            .boxed();
-
-        let resp = self.inner.get_mut();
-        *resp.body_mut() = full_body;
-        Ok(())
-    }
-
     /// Set the response body from an AsyncReader (streaming, zero-copy friendly).
     #[php]
-    pub fn set_body_stream(&mut self, reader: &AsyncReader) -> PhpResult<()> {
+    pub fn set_body(&mut self, reader: &AsyncReader) -> PhpResult<()> {
         use futures::TryStreamExt;
         use http_body::Frame;
         use http_body_util::StreamBody;

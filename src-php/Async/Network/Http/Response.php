@@ -54,10 +54,10 @@ class Response
             foreach ($headersOrBody as $name => $value) {
                 if (is_array($value)) {
                     foreach ($value as $v) {
-                        $this->addHeader((string)$name, (string)$v);
+                        $this->appendHeader((string)$name, (string)$v);
                     }
                 } else {
-                    $this->addHeader((string)$name, (string)$value);
+                    $this->appendHeader((string)$name, (string)$value);
                 }
             }
         } elseif (is_string($headersOrBody) || $headersOrBody instanceof Reader) {
@@ -83,20 +83,12 @@ class Response
         $resp = new self((int)$kernelResponse->status());
         $resp->version = $kernelResponse->version();
 
-        if (method_exists($kernelResponse, 'getHeaders')) {
-            /** @var array<string, list<string>> $headers */
-            $headers = $kernelResponse->getHeaders();
-            $resp->headers = self::normalizeHeaderMap($headers);
-        } else {
-            /** @var array<string, string> $headers */
-            $headers = $kernelResponse->headers();
-            foreach ($headers as $name => $value) {
-                $resp->headers[strtolower((string)$name)] = [(string)$value];
-            }
-        }
+        /** @var array<string, list<string>> $headers */
+        $headers = $kernelResponse->headers();
+        $resp->headers = self::normalizeHeaderMap($headers);
 
-        if (method_exists($kernelResponse, 'stream')) {
-            $kernelReader = $kernelResponse->stream();
+        if (method_exists($kernelResponse, 'body')) {
+            $kernelReader = $kernelResponse->body();
             if ($kernelReader instanceof \Async\Kernel\IO\AsyncReader) {
                 /** @var ReaderWrapper $reader */
                 $reader = IO::kernelToWrapper($kernelReader);
@@ -307,7 +299,7 @@ class Response
     /**
      * Append a header value without overwriting existing ones.
      */
-    public function addHeader(string $name, string $value): self
+    public function appendHeader(string $name, string $value): self
     {
         $key = strtolower($name);
         $this->headers[$key] ??= [];
@@ -391,8 +383,8 @@ class Response
                     $kernel->setHeader($name, $value);
                     continue;
                 }
-                if (method_exists($kernel, 'addHeader')) {
-                    $kernel->addHeader($name, $value);
+                if (method_exists($kernel, 'appendHeader')) {
+                    $kernel->appendHeader($name, $value);
                 } else {
                     $kernel->setHeader($name, $value);
                 }
@@ -403,8 +395,8 @@ class Response
             $kernelAsyncReader = self::toKernelAsyncReader($this->body);
             if (method_exists($kernel, 'setBodyStream')) {
                 $kernel->setBodyStream($kernelAsyncReader);
-            } elseif (method_exists($kernel, 'set_body_stream')) {
-                $kernel->set_body_stream($kernelAsyncReader);
+            } elseif (method_exists($kernel, 'setBody')) {
+                $kernel->setBody($kernelAsyncReader);
             } else {
                 $kernel->setBody($this->text());
             }
