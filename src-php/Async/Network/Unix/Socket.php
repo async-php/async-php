@@ -3,10 +3,11 @@
 namespace Async\Network\Unix;
 
 use Async\IO;
+use Async\IO\TokioIO;
 use Async\Kernel\Network\UnixStream as KernelUnixStream;
 use Fiber;
 
-class Socket
+class Socket implements TokioIO
 {
     private KernelUnixStream $inner;
 

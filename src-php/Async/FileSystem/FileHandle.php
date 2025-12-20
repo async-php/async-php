@@ -10,6 +10,7 @@ use Async\IO\ReaderAt;
 use Async\IO\WriterAt;
 use Async\IO\ReaderFrom;
 use Async\IO\WriterTo;
+use Async\IO\TokioIO;
 use Async\IO;
 use Async\Kernel\FileSystem\FileHandle as KernelFileHandle;
 use Fiber;
@@ -18,7 +19,7 @@ use Fiber;
  * FileHandle represents an open file
  * Implements IO interfaces directly
  */
-class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, ReaderFrom, WriterTo
+class FileHandle implements Reader, Writer, Closer, Seeker, ReaderAt, WriterAt, ReaderFrom, WriterTo, TokioIO
 {
     private KernelFileHandle $inner;
 

@@ -8,7 +8,7 @@ namespace Async\IO;
  * This interface is implemented by all wrapper classes that wrap kernel IO objects,
  * providing zero-cost access to the underlying async IO primitives.
  */
-interface AsyncIO
+interface TokioIO
 {
     /**
      * Cast to a different IO type based on bitflags.

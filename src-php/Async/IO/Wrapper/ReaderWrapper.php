@@ -3,14 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\Reader;
-use Async\IO\AsyncIO;
+use Async\IO\TokioIO;
 use Async\Kernel\IO\AsyncReader;
 use Fiber;
 
 /**
  * ReaderWrapper wraps AsyncReader and implements Reader interface
  */
-class ReaderWrapper implements Reader, AsyncIO
+class ReaderWrapper implements Reader, TokioIO
 {
     private AsyncReader $inner;
 

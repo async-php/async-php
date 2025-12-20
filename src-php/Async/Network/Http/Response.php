@@ -4,7 +4,7 @@ namespace Async\Network\Http;
 
 use Async\IO;
 use Async\IO\Reader;
-use Async\IO\AsyncIO;
+use Async\IO\TokioIO;
 use Async\Kernel\IO\BytesReader;
 use Async\Kernel\Network\Http\HttpResponse as KernelResponse;
 use Async\IO\Wrapper\ReaderWrapper;
@@ -433,7 +433,7 @@ class Response
     private static function toKernelAsyncReader(Reader $reader): \Async\Kernel\IO\AsyncReader
     {
         // Fast path: if reader implements AsyncIO, use unwrap() for zero-cost conversion
-        if ($reader instanceof AsyncIO) {
+        if ($reader instanceof TokioIO) {
             $kernel = $reader->unwrap();
             if ($kernel instanceof \Async\Kernel\IO\AsyncReader) {
                 return $kernel;

@@ -2,10 +2,12 @@
 
 namespace Async\Network\Udp;
 
+use Async\IO;
+use Async\IO\TokioIO;
 use Async\Kernel\Network\UdpSocket as KernelUdpSocket;
 use Fiber;
 
-class Socket
+class Socket implements TokioIO
 {
     private KernelUdpSocket $inner;
 
@@ -210,5 +212,26 @@ class Socket
     public function setMulticastLoopV6(bool $enabled): bool
     {
         return $this->inner->set_multicast_loop_v6($enabled);
+    }
+
+    /**
+     * Get the underlying kernel UdpSocket
+     * @internal
+     */
+    public function unwrap(): KernelUdpSocket
+    {
+        return $this->inner;
+    }
+
+    /**
+     * Cast to an IO wrapper based on bitflags.
+     *
+     * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
+     * @return mixed Wrapper IO object
+     */
+    public function castTo(int $type)
+    {
+        $kernelIo = $this->inner->castTo($type);
+        return IO::kernelToWrapper($kernelIo);
     }
 }

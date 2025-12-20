@@ -5,6 +5,7 @@ namespace Async\Network\Tls;
 use Async\IO\Reader;
 use Async\IO\Writer;
 use Async\IO\Closer;
+use Async\IO\TokioIO;
 use Async\IO;
 use Async\Kernel\Network\TlsStream as KernelTlsStream;
 use Fiber;
@@ -13,7 +14,7 @@ use Fiber;
  * TLS stream for secure communication
  * Implements IO interfaces directly
  */
-class TlsStream implements Reader, Writer, Closer
+class TlsStream implements Reader, Writer, Closer, TokioIO
 {
     private KernelTlsStream $inner;
 

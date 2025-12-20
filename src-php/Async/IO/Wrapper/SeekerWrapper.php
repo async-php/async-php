@@ -3,14 +3,14 @@
 namespace Async\IO\Wrapper;
 
 use Async\IO\Seeker;
-use Async\IO\AsyncIO;
+use Async\IO\TokioIO;
 use Async\Kernel\IO\AsyncSeeker;
 use Fiber;
 
 /**
  * SeekerWrapper wraps AsyncSeeker and implements Seeker interface
  */
-class SeekerWrapper implements Seeker, AsyncIO
+class SeekerWrapper implements Seeker, TokioIO
 {
     private AsyncSeeker $inner;
 

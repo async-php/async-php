@@ -7,6 +7,7 @@ use Async\IO\Writer;
 use Async\IO\Closer;
 use Async\IO\ReaderFrom;
 use Async\IO\WriterTo;
+use Async\IO\TokioIO;
 use Async\IO;
 use Async\Kernel\Network\TcpStream as KernelTcpStream;
 use Fiber;
@@ -15,7 +16,7 @@ use Fiber;
  * Socket represents a TCP connection
  * Implements IO interfaces directly
  */
-class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo
+class Socket implements Reader, Writer, Closer, ReaderFrom, WriterTo, TokioIO
 {
     private KernelTcpStream $inner;
 
