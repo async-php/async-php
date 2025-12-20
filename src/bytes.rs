@@ -29,7 +29,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 
-use crate::async_io::cast_io;
+use crate::io::cast_io;
 use crate::util::Shared;
 
 // ==================== BytesCursor (newtype wrapper) ====================

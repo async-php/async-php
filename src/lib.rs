@@ -28,7 +28,6 @@ mod net;
 mod fs;
 mod http;
 mod channel;
-mod async_io;
 mod pdo;
 mod curl;
 mod redis;

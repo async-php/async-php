@@ -1,17 +1,23 @@
+/// IO type casting implementation
+///
+/// This module provides the cast_io function that converts IO types
+/// based on bitflags (READ, WRITE, SEEK, BUF)
+
 use ext_php_rs::prelude::*;
-use ext_php_rs::convert::IntoZval;
 use ext_php_rs::class::RegisteredClass;
 use ext_php_rs::exception::PhpException;
 use ext_php_rs::types::{ZendClassObject, Zval};
+use ext_php_rs::convert::IntoZval;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, BufReader};
 
 use crate::{IO_BUF, IO_READ, IO_SEEK, IO_WRITE};
-use crate::io::{
-    AsyncBufReader, AsyncReadSeeker, AsyncReadWrite, AsyncReadWriteSeek, AsyncReadWriteSeeker,
-    AsyncReadWriter, AsyncReadSeek, AsyncSeeker, AsyncWriteSeeker, AsyncWriteSeek, AsyncWriter,
-    AsyncReader,
-};
 use crate::util::Shared;
+
+use super::wrappers::{AsyncReader, AsyncSeeker, AsyncWriter};
+use super::combined::{AsyncBufReader, AsyncReadSeeker, AsyncReadWriter, AsyncReadWriteSeeker, AsyncWriteSeeker};
+use super::traits::{AsyncReadSeek, AsyncReadWrite, AsyncReadWriteSeek, AsyncWriteSeek};
+
+// ==================== Constants ====================
 
 pub const IO_MASK: i64 = IO_READ | IO_WRITE | IO_SEEK | IO_BUF;
 
@@ -19,6 +25,8 @@ const IO_READ_WRITE: i64 = IO_READ | IO_WRITE;
 const IO_READ_SEEK: i64 = IO_READ | IO_SEEK;
 const IO_WRITE_SEEK: i64 = IO_WRITE | IO_SEEK;
 const IO_READ_WRITE_SEEK: i64 = IO_READ | IO_WRITE | IO_SEEK;
+
+// ==================== Cast Target Types ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IoCastTarget {
@@ -70,6 +78,9 @@ fn parse_io_cast_target(flags: i64) -> PhpResult<IoCastTarget> {
     }
 }
 
+// ==================== AsyncIO Trait ====================
+
+/// Trait for types that can be cast to different IO wrapper types
 pub trait AsyncIO {
     fn as_reader(&self) -> PhpResult<AsyncReader> {
         Err(PhpException::default("Not implemented".to_string()))
@@ -104,12 +115,15 @@ pub trait AsyncIO {
     }
 }
 
+// ==================== Helper Functions ====================
+
 fn object_to_zval<T: RegisteredClass>(obj: T) -> PhpResult<Zval> {
     ZendClassObject::new(obj)
         .into_zval(false)
         .map_err(|e| PhpException::default(format!("Failed to convert object to Zval: {:?}", e)))
 }
 
+/// Main cast_io function that converts IO types based on bitflags
 pub fn cast_io(io: &dyn AsyncIO, ty: i64) -> PhpResult<Zval> {
     let target = parse_io_cast_target(ty)?;
 
@@ -124,6 +138,8 @@ pub fn cast_io(io: &dyn AsyncIO, ty: i64) -> PhpResult<Zval> {
         IoCastTarget::ReadWriteSeeker => object_to_zval(io.as_read_write_seeker()?),
     }
 }
+
+// ==================== AsyncIO Implementations ====================
 
 impl AsyncIO for Shared<Box<dyn AsyncRead + Unpin + Send>> {
     fn as_reader(&self) -> PhpResult<AsyncReader> {

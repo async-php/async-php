@@ -2,7 +2,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
 use crate::future::RustFuture;
-use crate::async_io::cast_io;
+use crate::io::cast_io;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt, SeekFrom};
 use std::path::PathBuf;
