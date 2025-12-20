@@ -12,6 +12,12 @@ use Async\IO\Wrapper\WriteSeekerWrapper;
 use Async\IO\Wrapper\ReadWriteSeekerWrapper;
 use Async\IO\Reader;
 use Async\IO\Writer;
+use Async\IO\Seeker;
+use Async\IO\BufReader;
+use Async\IO\ReadWriter;
+use Async\IO\ReadSeeker;
+use Async\IO\WriteSeeker;
+use Async\IO\ReadWriteSeeker;
 use Async\Kernel\IO\AsyncReader;
 use Async\Kernel\IO\AsyncWriter;
 use Async\Kernel\IO\AsyncSeeker;
@@ -90,21 +96,66 @@ class IO
      * Wrap a PHP IO object into a PhpIO kernel type (for tokio async usage)
      *
      * Based on the bitflags provided, creates the appropriate PhpIO type:
-     * - READ: PhpReader - requires read($length) method
-     * - WRITE: PhpWriter - requires write($data) and flush() methods
-     * - SEEK: PhpSeeker - requires seek($offset, $whence) method
-     * - BUF: PhpBufReader - requires read_line() method
-     * - READ|WRITE: PhpReadWriter
-     * - READ|SEEK: PhpReadSeeker
-     * - WRITE|SEEK: PhpWriteSeeker
-     * - READ|WRITE|SEEK: PhpReadWriteSeeker
+     * - READ: PhpReader - requires Reader interface
+     * - WRITE: PhpWriter - requires Writer interface
+     * - SEEK: PhpSeeker - requires Seeker interface
+     * - BUF: PhpBufReader - requires BufReader interface
+     * - READ|WRITE: PhpReadWriter - requires ReadWriter interface
+     * - READ|SEEK: PhpReadSeeker - requires ReadSeeker interface
+     * - WRITE|SEEK: PhpWriteSeeker - requires WriteSeeker interface
+     * - READ|WRITE|SEEK: PhpReadWriteSeeker - requires ReadWriteSeeker interface
      *
-     * @param object $io PHP object implementing the required methods
+     * @param object $io PHP object implementing the required interfaces
      * @param int $type Bitflags (IO::READ | IO::WRITE | IO::SEEK | IO::BUF)
      * @return \Async\Kernel\IO\PhpReader|\Async\Kernel\IO\PhpWriter|\Async\Kernel\IO\PhpSeeker|\Async\Kernel\IO\PhpBufReader|\Async\Kernel\IO\PhpReadWriter|\Async\Kernel\IO\PhpReadSeeker|\Async\Kernel\IO\PhpWriteSeeker|\Async\Kernel\IO\PhpReadWriteSeeker
+     * @throws \InvalidArgumentException If required interfaces are not implemented
      */
     public static function wrapPhpIo(object $io, int $type)
     {
+        // Validate that object implements required interfaces based on type flags
+        $missingInterfaces = [];
+
+        // Check for combined types first (most specific validation)
+        if (($type & self::READ) && ($type & self::WRITE) && ($type & self::SEEK)) {
+            if (!($io instanceof ReadWriteSeeker)) {
+                $missingInterfaces[] = ReadWriteSeeker::class;
+            }
+        } elseif (($type & self::READ) && ($type & self::SEEK)) {
+            if (!($io instanceof ReadSeeker)) {
+                $missingInterfaces[] = ReadSeeker::class;
+            }
+        } elseif (($type & self::WRITE) && ($type & self::SEEK)) {
+            if (!($io instanceof WriteSeeker)) {
+                $missingInterfaces[] = WriteSeeker::class;
+            }
+        } elseif (($type & self::READ) && ($type & self::WRITE)) {
+            if (!($io instanceof ReadWriter)) {
+                $missingInterfaces[] = ReadWriter::class;
+            }
+        } else {
+            // Check for single types
+            if (($type & self::BUF) && !($io instanceof BufReader)) {
+                $missingInterfaces[] = BufReader::class;
+            }
+            if (($type & self::READ) && !($io instanceof Reader)) {
+                $missingInterfaces[] = Reader::class;
+            }
+            if (($type & self::WRITE) && !($io instanceof Writer)) {
+                $missingInterfaces[] = Writer::class;
+            }
+            if (($type & self::SEEK) && !($io instanceof Seeker)) {
+                $missingInterfaces[] = Seeker::class;
+            }
+        }
+
+        if (!empty($missingInterfaces)) {
+            $className = get_class($io);
+            $interfaces = implode(', ', $missingInterfaces);
+            throw new \InvalidArgumentException(
+                "Object of class {$className} does not implement required interfaces: {$interfaces}"
+            );
+        }
+
         [$requestChannel, $responseChannel] = self::spawnIO($io);
         $reqChan = $requestChannel->unwrap();
         $resChan = $responseChannel->unwrap();
