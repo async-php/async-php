@@ -79,6 +79,9 @@ impl AsyncTime {
     }
 
     /// Creates a new Ticker that sends messages on a channel at intervals.
+    ///
+    /// # Arguments
+    /// * `interval_ms` - The interval in milliseconds between ticks
     pub fn create_ticker(interval_ms: i64) -> PhpResult<AsyncTicker> {
         let (tx, _rx) = broadcast::channel(1);
         let tx_clone = tx.clone();
@@ -97,6 +100,10 @@ impl AsyncTime {
         let state = TickerState {
             tx: Some(tx),
             handle: Some(handle),
+            interval_ms,
+            tick_count: 0,
+            max_ticks: None,
+            is_paused: false,
         };
 
         Ok(AsyncTicker {
@@ -108,6 +115,10 @@ impl AsyncTime {
 struct TickerState {
     tx: Option<broadcast::Sender<()>>,
     handle: Option<JoinHandle<()>>,
+    interval_ms: i64,
+    tick_count: u64,
+    max_ticks: Option<u64>,
+    is_paused: bool,
 }
 
 #[php_class]
@@ -118,12 +129,31 @@ pub struct AsyncTicker {
 
 #[php_impl]
 impl AsyncTicker {
+    /// Wait for the next tick
     pub fn next_tick(&self) -> PhpResult<RustFuture> {
+        let state_clone = Arc::clone(&self.state);
+
         let state = self.state.lock().unwrap();
         if let Some(tx) = &state.tx {
             let mut rx = tx.subscribe();
             let future = async move {
                 let _ = rx.recv().await;
+
+                // Increment tick count
+                let mut state = state_clone.lock().unwrap();
+                state.tick_count += 1;
+
+                // Check if we've reached max ticks
+                if let Some(max) = state.max_ticks {
+                    if state.tick_count >= max {
+                        // Auto-stop when reaching max ticks
+                        if let Some(handle) = state.handle.take() {
+                            handle.abort();
+                        }
+                        state.tx = None;
+                    }
+                }
+
                 Zval::new()
             };
             Ok(RustFuture::new(future))
@@ -132,11 +162,81 @@ impl AsyncTicker {
         }
     }
 
+    /// Stop the ticker permanently
     pub fn stop(&self) {
         let mut state = self.state.lock().unwrap();
         if let Some(handle) = state.handle.take() {
             handle.abort();
         }
         state.tx = None;
+    }
+
+    /// Reset the ticker (restart from beginning)
+    pub fn reset(&self) -> PhpResult<()> {
+        let mut state = self.state.lock().unwrap();
+
+        // Stop existing ticker
+        if let Some(handle) = state.handle.take() {
+            handle.abort();
+        }
+
+        // Create new ticker
+        let (tx, _rx) = broadcast::channel(1);
+        let tx_clone = tx.clone();
+        let interval_ms = state.interval_ms;
+
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(interval_ms as u64));
+            interval.tick().await; // First tick fires immediately, skip it
+            loop {
+                interval.tick().await;
+                if tx_clone.send(()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        state.tx = Some(tx);
+        state.handle = Some(handle);
+        state.tick_count = 0;
+        state.is_paused = false;
+
+        Ok(())
+    }
+
+    /// Get the interval in milliseconds
+    pub fn get_interval(&self) -> i64 {
+        let state = self.state.lock().unwrap();
+        state.interval_ms
+    }
+
+    /// Get the current tick count
+    pub fn get_tick_count(&self) -> u64 {
+        let state = self.state.lock().unwrap();
+        state.tick_count
+    }
+
+    /// Set maximum number of ticks (0 or None means unlimited)
+    pub fn set_max_ticks(&self, max: Option<i64>) {
+        let mut state = self.state.lock().unwrap();
+        state.max_ticks = max.filter(|&m| m > 0).map(|m| m as u64);
+    }
+
+    /// Get the maximum number of ticks
+    pub fn get_max_ticks(&self) -> Option<i64> {
+        let state = self.state.lock().unwrap();
+        state.max_ticks.map(|m| m as i64)
+    }
+
+    /// Check if the ticker is running
+    pub fn is_running(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.tx.is_some() && !state.is_paused
+    }
+
+    /// Check if the ticker is stopped
+    pub fn is_stopped(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.tx.is_none()
     }
 }

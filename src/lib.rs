@@ -50,7 +50,7 @@ use channel::AsyncChannel;
 use pdo::{AsyncPdoMySql, AsyncPdoPgSql, AsyncPdoMySqlTransaction, AsyncPdoPgSqlTransaction};
 use curl::{CurlHandle, CurlMulti};
 use redis::AsyncRedisClient;
-use time::AsyncTime;
+use time::{AsyncTime, AsyncTicker};
 use logger::AsyncLogger;
 use context::AsyncContext;
 
@@ -405,6 +405,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<CurlMulti>()
         .class::<AsyncRedisClient>() // Redis support
         .class::<AsyncTime>()
+        .class::<AsyncTicker>() // Ticker for periodic operations
         .class::<AsyncLogger>() // Register AsyncLogger
         .class::<AsyncReader>() // IO types
         .class::<AsyncWriter>()
