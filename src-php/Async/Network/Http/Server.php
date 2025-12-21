@@ -89,15 +89,30 @@ class Server
      * - Unix\Socket::castTo(IO::READ|IO::WRITE)
      * - Tls\TlsStream::castTo(IO::READ|IO::WRITE)
      * - FileSystem\FileHandle::castTo(IO::READ|IO::WRITE)
+     * - Quic\Connection (HTTP/3)
      *
      * Also supports generic AsyncReadWriter from PHP bridges (with overhead)
      *
-     * @param AsyncReadWriter $conn Connection IO
+     * @param AsyncReadWriter|object $conn Connection IO
      * @param callable(Request): Response $handler Request handler
      * @return bool True if connection served successfully
      */
     public function serve($conn, callable $handler): bool
     {
+        // Check for QUIC Connection (HTTP/3)
+        if ($conn instanceof \Async\Network\Quic\Connection) {
+            // Wrap the user handler to convert Request/Response to kernel types
+            $kernelHandler = function($kernelRequest) use ($handler) {
+                $request = Request::fromKernelRequest($kernelRequest);
+                $response = $handler($request);
+                return $response->toKernelResponse();
+            };
+
+            $future = $this->builder->serve_quic($conn->unwrap(), $kernelHandler);
+            $result = Fiber::suspend($future);
+            return (bool)$result;
+        }
+
         // Try to get AsyncReadWriter from connection
         if ($conn instanceof AsyncReadWriter) {
             $io = $conn;
@@ -117,7 +132,7 @@ class Server
             }
         } else {
             throw new \InvalidArgumentException(
-                'Connection must be AsyncReadWriter or support castTo(IO::READ|IO::WRITE)'
+                'Connection must be AsyncReadWriter, Quic\Connection, or support castTo(IO::READ|IO::WRITE)'
             );
         }
 
