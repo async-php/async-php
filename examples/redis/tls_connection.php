@@ -42,7 +42,8 @@ Kernel::run(function () {
         $result = $redis->connect('rediss://:tls123@localhost:6380#insecure');
 
         if (!$result) {
-            throw new Exception("Failed to connect to Redis");
+            $error = $redis->getLastError();
+            throw new Exception("Failed to connect to Redis" . ($error ? ": $error" : ""));
         }
         echo "✓ Connected successfully with TLS!\n\n";
 
