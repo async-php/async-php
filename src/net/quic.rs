@@ -5,10 +5,10 @@ use crate::future::RustFuture;
 use crate::util::Shared;
 use crate::io::cast_io;
 use quinn::{Endpoint, ServerConfig, ClientConfig, Incoming, Connection, RecvStream, SendStream};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::CertificateDer;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::io::Result as IoResult;
@@ -272,7 +272,7 @@ impl AsyncQuicConnection {
         }
 
         // Accept the incoming connection if pending
-        let mut incoming_guard = self.connection.get_mut(); // Lock connection to prevent race
+        let incoming_guard = self.connection.get_mut(); // Lock connection to prevent race
         // Re-check
         if let Some(conn) = incoming_guard.as_ref() {
              return Ok(conn.clone());
@@ -519,7 +519,7 @@ impl AsyncQuicStream {
         let stream = self.inner.clone();
         let future = async move {
             let mut buf = vec![0u8; length];
-            let mut guard = stream.get_mut();
+            let guard = stream.get_mut();
             let recv = &mut guard.recv;
             
             // Using inherent read method which returns Result<Option<usize>, ...>
@@ -541,7 +541,7 @@ impl AsyncQuicStream {
     pub fn write(&self, data: String) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-            let mut guard = stream.get_mut();
+            let guard = stream.get_mut();
             let send = &mut guard.send;
             
             send.write_all(data.as_bytes()).await.map_err(|e| e.to_string())?;
@@ -557,7 +557,7 @@ impl AsyncQuicStream {
     pub fn flush(&self) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-            let mut guard = stream.get_mut();
+            let guard = stream.get_mut();
             let send = &mut guard.send;
             
             // Using AsyncWriteExt::flush via trait (imported)
@@ -659,7 +659,7 @@ impl AsyncQuicSendStream {
     pub fn flush(&self) -> RustFuture {
         let stream = self.inner.clone();
         let future = async move {
-            let mut guard = stream.get_mut();
+            let guard = stream.get_mut();
             let send = &mut *guard; // Fix: Deref Shared to get SendStream
             AsyncWriteExt::flush(send).await.map_err(|e| e.to_string())?;
              let mut z = Zval::new();
