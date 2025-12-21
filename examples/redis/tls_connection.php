@@ -11,128 +11,106 @@
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
-use Async\Kernel\Redis\Client;
+use Async\Kernel;
 
 echo "Redis TLS Connection Example\n";
 echo str_repeat("=", 50) . "\n\n";
 
-// Create a new Redis client
-$redis = new Client();
+Kernel::run(function () {
+    // Create a new Redis client using the hooked Redis class
+    $redis = new Redis();
 
-// Example 1: Connect to Redis with TLS (secure mode)
-echo "Example 1: Secure TLS Connection\n";
-echo str_repeat("-", 50) . "\n";
+    // Example 1: Connect using URL format with rediss:// (recommended)
+    echo "Example 1: TLS Connection Using URL Format\n";
+    echo str_repeat("-", 50) . "\n";
 
-try {
-    // Method 1: Using connectTls() method
-    echo "Connecting to Redis with TLS (secure mode)...\n";
-    $result = $redis->connectTls('redis.example.com', 6380)->await();
+    try {
+        echo "Connecting to Redis using rediss:// URL...\n";
 
-    if ($result) {
-        echo "✓ Connected successfully with TLS!\n";
+        // Using connect() with rediss:// URL
+        // This is flexible and follows Redis URL conventions
+        $result = $redis->connect('rediss://localhost:6380#insecure');
 
-        // Test the connection
-        $pong = $redis->ping()->await();
-        echo "✓ Ping response: $pong\n";
+        if ($result) {
+            echo "✓ Connected successfully using rediss:// URL!\n";
 
-        $redis->close();
-        echo "✓ Connection closed\n";
+            // Test the connection
+            $pong = $redis->ping('Hello TLS');
+            echo "✓ Ping with message: $pong\n";
+
+            $redis->close();
+            echo "✓ Connection closed\n";
+        }
+    } catch (Exception $e) {
+        echo "✗ Connection failed: " . $e->getMessage() . "\n";
     }
-} catch (Exception $e) {
-    echo "✗ Connection failed: " . $e->getMessage() . "\n";
-}
 
-echo "\n";
+    echo "\n";
 
-// Example 2: Connect to Redis with TLS (insecure mode - skip certificate verification)
-echo "Example 2: TLS Connection with Insecure Mode\n";
-echo str_repeat("-", 50) . "\n";
+    // Example 2: Production TLS connection with authentication
+    echo "Example 2: Production TLS Connection with Auth\n";
+    echo str_repeat("-", 50) . "\n";
 
-try {
-    echo "Connecting to Redis with TLS (insecure mode)...\n";
-    // Note: insecure mode skips certificate verification
-    // This is useful for testing but NOT recommended for production!
-    $result = $redis->connectTls('localhost', 6380, 0.0, null, null, 0.0, true)->await();
+    try {
+        echo "Connecting to Redis with TLS and authentication...\n";
 
-    if ($result) {
-        echo "✓ Connected successfully with TLS (insecure mode)!\n";
+        // For production, use a URL with authentication
+        // Format: rediss://[username]:[password]@[host]:[port]
+        $result = $redis->connect('rediss://default:your-password@redis.example.com:6380');
 
-        // Test basic operations
-        echo "Testing basic operations...\n";
+        if ($result) {
+            echo "✓ Connected successfully with TLS and auth!\n";
 
-        // Set a value
-        $redis->set('test:tls', 'Hello from TLS!')->await();
-        echo "✓ Set key 'test:tls'\n";
+            // Production operations...
+            $info = $redis->ping();
+            echo "✓ Server is responsive: $info\n";
 
-        // Get the value
-        $value = $redis->get('test:tls')->await();
-        echo "✓ Get key 'test:tls': $value\n";
-
-        // Delete the key
-        $deleted = $redis->del('test:tls')->await();
-        echo "✓ Deleted $deleted key(s)\n";
-
-        $redis->close();
-        echo "✓ Connection closed\n";
+            $redis->close();
+            echo "✓ Connection closed\n";
+        }
+    } catch (Exception $e) {
+        echo "✗ Connection failed: " . $e->getMessage() . "\n";
+        echo "Note: This example requires a properly configured Redis server with auth\n";
     }
-} catch (Exception $e) {
-    echo "✗ Connection failed: " . $e->getMessage() . "\n";
-}
 
-echo "\n";
+    echo "\n";
 
-// Example 3: Connect using URL format with connect() method
-echo "Example 3: TLS Connection Using URL Format\n";
-echo str_repeat("-", 50) . "\n";
+    // Example 3: TLS with insecure mode and operations
+    echo "Example 3: TLS Connection with Insecure Mode\n";
+    echo str_repeat("-", 50) . "\n";
 
-try {
-    echo "Connecting to Redis using rediss:// URL...\n";
+    try {
+        echo "Connecting to Redis with TLS (insecure mode)...\n";
+        // Note: insecure mode skips certificate verification
+        // This is useful for testing but NOT recommended for production!
+        // Append #insecure to the URL to skip certificate verification
+        $result = $redis->connect('rediss://localhost:6380#insecure');
 
-    // Method 2: Using connect() with rediss:// URL
-    // This is more flexible and follows Redis URL conventions
-    $result = $redis->connect('rediss://localhost:6380#insecure')->await();
+        if ($result) {
+            echo "✓ Connected successfully with TLS (insecure mode)!\n";
 
-    if ($result) {
-        echo "✓ Connected successfully using rediss:// URL!\n";
+            // Test basic operations
+            echo "Testing basic operations...\n";
 
-        // Test the connection
-        $pong = $redis->ping('Hello TLS')->await();
-        echo "✓ Ping with message: $pong\n";
+            // Set a value
+            $redis->set('test:tls', 'Hello from TLS!');
+            echo "✓ Set key 'test:tls'\n";
 
-        $redis->close();
-        echo "✓ Connection closed\n";
+            // Get the value
+            $value = $redis->get('test:tls');
+            echo "✓ Get key 'test:tls': $value\n";
+
+            // Delete the key
+            $deleted = $redis->del('test:tls');
+            echo "✓ Deleted $deleted key(s)\n";
+
+            $redis->close();
+            echo "✓ Connection closed\n";
+        }
+    } catch (Exception $e) {
+        echo "✗ Connection failed: " . $e->getMessage() . "\n";
     }
-} catch (Exception $e) {
-    echo "✗ Connection failed: " . $e->getMessage() . "\n";
-}
-
-echo "\n";
-
-// Example 4: Production-ready TLS connection
-echo "Example 4: Production TLS Connection with Auth\n";
-echo str_repeat("-", 50) . "\n";
-
-try {
-    echo "Connecting to Redis with TLS and authentication...\n";
-
-    // For production, use a URL with authentication
-    // Format: rediss://[username]:[password]@[host]:[port]
-    $result = $redis->connect('rediss://default:your-password@redis.example.com:6380')->await();
-
-    if ($result) {
-        echo "✓ Connected successfully with TLS and auth!\n";
-
-        // Production operations...
-        $info = $redis->ping()->await();
-        echo "✓ Server is responsive: $info\n";
-
-        $redis->close();
-        echo "✓ Connection closed\n";
-    }
-} catch (Exception $e) {
-    echo "✗ Connection failed: " . $e->getMessage() . "\n";
-    echo "Note: This example requires a properly configured Redis server with auth\n";
-}
+});
 
 echo "\n" . str_repeat("=", 50) . "\n";
 echo "Examples completed!\n\n";
