@@ -1,261 +1,254 @@
-# Redis Examples
+# Redis Examples for async-php
 
-This directory contains examples demonstrating how to use the async Redis client with TLS support.
+This directory contains examples demonstrating how to use the async-php Redis client with various connection modes and operations.
+
+## Overview
+
+The async-php Redis client provides a drop-in replacement for the native PHP Redis extension, enabling asynchronous Redis operations. It hooks the standard `Redis` class, so you can use familiar Redis methods in an async context.
+
+## Features
+
+- **Async Operations**: All Redis operations are non-blocking
+- **TLS/SSL Support**: Connect to Redis over encrypted TLS connections
+- **Password Authentication**: Support for password-protected Redis servers
+- **Standard API**: Compatible with PHP Redis extension API
+- **Multiple Data Types**: Strings, Lists, Hashes, Sets, and more
+- **Connection Pooling**: Efficient connection management (via URL format)
 
 ## Examples
 
-### 1. basic.php
-Basic Redis operations including:
-- String operations (GET, SET)
-- Counters (INCR, DECR)
-- Lists (LPUSH, RPUSH, LPOP, LRANGE)
-- Hashes (HSET, HGET, HGETALL)
-- Sets (SADD, SMEMBERS, SISMEMBER)
-- Key management (EXISTS, DEL, TTL, EXPIRE)
+### 1. basic.php - Basic Redis Operations
 
-**Run:**
+Demonstrates fundamental Redis operations including:
+- Connecting to a password-protected Redis server
+- String operations (SET, GET, SETEX)
+- Counter operations (INCR, DECR)
+- List operations (LPUSH, RPUSH, LPOP, RPOP)
+- Hash operations (HSET, HGET, HGETALL)
+- Set operations (SADD, SMEMBERS)
+- Key management (EXISTS, EXPIRE, TTL, DEL)
+
+**Usage:**
+```bash
+# Start Redis (with password)
+podman run --rm -it -p 6379:6379 redis:alpine redis-server --requirepass "123456"
+
+# Run the example from project root
+php -d extension=target/release/libasync_php.dylib examples/redis/basic.php
+```
+
+### 2. tls_connection.php - TLS/SSL Encrypted Connections
+
+Comprehensive example covering Redis operations over TLS connection, including:
+- TLS connection with password authentication
+- String operations over TLS
+- Counter operations
+- List operations
+- Hash operations
+- Set operations
+- Key management
+- Bulk operations and cleanup
+- Error handling
+
+**Usage:**
+```bash
+# Start Redis with TLS
+./examples/redis/start-redis-tls.sh
+
+# Run the example from project root
+php -d extension=target/release/libasync_php.dylib examples/redis/tls_connection.php
+```
+
+## Setup Instructions
+
+### Regular Redis Server (No Password)
+
+```bash
+podman run --rm -it -p 6379:6379 redis:alpine
+```
+
+### Redis with Password Authentication
+
+```bash
+podman run --rm -it -p 6379:6379 redis:alpine redis-server --requirepass "123456"
+```
+
+### Redis with TLS (Recommended for Production)
+
+1. **Generate TLS Certificates** (already included in this directory):
+   - `redis-cert.pem` - Server certificate
+   - `redis-key.pem` - Private key
+
+2. **Start Redis with TLS**:
+   ```bash
+   ./examples/redis/start-redis-tls.sh
+   ```
+
+   This starts Redis on port 6380 with TLS enabled and password `tls123`.
+
+## Connection Examples
+
+### Connect without Password
+
+```php
+use Async\Kernel;
+
+Kernel::run(function () {
+    $redis = new Redis();
+    $redis->connect('redis://localhost:6379');
+
+    $redis->set('key', 'value');
+    $value = $redis->get('key');
+
+    $redis->close();
+});
+```
+
+### Connect with Password
+
+```php
+use Async\Kernel;
+
+Kernel::run(function () {
+    $redis = new Redis();
+    $redis->connect('redis://:123456@localhost:6379');
+
+    // Or connect first, then authenticate
+    // $redis->connect('redis://localhost:6379');
+    // $redis->auth('123456');
+
+    $redis->close();
+});
+```
+
+### Connect with TLS
+
+```php
+use Async\Kernel;
+
+Kernel::run(function () {
+    $redis = new Redis();
+
+    // Use rediss:// (note the double 's')
+    // #insecure flag skips certificate verification (for self-signed certs)
+    $redis->connect('rediss://:tls123@localhost:6380#insecure');
+
+    $redis->set('secure:key', 'encrypted value');
+    $value = $redis->get('secure:key');
+
+    $redis->close();
+});
+```
+
+## Supported Redis Commands
+
+### String Operations
+- `set($key, $value, $timeout = null)` - Set key to value
+- `get($key)` - Get value by key
+- `setex($key, $ttl, $value)` - Set with expiration
+- `incr($key)` - Increment value
+- `incrBy($key, $value)` - Increment by amount
+- `decr($key)` - Decrement value
+- `decrBy($key, $value)` - Decrement by amount
+
+### List Operations
+- `lPush($key, ...$values)` - Push to head of list
+- `rPush($key, ...$values)` - Push to tail of list
+- `lPop($key)` - Pop from head
+- `rPop($key)` - Pop from tail
+- `lLen($key)` - Get list length
+- `lRange($key, $start, $end)` - Get range of elements
+
+### Hash Operations
+- `hSet($key, $field, $value)` - Set hash field
+- `hGet($key, $field)` - Get hash field
+- `hGetAll($key)` - Get all fields
+- `hDel($key, ...$fields)` - Delete hash fields
+- `hExists($key, $field)` - Check if field exists
+
+### Set Operations
+- `sAdd($key, ...$members)` - Add members to set
+- `sMembers($key)` - Get all set members
+- `sIsMember($key, $member)` - Check membership
+- `sRem($key, ...$members)` - Remove members from set
+
+### Key Management
+- `exists($keys)` - Check if key(s) exist
+- `del($keys)` - Delete key(s)
+- `expire($key, $seconds)` - Set expiration
+- `ttl($key)` - Get time to live
+- `ping($message = null)` - Ping server
+
+## TLS Connection Tips
+
+- **Scheme**: Use `rediss://` (with double 's') for TLS connections
+- **Port**: Default TLS port is usually 6380 (vs 6379 for non-TLS)
+- **Testing**: Append `#insecure` to skip certificate verification (self-signed certs only!)
+- **Production**: Use valid certificates and proper verification
+- **Authentication**: Include password in URL: `rediss://[user]:[password]@host:port`
+- **Security**: TLS provides encryption for data in transit
+
+## Files in This Directory
+
+- **basic.php** - Basic Redis operations example
+- **tls_connection.php** - TLS connection example with comprehensive operations
+- **start-redis-tls.sh** - Script to start Redis with TLS using podman
+- **redis-tls.conf** - Redis configuration for TLS mode
+- **redis-cert.pem** - Self-signed TLS certificate (for testing)
+- **redis-key.pem** - Private key for TLS certificate
+- **README.md** - This file
+
+## Troubleshooting
+
+### Connection Refused
+
+```
+Error: Connection refused
+```
+
+**Solution**: Make sure Redis server is running on the specified port.
+
+### Authentication Failed
+
+```
+Error: NOAUTH Authentication required
+```
+
+**Solution**: Provide the correct password in the connection URL or use `auth()` method.
+
+### TLS Certificate Verification Failed
+
+```
+Error: certificate verify failed
+```
+
+**Solution**:
+- For testing with self-signed certs, use `#insecure` flag
+- For production, use valid certificates or configure proper CA bundle
+
+### Extension Not Found
+
+```
+Fatal error: Class 'Redis' not found
+```
+
+**Solution**: Run the script from the project root directory with the extension loaded:
 ```bash
 php -d extension=target/release/libasync_php.dylib examples/redis/basic.php
 ```
 
-### 2. tls_connection.php
-TLS/SSL connection examples including:
-- Secure TLS connection with certificate verification
-- Insecure mode (skip certificate verification) for testing
-- URL-based connection (`rediss://` scheme)
-- Authentication with TLS
+### WRONGPASS Invalid Password
 
-**Run:**
-```bash
-php -d extension=target/release/libasync_php.dylib examples/redis/tls_connection.php
+```
+Error: WRONGPASS invalid username-password pair
 ```
 
-## TLS Connection Methods
+**Solution**: Check that the password in your connection URL matches the Redis server password.
 
-### Method 1: Using `connectTls()`
+## Notes
 
-```php
-$redis = new \Async\Kernel\Redis\Client();
-
-// Secure connection (verifies certificates)
-$redis->connectTls('redis.example.com', 6380)->await();
-
-// Insecure mode (skip certificate verification - testing only!)
-$redis->connectTls('localhost', 6380, 0.0, null, null, 0.0, true)->await();
-```
-
-### Method 2: Using `connect()` with URL
-
-```php
-$redis = new \Async\Kernel\Redis\Client();
-
-// Secure TLS connection
-$redis->connect('rediss://redis.example.com:6380')->await();
-
-// Insecure mode (skip certificate verification)
-$redis->connect('rediss://localhost:6380#insecure')->await();
-
-// With authentication
-$redis->connect('rediss://username:password@redis.example.com:6380')->await();
-```
-
-## TLS Configuration
-
-### Server Setup
-
-To test TLS connections locally, you need a Redis server with TLS enabled:
-
-1. **Generate self-signed certificates** (for testing):
-```bash
-# Generate private key
-openssl genrsa -out redis.key 2048
-
-# Generate certificate
-openssl req -new -x509 -key redis.key -out redis.crt -days 365 \
-  -subj "/CN=localhost"
-
-# Generate CA certificate (optional)
-openssl req -new -x509 -key redis.key -out ca.crt -days 365 \
-  -subj "/CN=Redis CA"
-```
-
-2. **Configure Redis** (`redis.conf`):
-```conf
-# Enable TLS
-port 0
-tls-port 6380
-tls-cert-file /path/to/redis.crt
-tls-key-file /path/to/redis.key
-tls-ca-cert-file /path/to/ca.crt
-
-# Optional: require client certificates
-# tls-auth-clients yes
-```
-
-3. **Start Redis with TLS**:
-```bash
-redis-server /path/to/redis.conf
-```
-
-### Client Configuration
-
-The client supports two TLS backends via Cargo features:
-
-- **rustls** (default): Pure Rust TLS implementation
-  - Feature: `tokio-rustls-comp`
-  - Recommended for most use cases
-
-- **native-tls**: System native TLS (OpenSSL/Secure Transport)
-  - Feature: `tokio-native-tls-comp`
-  - Use if you need OS-native certificate stores
-
-Current configuration in `Cargo.toml`:
-```toml
-redis = { version = "1.0", features = ["tokio-comp", "connection-manager", "aio", "tokio-rustls-comp"] }
-```
-
-## Connection URL Formats
-
-### Standard Redis (no TLS)
-```
-redis://[username][:password]@[host]:[port][/database]
-```
-
-Examples:
-- `redis://127.0.0.1:6379`
-- `redis://localhost:6379/0`
-- `redis://user:pass@redis.example.com:6379`
-
-### Redis with TLS
-```
-rediss://[username][:password]@[host]:[port][/database][#insecure]
-```
-
-Examples:
-- `rediss://redis.example.com:6380`
-- `rediss://localhost:6380#insecure` (skip cert verification)
-- `rediss://default:password@redis.example.com:6380/0`
-
-## Security Notes
-
-### Certificate Verification
-
-**Production environments:**
-- Always use proper SSL/TLS certificates
-- Never use `#insecure` mode in production
-- Use certificates from a trusted CA
-- Keep certificates and keys secure
-
-**Development/Testing:**
-- You can use self-signed certificates with `#insecure` flag
-- This skips certificate verification
-- Useful for local testing only
-
-### Authentication
-
-Always use authentication in production:
-```php
-// URL format
-$redis->connect('rediss://username:password@host:6380')->await();
-```
-
-Configure Redis with:
-```conf
-requirepass your-strong-password
-# Or use ACL (Redis 6+)
-aclfile /path/to/users.acl
-```
-
-## Common Issues
-
-### Certificate Verification Failed
-```
-Error: Failed to connect with TLS: SSL error
-```
-
-Solutions:
-1. Use `#insecure` for testing (not production!)
-2. Install proper CA certificates
-3. Use valid domain name matching certificate CN/SAN
-
-### Connection Timeout
-```
-Error: Failed to connect: Connection timeout
-```
-
-Solutions:
-1. Check if Redis server is running with TLS enabled
-2. Verify port number (6380 for TLS by default)
-3. Check firewall rules
-
-### Wrong Port
-```
-Error: Failed to connect: Connection refused
-```
-
-Solutions:
-1. Ensure using TLS port (typically 6380, not 6379)
-2. Check Redis configuration (`tls-port` setting)
-3. Verify Redis is listening on the correct interface
-
-## API Reference
-
-### Client Methods
-
-#### `connect(host, port, timeout, reserved, retry_interval, read_timeout)`
-Connect to Redis server. Supports both `redis://` and `rediss://` URL schemes.
-
-#### `connectTls(host, port, timeout, reserved, retry_interval, read_timeout, insecure)`
-Connect to Redis server with TLS encryption.
-- `insecure`: Set to `true` to skip certificate verification (default: `false`)
-
-#### `close()`
-Close the Redis connection.
-
-#### `ping([message])`
-Ping the server. Optionally with a message.
-
-#### String Operations
-- `set(key, value, [timeout])` - Set string value with optional expiration
-- `get(key)` - Get string value
-- `incr(key)` - Increment integer value
-- `incrBy(key, value)` - Increment by specific value
-- `decr(key)` - Decrement integer value
-- `decrBy(key, value)` - Decrement by specific value
-
-#### Key Management
-- `del(keys)` - Delete one or more keys
-- `exists(key)` - Check if key exists
-- `expire(key, seconds)` - Set expiration on key
-- `ttl(key)` - Get time to live for key
-
-#### List Operations
-- `lPush(key, values)` - Push to list (left)
-- `rPush(key, values)` - Push to list (right)
-- `lPop(key)` - Pop from list (left)
-- `rPop(key)` - Pop from list (right)
-- `lLen(key)` - Get list length
-- `lRange(key, start, stop)` - Get list range
-
-#### Hash Operations
-- `hSet(key, field, value)` - Set hash field
-- `hGet(key, field)` - Get hash field
-- `hGetAll(key)` - Get all hash fields and values
-- `hDel(key, fields)` - Delete hash fields
-- `hExists(key, field)` - Check if hash field exists
-
-#### Set Operations
-- `sAdd(key, members)` - Add members to set
-- `sMembers(key)` - Get all set members
-- `sIsMember(key, member)` - Check if member exists in set
-- `sRem(key, members)` - Remove members from set
-
-#### Error Handling
-- `getLastError()` - Get last error message
-- `clearLastError()` - Clear last error
-
-## Resources
-
-- [Redis TLS Documentation](https://redis.io/docs/management/security/encryption/)
-- [redis-rs GitHub](https://github.com/redis-rs/redis-rs)
-- [Redis Security Best Practices](https://redis.io/docs/management/security/)
+- All Redis operations must be wrapped in `Kernel::run()` for async execution
+- The hooked `Redis` class automatically handles `Fiber::suspend()` internally
+- Connection URLs support various formats: `redis://`, `rediss://` (TLS)
+- For production use, always use TLS and strong passwords
+- The `#insecure` flag should only be used for testing with self-signed certificates

@@ -2,11 +2,19 @@
 /**
  * Redis TLS Connection Example
  *
- * This example demonstrates how to connect to a Redis server using TLS encryption.
+ * This example demonstrates comprehensive Redis operations over TLS connection.
  *
  * Prerequisites:
- * - A Redis server with TLS enabled
- * - Valid TLS certificates (or use insecure mode for testing)
+ * - A Redis server with TLS enabled (see start-redis-tls.sh)
+ * - TLS certificates (see redis-cert.pem and redis-key.pem)
+ *
+ * To start the TLS Redis server:
+ *   ./start-redis-tls.sh
+ *
+ * Server info:
+ * - Host: localhost
+ * - Port: 6380 (TLS)
+ * - Password: tls123
  */
 
 require_once __DIR__ . '/../../vendor/autoload.php';
@@ -14,110 +22,206 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 use Async\Kernel;
 
 echo "Redis TLS Connection Example\n";
-echo str_repeat("=", 50) . "\n\n";
+echo str_repeat("=", 70) . "\n\n";
 
 Kernel::run(function () {
     // Create a new Redis client using the hooked Redis class
     $redis = new Redis();
 
-    // Example 1: Connect using URL format with rediss:// (recommended)
-    echo "Example 1: TLS Connection Using URL Format\n";
-    echo str_repeat("-", 50) . "\n";
+    // ========================================================================
+    // Example 1: TLS Connection with Password Authentication
+    // ========================================================================
+    echo "Example 1: TLS Connection with Password Authentication\n";
+    echo str_repeat("-", 70) . "\n";
 
     try {
-        echo "Connecting to Redis using rediss:// URL...\n";
+        echo "Connecting to Redis with TLS (insecure mode for self-signed cert)...\n";
 
-        // Using connect() with rediss:// URL
-        // This is flexible and follows Redis URL conventions
-        $result = $redis->connect('rediss://localhost:6380#insecure');
+        // Connect using rediss:// URL with password
+        // #insecure flag skips certificate verification (for self-signed certs)
+        $result = $redis->connect('rediss://:tls123@localhost:6380#insecure');
 
-        if ($result) {
-            echo "✓ Connected successfully using rediss:// URL!\n";
-
-            // Test the connection
-            $pong = $redis->ping('Hello TLS');
-            echo "✓ Ping with message: $pong\n";
-
-            $redis->close();
-            echo "✓ Connection closed\n";
+        if (!$result) {
+            throw new Exception("Failed to connect to Redis");
         }
+        echo "✓ Connected successfully with TLS!\n\n";
+
+        // Test the connection
+        $pong = $redis->ping('TLS Test');
+        echo "PING Response: $pong\n\n";
+
     } catch (Exception $e) {
         echo "✗ Connection failed: " . $e->getMessage() . "\n";
+        echo "Make sure Redis TLS server is running: ./start-redis-tls.sh\n\n";
+        exit(1);
     }
 
-    echo "\n";
+    // ========================================================================
+    // Example 2: String Operations over TLS
+    // ========================================================================
+    echo "Example 2: String Operations over TLS\n";
+    echo str_repeat("-", 70) . "\n";
 
-    // Example 2: Production TLS connection with authentication
-    echo "Example 2: Production TLS Connection with Auth\n";
-    echo str_repeat("-", 50) . "\n";
+    // Basic SET/GET
+    $redis->set('tls:message', 'Hello from TLS connection!');
+    echo "SET tls:message = 'Hello from TLS connection!'\n";
 
-    try {
-        echo "Connecting to Redis with TLS and authentication...\n";
+    $value = $redis->get('tls:message');
+    echo "GET tls:message = '$value'\n\n";
 
-        // For production, use a URL with authentication
-        // Format: rediss://[username]:[password]@[host]:[port]
-        $result = $redis->connect('rediss://default:your-password@redis.example.com:6380');
+    // SET with expiration
+    $redis->set('tls:temp', 'Temporary data', 10);
+    echo "SET tls:temp with 10s expiration\n";
 
-        if ($result) {
-            echo "✓ Connected successfully with TLS and auth!\n";
+    $ttl = $redis->ttl('tls:temp');
+    echo "TTL tls:temp = $ttl seconds\n\n";
 
-            // Production operations...
-            $info = $redis->ping();
-            echo "✓ Server is responsive: $info\n";
+    // SETEX
+    $redis->setex('tls:session', 30, 'session-data-12345');
+    echo "SETEX tls:session 30 'session-data-12345'\n";
 
-            $redis->close();
-            echo "✓ Connection closed\n";
-        }
-    } catch (Exception $e) {
-        echo "✗ Connection failed: " . $e->getMessage() . "\n";
-        echo "Note: This example requires a properly configured Redis server with auth\n";
-    }
+    $sessionData = $redis->get('tls:session');
+    echo "GET tls:session = '$sessionData'\n\n";
 
-    echo "\n";
+    // ========================================================================
+    // Example 3: Counter Operations over TLS
+    // ========================================================================
+    echo "Example 3: Counter Operations over TLS\n";
+    echo str_repeat("-", 70) . "\n";
 
-    // Example 3: TLS with insecure mode and operations
-    echo "Example 3: TLS Connection with Insecure Mode\n";
-    echo str_repeat("-", 50) . "\n";
+    $redis->set('tls:counter', '100');
+    echo "Initial counter: 100\n";
 
-    try {
-        echo "Connecting to Redis with TLS (insecure mode)...\n";
-        // Note: insecure mode skips certificate verification
-        // This is useful for testing but NOT recommended for production!
-        // Append #insecure to the URL to skip certificate verification
-        $result = $redis->connect('rediss://localhost:6380#insecure');
+    $val = $redis->incr('tls:counter');
+    echo "INCR tls:counter = $val\n";
 
-        if ($result) {
-            echo "✓ Connected successfully with TLS (insecure mode)!\n";
+    $val = $redis->incrBy('tls:counter', 50);
+    echo "INCRBY tls:counter 50 = $val\n";
 
-            // Test basic operations
-            echo "Testing basic operations...\n";
+    $val = $redis->decr('tls:counter');
+    echo "DECR tls:counter = $val\n";
 
-            // Set a value
-            $redis->set('test:tls', 'Hello from TLS!');
-            echo "✓ Set key 'test:tls'\n";
+    $val = $redis->decrBy('tls:counter', 10);
+    echo "DECRBY tls:counter 10 = $val\n\n";
 
-            // Get the value
-            $value = $redis->get('test:tls');
-            echo "✓ Get key 'test:tls': $value\n";
+    // ========================================================================
+    // Example 4: List Operations over TLS
+    // ========================================================================
+    echo "Example 4: List Operations over TLS\n";
+    echo str_repeat("-", 70) . "\n";
 
-            // Delete the key
-            $deleted = $redis->del('test:tls');
-            echo "✓ Deleted $deleted key(s)\n";
+    $redis->del('tls:queue');
 
-            $redis->close();
-            echo "✓ Connection closed\n";
-        }
-    } catch (Exception $e) {
-        echo "✗ Connection failed: " . $e->getMessage() . "\n";
-    }
+    $redis->rPush('tls:queue', 'job1', 'job2', 'job3');
+    echo "RPUSH tls:queue job1 job2 job3\n";
+
+    $redis->lPush('tls:queue', 'urgent-job');
+    echo "LPUSH tls:queue urgent-job\n";
+
+    $len = $redis->lLen('tls:queue');
+    echo "LLEN tls:queue = $len\n";
+
+    $items = $redis->lRange('tls:queue', 0, -1);
+    echo "LRANGE tls:queue 0 -1 = " . json_encode($items) . "\n";
+
+    $first = $redis->lPop('tls:queue');
+    echo "LPOP tls:queue = '$first'\n";
+
+    $last = $redis->rPop('tls:queue');
+    echo "RPOP tls:queue = '$last'\n\n";
+
+    // ========================================================================
+    // Example 5: Hash Operations over TLS
+    // ========================================================================
+    echo "Example 5: Hash Operations over TLS\n";
+    echo str_repeat("-", 70) . "\n";
+
+    $redis->hSet('tls:user:1001', 'name', 'Alice');
+    $redis->hSet('tls:user:1001', 'email', 'alice@example.com');
+    $redis->hSet('tls:user:1001', 'age', '28');
+    $redis->hSet('tls:user:1001', 'role', 'admin');
+    echo "HSET tls:user:1001 (4 fields)\n";
+
+    $name = $redis->hGet('tls:user:1001', 'name');
+    echo "HGET tls:user:1001 name = '$name'\n";
+
+    $exists = $redis->hExists('tls:user:1001', 'email');
+    echo "HEXISTS tls:user:1001 email = " . ($exists ? 'true' : 'false') . "\n";
+
+    $user = $redis->hGetAll('tls:user:1001');
+    echo "HGETALL tls:user:1001 = " . json_encode($user) . "\n";
+
+    $deleted = $redis->hDel('tls:user:1001', 'age');
+    echo "HDEL tls:user:1001 age = $deleted field(s) deleted\n\n";
+
+    // ========================================================================
+    // Example 6: Set Operations over TLS
+    // ========================================================================
+    echo "Example 6: Set Operations over TLS\n";
+    echo str_repeat("-", 70) . "\n";
+
+    $redis->sAdd('tls:tags', 'php', 'rust', 'async', 'tls', 'redis');
+    echo "SADD tls:tags php rust async tls redis\n";
+
+    $isMember = $redis->sIsMember('tls:tags', 'tls');
+    echo "SISMEMBER tls:tags tls = " . ($isMember ? 'true' : 'false') . "\n";
+
+    $members = $redis->sMembers('tls:tags');
+    echo "SMEMBERS tls:tags = " . json_encode($members) . "\n";
+
+    $removed = $redis->sRem('tls:tags', 'rust');
+    echo "SREM tls:tags rust = $removed member(s) removed\n\n";
+
+    // ========================================================================
+    // Example 7: Key Management over TLS
+    // ========================================================================
+    echo "Example 7: Key Management over TLS\n";
+    echo str_repeat("-", 70) . "\n";
+
+    $exists = $redis->exists('tls:message');
+    echo "EXISTS tls:message = $exists\n";
+
+    $exists = $redis->exists(['tls:message', 'tls:counter', 'tls:queue']);
+    echo "EXISTS tls:message tls:counter tls:queue = $exists keys exist\n";
+
+    $redis->expire('tls:message', 60);
+    echo "EXPIRE tls:message 60\n";
+
+    $ttl = $redis->ttl('tls:message');
+    echo "TTL tls:message = $ttl seconds\n\n";
+
+    // ========================================================================
+    // Example 8: Bulk Operations and Cleanup
+    // ========================================================================
+    echo "Example 8: Bulk Operations and Cleanup\n";
+    echo str_repeat("-", 70) . "\n";
+
+    // Delete multiple keys at once
+    $deleted = $redis->del([
+        'tls:message',
+        'tls:temp',
+        'tls:session',
+        'tls:counter',
+        'tls:queue',
+        'tls:user:1001',
+        'tls:tags'
+    ]);
+    echo "DEL (bulk) = $deleted keys deleted\n\n";
+
+    // ========================================================================
+    // Close connection
+    // ========================================================================
+    $redis->close();
+    echo str_repeat("=", 70) . "\n";
+    echo "✓ All TLS operations completed successfully!\n";
+    echo "✓ Connection closed\n";
 });
 
-echo "\n" . str_repeat("=", 50) . "\n";
-echo "Examples completed!\n\n";
-
+echo "\n" . str_repeat("=", 70) . "\n";
 echo "TLS Connection Tips:\n";
 echo "- Use 'rediss://' scheme for TLS connections\n";
 echo "- Default TLS port is usually 6380 (vs 6379 for non-TLS)\n";
 echo "- Append '#insecure' to skip certificate verification (testing only!)\n";
-echo "- For production, always use proper certificates and verification\n";
-echo "- You can include auth in the URL: rediss://user:pass@host:port\n";
+echo "- For production, use valid certificates and proper verification\n";
+echo "- Include auth in URL: rediss://[user]:[password]@host:port\n";
+echo "- TLS provides encryption for data in transit\n";
