@@ -43,7 +43,7 @@ use io::{
     AsyncReadWriter, AsyncReadSeeker, AsyncWriteSeeker, AsyncReadWriteSeeker,
 };
 use bytes::{BytesReader, BytesWriter};
-use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream, AsyncQuicListener, AsyncQuicConnection};
+use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream, AsyncQuicListener, AsyncQuicConnection, AsyncQuicStream, AsyncQuicRecvStream, AsyncQuicSendStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
 use http::HttpServer;
 use channel::AsyncChannel;
@@ -386,6 +386,9 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncTlsStream>()
         .class::<AsyncQuicListener>()
         .class::<AsyncQuicConnection>()
+        .class::<AsyncQuicStream>()
+        .class::<AsyncQuicRecvStream>()
+        .class::<AsyncQuicSendStream>()
         .class::<AsyncFilesystem>()
         .class::<AsyncFileHandle>()
         .class::<http::HttpClient>()

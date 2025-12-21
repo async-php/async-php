@@ -8,4 +8,4 @@ pub use tcp::{AsyncTcpListener, AsyncTcpStream};
 pub use tls::{AsyncTlsConfig, AsyncTlsStream};
 pub use udp::AsyncUdpSocket;
 pub use unix::{AsyncUnixListener, AsyncUnixStream};
-pub use quic::{AsyncQuicListener, AsyncQuicConnection};
+pub use quic::{AsyncQuicListener, AsyncQuicConnection, AsyncQuicStream, AsyncQuicRecvStream, AsyncQuicSendStream};

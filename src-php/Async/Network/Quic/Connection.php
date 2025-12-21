@@ -42,12 +42,24 @@ class Connection implements TokioIO
      */
     public static function connect(string $addr, ?string $serverName = null, ?array $config = null): self
     {
-        $future = KernelQuicConnection::connect($addr, $serverName, $config ?? []);
+        $cfg = $config ?? [];
+        $future = KernelQuicConnection::connect($addr, $serverName, $cfg);
         $kernelConnection = Fiber::suspend($future);
         if (!$kernelConnection) {
             throw new \RuntimeException("Failed to connect to $addr via QUIC");
         }
         return new self($kernelConnection);
+    }
+
+    /**
+     * Wait for handshake to complete
+     *
+     * @throws \RuntimeException if handshake fails
+     */
+    public function handshake(): void
+    {
+        $future = $this->inner->handshake();
+        Fiber::suspend($future);
     }
 
     /**

@@ -37,11 +37,9 @@ class Listener
      */
     public static function bind(string $addr, ?array $tlsConfig = null): self
     {
-        $future = KernelQuicListener::bind($addr, $tlsConfig ?? []);
-        $kernelListener = Fiber::suspend($future);
-        if (!$kernelListener) {
-            throw new \RuntimeException("Failed to bind QUIC listener to $addr");
-        }
+        // Bind is synchronous in kernel
+        $cfg = $tlsConfig ?? [];
+        $kernelListener = KernelQuicListener::bind($addr, $cfg);
         return new self($kernelListener);
     }
 

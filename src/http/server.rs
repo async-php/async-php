@@ -12,7 +12,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendHashTable, Zval};
 use ext_php_rs::convert::IntoZval;
 use std::task::{Context, Poll};
-use crate::net::quic::AsyncQuicConnection;
+use crate::net::AsyncQuicConnection;
 use h3::server::Connection as H3Connection;
 use h3_quinn::Connection as H3QuinnConnection;
 use http_body_util::Full;
@@ -109,7 +109,7 @@ impl hyper::service::Service<Request<Incoming>> for PhpHandlerService {
                     .map_err(|e| {
                         eprintln!("Failed to call PHP handler: {:?}", e);
                         make_error(format!("{:?}", e))
-                    })?
+                    })? 
             };
 
             let http_response_ref: &HttpResponse = response
@@ -412,7 +412,7 @@ async fn handle_quic_request(
     
     let (parts, _) = req.into_parts();
     let full_body = Full::new(Bytes::from(body_bytes))
-        .map_err(|e: std::convert::Infallible| match e {{}})
+        .map_err(|e: std::convert::Infallible| match e {})
         .boxed();
     let http_request = http::Request::from_parts(parts, full_body);
     let http_request = HttpRequest {
