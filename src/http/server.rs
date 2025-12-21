@@ -4,7 +4,7 @@ use crate::io::{AsyncReadWriter, AsyncReadWrite};
 use crate::future::RustFuture;
 use hyper::{Request, Response, body::Incoming};
 use http_body_util::BodyExt;
-use bytes::{Bytes, Buf};
+use bytes::Bytes;
 use hyper_util::server::conn::auto;
 use std::future::Future;
 use std::time::Duration;
@@ -12,10 +12,6 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendHashTable, Zval};
 use ext_php_rs::convert::IntoZval;
 use std::task::{Context, Poll};
-use crate::net::AsyncQuicConnection;
-use h3::server::Connection as H3Connection;
-use h3_quinn::Connection as H3QuinnConnection;
-use http_body_util::Full;
 
 #[derive(Clone)]
 pub struct LocalExecutor;
@@ -309,56 +305,6 @@ impl HttpServer {
 
         RustFuture::new(future)
     }
-
-    /// Serve HTTP/3 requests on a QUIC connection
-    #[php]
-    pub fn serve_quic(&self, quic_conn: &AsyncQuicConnection, handler: &mut Zval) -> RustFuture {
-        let quic_conn_ref = AsyncQuicConnection {
-            incoming: quic_conn.incoming.clone(),
-            connection: quic_conn.connection.clone(),
-        };
-        let handler_clone = handler.shallow_clone();
-
-        let future = async move {
-             let conn = quic_conn_ref.get_connection().await
-                 .map_err(|e| format!("Failed to get QUIC connection: {}", e))?;
-             
-             let mut h3_conn = H3Connection::new(H3QuinnConnection::new(conn))
-                 .await
-                 .map_err(|e| format!("Failed to create HTTP/3 connection: {}", e))?;
-             
-             loop {
-                 match h3_conn.accept().await {
-                     Ok(Some(req_resolver)) => {
-                         let handler = handler_clone.shallow_clone();
-                         crate::context::spawn_local(async move {
-                             let (req, mut stream) = match req_resolver.resolve_request().await {
-                                 Ok(r) => r,
-                                 Err(e) => {
-                                     eprintln!("Failed to resolve H3 request: {:?}", e);
-                                     return;
-                                 }
-                             };
-                             
-                             if let Err(e) = handle_quic_request(req, &mut stream, handler).await {
-                                 eprintln!("H3 Request error: {}", e);
-                             }
-                         });
-                     },
-                     Ok(None) => break,
-                     Err(e) => {
-                         eprintln!("H3 Accept error: {:?}", e);
-                         break;
-                     }
-                 }
-             }
-             
-             let mut z = Zval::new();
-             z.set_bool(true);
-             Ok::<Zval, String>(z)
-        };
-        RustFuture::new(future)
-    }
 }
 
 pub async fn http_request_from_hyper(req: Request<Incoming>) -> Result<HttpRequest, String> {
@@ -394,65 +340,4 @@ pub async fn http_response_to_hyper(
     *hyper_response.headers_mut() = headers;
     *hyper_response.version_mut() = version;
     Ok(hyper_response)
-}
-
-async fn handle_quic_request(
-    req: http::Request<()>, 
-    stream: &mut h3::server::RequestStream<h3_quinn::BidiStream<bytes::Bytes>, Bytes>,
-    handler: Zval,
-) -> Result<(), String> {
-    let mut body_bytes = Vec::new();
-    while let Some(mut chunk) = stream.recv_data().await
-        .map_err(|e| format!("Body read error: {:?}", e))?
-    {
-        let len = chunk.remaining();
-        let bytes = chunk.copy_to_bytes(len);
-        body_bytes.extend_from_slice(&bytes);
-    }
-    
-    let (parts, _) = req.into_parts();
-    let full_body = Full::new(Bytes::from(body_bytes))
-        .map_err(|e: std::convert::Infallible| match e {})
-        .boxed();
-    let http_request = http::Request::from_parts(parts, full_body);
-    let http_request = HttpRequest {
-        inner: Shared::new(http_request),
-    };
-    
-    let req_zval = ext_php_rs::types::ZendClassObject::new(http_request)
-        .into_zval(false)
-        .map_err(|e| format!("Zval conversion error: {:?}", e))?;
-    
-    let response = handler.try_call(vec![&req_zval])
-        .map_err(|e| format!("Handler error: {:?}", e))?;
-    
-    let http_response_ref: &HttpResponse = response.extract()
-        .ok_or_else(|| "Handler did not return HttpResponse".to_string())?;
-    
-    let mut http_response = HttpResponse { inner: http_response_ref.inner.clone() };
-    
-    let response_ref = http_response.inner.get_ref();
-    let mut resp_builder = http::Response::builder().status(response_ref.status());
-    for (name, value) in response_ref.headers() {
-        resp_builder = resp_builder.header(name, value);
-    }
-    let resp = resp_builder.body(())
-        .map_err(|e| format!("Response build error: {}", e))?;
-        
-    stream.send_response(resp).await
-        .map_err(|e| format!("Send response error: {:?}", e))?;
-    
-    let body = http_response.take_body()?;
-    let collected = body.collect().await
-        .map_err(|e| format!("Body collect error: {}", e))?;
-    let bytes = collected.to_bytes();
-    
-    if !bytes.is_empty() {
-        stream.send_data(bytes).await
-            .map_err(|e| format!("Send data error: {:?}", e))?;
-    }
-    
-    stream.finish().await
-        .map_err(|e| format!("Stream finish error: {:?}", e))?;
-    Ok(())
 }

@@ -3,13 +3,14 @@
 namespace Async\Network\Http;
 
 use Async\Kernel\Network\Http\HttpServer as KernelHttpServer;
+use Async\Kernel\Network\Http\Http3Server as KernelHttp3Server;
 use Async\Kernel\IO\AsyncReadWriter;
 use Async\IO;
 use Async\IO\TokioIO;
 use Fiber;
 
 /**
- * HttpServer - HTTP/1.1 and HTTP/2 server with zero-copy IO
+ * HttpServer - Unified HTTP server supporting HTTP/1.1, HTTP/2, and HTTP/3
  *
  * Usage:
  * ```php
@@ -31,11 +32,13 @@ use Fiber;
  */
 class Server
 {
-    private KernelHttpServer $builder;
+    private KernelHttpServer $httpServer;
+    private KernelHttp3Server $http3Server;
 
     public function __construct()
     {
-        $this->builder = new KernelHttpServer();
+        $this->httpServer = new KernelHttpServer();
+        $this->http3Server = new KernelHttp3Server();
     }
 
     /**
@@ -43,7 +46,7 @@ class Server
      */
     public function http1Only(): self
     {
-        $this->builder->http1Only();
+        $this->httpServer->http1Only();
         return $this;
     }
 
@@ -52,7 +55,7 @@ class Server
      */
     public function http2Only(): self
     {
-        $this->builder->http2Only();
+        $this->httpServer->http2Only();
         return $this;
     }
 
@@ -63,7 +66,7 @@ class Server
      */
     public function http1(array $options): self
     {
-        $this->builder->http1($options);
+        $this->httpServer->http1($options);
         return $this;
     }
 
@@ -74,7 +77,7 @@ class Server
      */
     public function http2(array $options): self
     {
-        $this->builder->http2($options);
+        $this->httpServer->http2($options);
         return $this;
     }
 
@@ -85,11 +88,11 @@ class Server
      * This uses the connection's native tokio IO for maximum performance.
      *
      * Supported connection types (zero-copy):
-     * - Tcp\Socket::castTo(IO::READ|IO::WRITE)
-     * - Unix\Socket::castTo(IO::READ|IO::WRITE)
-     * - Tls\TlsStream::castTo(IO::READ|IO::WRITE)
-     * - FileSystem\FileHandle::castTo(IO::READ|IO::WRITE)
-     * - Quic\Connection (HTTP/3)
+     * - Tcp\Socket::castTo(IO::READ|IO::WRITE) - HTTP/1.1 and HTTP/2
+     * - Unix\Socket::castTo(IO::READ|IO::WRITE) - HTTP/1.1 and HTTP/2
+     * - Tls\TlsStream::castTo(IO::READ|IO::WRITE) - HTTP/1.1 and HTTP/2
+     * - FileSystem\FileHandle::castTo(IO::READ|IO::WRITE) - HTTP/1.1 and HTTP/2
+     * - Quic\Connection - HTTP/3
      *
      * Also supports generic AsyncReadWriter from PHP bridges (with overhead)
      *
@@ -108,7 +111,7 @@ class Server
                 return $response->toKernelResponse();
             };
 
-            $future = $this->builder->serve_quic($conn->unwrap(), $kernelHandler);
+            $future = $this->http3Server->serve($conn->unwrap(), $kernelHandler);
             $result = Fiber::suspend($future);
             return (bool)$result;
         }
@@ -150,7 +153,7 @@ class Server
         };
 
         // Serve the connection
-        $future = $this->builder->serve($io, $kernelHandler);
+        $future = $this->httpServer->serve($io, $kernelHandler);
         $result = Fiber::suspend($future);
 
         return (bool)$result;
