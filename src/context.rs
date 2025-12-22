@@ -1,9 +1,11 @@
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use std::cell::RefCell;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::task::LocalSet;
 
 type ContextMap = HashMap<String, Zval>;
 
@@ -14,12 +16,26 @@ tokio::task_local! {
 
 thread_local! {
     static THREAD_CONTEXT: RefCell<ContextMap> = RefCell::new(HashMap::new());
+    static LOCAL_SET_PTR: Cell<*const LocalSet> = Cell::new(std::ptr::null());
 }
 
 static NEXT_FIBER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub fn next_fiber_id() -> u64 {
     NEXT_FIBER_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) struct LocalSetGuard;
+
+impl Drop for LocalSetGuard {
+    fn drop(&mut self) {
+        LOCAL_SET_PTR.with(|cell| cell.set(std::ptr::null()));
+    }
+}
+
+pub(crate) fn set_current_local_set(local: &LocalSet) -> LocalSetGuard {
+    LOCAL_SET_PTR.with(|cell| cell.set(local as *const LocalSet));
+    LocalSetGuard
 }
 
 fn get_from_cell(cell: &RefCell<ContextMap>, id: &str, default: Option<&Zval>) -> Zval {
@@ -56,7 +72,15 @@ where
     F: Future + 'static,
     F::Output: 'static,
 {
-    tokio::task::spawn_local(scope(future))
+    LOCAL_SET_PTR.with(|cell| {
+        let ptr = cell.get();
+        if ptr.is_null() {
+            tokio::task::spawn_local(scope(future))
+        } else {
+            // SAFETY: `ptr` is set/cleared by `set_current_local_set` and only used on the same thread.
+            unsafe { (&*ptr).spawn_local(scope(future)) }
+        }
+    })
 }
 
 pub fn spawn_local_with_fiber_id<F>(fiber_id: u64, future: F) -> tokio::task::JoinHandle<F::Output>
@@ -64,7 +88,15 @@ where
     F: Future + 'static,
     F::Output: 'static,
 {
-    tokio::task::spawn_local(scope_with_fiber_id(fiber_id, future))
+    LOCAL_SET_PTR.with(|cell| {
+        let ptr = cell.get();
+        if ptr.is_null() {
+            tokio::task::spawn_local(scope_with_fiber_id(fiber_id, future))
+        } else {
+            // SAFETY: `ptr` is set/cleared by `set_current_local_set` and only used on the same thread.
+            unsafe { (&*ptr).spawn_local(scope_with_fiber_id(fiber_id, future)) }
+        }
+    })
 }
 
 #[php_class]

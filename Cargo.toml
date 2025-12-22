@@ -53,6 +53,7 @@ nom = "7"
 urlencoding = "2"
 # Redis support
 redis = { version = "1.0", features = ["tokio-comp", "connection-manager", "aio", "tokio-rustls-comp", "tls-rustls-insecure"] }
+socketioxide = { version = "0.18" }
 
 [features]
 http3 = []

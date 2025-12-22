@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Async PHP Socket.IO Chat</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }
+        #app { max-width: 800px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; height: 90vh; }
+        #header { padding: 15px; background: #0084ff; color: white; display: flex; justify-content: space-between; align-items: center; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px 15px; border-radius: 18px; max-width: 70%; word-wrap: break-word; }
+        .message.received { background: #e4e6eb; align-self: flex-start; }
+        .message.sent { background: #0084ff; color: white; align-self: flex-end; }
+        .message.system { align-self: center; background: transparent; color: #888; font-size: 0.8em; }
+        #input-area { padding: 15px; border-top: 1px solid #ddd; display: flex; gap: 10px; background: white; }
+        #message-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        #send-btn { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 20px; cursor: pointer; }
+        #send-btn:disabled { background: #ccc; }
+        #status { font-size: 0.8em; }
+        #status.connected { color: #cfc; }
+        #status.disconnected { color: #fcc; }
+        #controls { margin-top: 10px; display: flex; align-items: center; gap: 10px; font-size: 0.9em; }
+    </style>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div id="header">
+            <div>Async PHP Chat</div>
+            <div id="status" class="disconnected">Disconnected</div>
+        </div>
+        <div id="messages"></div>
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+    <div id="controls">
+        <label>
+            <input type="checkbox" id="weak-net-toggle"> Simulate Weak Network (2s Server Delay)
+        </label>
+    </div>
+
+    <script>
+        const socket = io('/', {
+            transports: ['websocket', 'polling'],
+            reconnectionAttempts: 5
+        });
+
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statusDiv = document.getElementById('status');
+        const weakNetToggle = document.getElementById('weak-net-toggle');
+
+        function addMessage(data, type) {
+            const el = document.createElement('div');
+            el.className = `message ${type}`;
+            
+            if (type === 'system') {
+                el.textContent = data.text || data;
+            } else {
+                const time = data.time || new Date().toLocaleTimeString();
+                const user = data.user || 'Unknown';
+                el.innerHTML = `<small>${user} ${time}</small><br>${data.text}`;
+            }
+            
+            messagesDiv.appendChild(el);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        socket.on('connect', () => {
+            statusDiv.textContent = 'Connected (ID: ' + socket.id + ')';
+            statusDiv.className = 'connected';
+            addMessage('Connected to server', 'system');
+        });
+
+        socket.on('disconnect', () => {
+            statusDiv.textContent = 'Disconnected';
+            statusDiv.className = 'disconnected';
+            addMessage('Disconnected from server', 'system');
+        });
+
+        socket.on('chat_message', (data) => {
+            // Check if it's from me or others
+            // In this example, server sends back with user='Me' for ack
+            const type = data.user === 'Me' ? 'sent' : 'received';
+            addMessage(data, type);
+        });
+
+        socket.on('system_message', (data) => {
+            addMessage(data, 'system');
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        function sendMessage() {
+            const text = input.value.trim();
+            if (text) {
+                socket.emit('chat_message', text);
+                input.value = '';
+            }
+        }
+
+        weakNetToggle.addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            socket.emit('toggle_lag', enabled);
+            addMessage(`Weak network simulation ${enabled ? 'enabled' : 'disabled'}`, 'system');
+        });
+    </script>
+</body>
+</html>

@@ -159,3 +159,102 @@ impl<T> DerefMut for Shared<T> {
         unsafe { &mut *self.inner.get() }
     }
 }
+
+pub fn zval_to_json(zval: &Zval) -> serde_json::Value {
+    if zval.is_null() {
+        return serde_json::Value::Null;
+    }
+    if let Some(b) = zval.bool() {
+        return serde_json::Value::Bool(b);
+    }
+    if let Some(l) = zval.long() {
+        return serde_json::Value::Number(l.into());
+    }
+    if let Some(d) = zval.double() {
+        if let Some(n) = serde_json::Number::from_f64(d) {
+             return serde_json::Value::Number(n);
+        }
+    }
+    if let Some(s) = zval.string() {
+        return serde_json::Value::String(s);
+    }
+    if let Some(arr) = zval.array() {
+        if arr.is_empty() {
+            return serde_json::Value::Array(vec![]);
+        }
+        
+        let mut is_list = true;
+        let mut expected_idx = 0;
+        let mut values = Vec::new();
+        let mut map = serde_json::Map::new();
+        
+        for (k, v) in arr.iter() {
+            match k {
+                 ext_php_rs::types::ArrayKey::Long(idx) => {
+                     if idx != expected_idx as i64 {
+                         is_list = false;
+                     }
+                     expected_idx += 1;
+                     map.insert(idx.to_string(), zval_to_json(v));
+                     values.push(zval_to_json(v));
+                 }
+                 ext_php_rs::types::ArrayKey::Str(s) => {
+                     is_list = false;
+                     map.insert(s.to_string(), zval_to_json(v));
+                 }
+                 ext_php_rs::types::ArrayKey::String(s) => {
+                     is_list = false;
+                     map.insert(s, zval_to_json(v));
+                 }
+            }
+        }
+        
+        if is_list {
+             return serde_json::Value::Array(values);
+        } else {
+             return serde_json::Value::Object(map);
+        }
+    }
+    
+    // Fallback for objects/etc
+    serde_json::Value::String("unsupported type".to_string())
+}
+
+pub fn json_to_zval(json: &serde_json::Value) -> Zval {
+    match json {
+        serde_json::Value::Null => Zval::new(),
+        serde_json::Value::Bool(b) => {
+            let mut z = Zval::new();
+            z.set_bool(*b);
+            z
+        }
+        serde_json::Value::Number(n) => {
+            let mut z = Zval::new();
+            if let Some(i) = n.as_i64() {
+                z.set_long(i);
+            } else if let Some(f) = n.as_f64() {
+                z.set_double(f);
+            }
+            z
+        }
+        serde_json::Value::String(s) => {
+            let mut z = Zval::new();
+            z.set_string(s, false).ok();
+            z
+        }
+        serde_json::Value::Array(arr) => {
+            let mut ht = ZendHashTable::new();
+            for val in arr {
+                ht.push(json_to_zval(val)).ok();
+            }
+            ht.into_zval(false).unwrap_or_else(|_| Zval::new())
+        }
+        serde_json::Value::Object(obj) => {
+            let mut ht = ZendHashTable::new();
+            for (k, v) in obj {
+                ht.insert(k.as_str(), json_to_zval(v)).ok();
+            }
+            ht.into_zval(false).unwrap_or_else(|_| Zval::new())
+        }
+    }
+}

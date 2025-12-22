@@ -19,9 +19,9 @@ use Async\IO\Wrapper\ReaderWrapper;
  * Usage (Server):
  * ```php
  * $response = new Response();
- * $response->setStatus(200);
- * $response->setHeader('Content-Type', 'application/json');
- * $response->setBody(json_encode(['message' => 'Hello']));
+ * $response->withStatus(200);
+ * $response->withHeader('Content-Type', 'application/json');
+ * $response->withBody(json_encode(['message' => 'Hello']));
  * return $response;
  * ```
  *
@@ -55,10 +55,10 @@ class Response
             foreach ($headersOrBody as $name => $value) {
                 if (is_array($value)) {
                     foreach ($value as $v) {
-                        $this->appendHeader((string)$name, (string)$v);
+                        $this->withAddedHeader((string)$name, (string)$v);
                     }
                 } else {
-                    $this->appendHeader((string)$name, (string)$value);
+                    $this->withAddedHeader((string)$name, (string)$value);
                 }
             }
         } elseif (is_string($headersOrBody) || $headersOrBody instanceof Reader) {
@@ -68,7 +68,7 @@ class Response
         }
 
         if (is_string($body) || $body instanceof Reader) {
-            $this->setBody($body);
+            $this->withBody($body);
         } elseif ($body !== null) {
             throw new \InvalidArgumentException('Body must be string, Reader, or null');
         }

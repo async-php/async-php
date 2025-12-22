@@ -45,7 +45,6 @@ use io::{
 use bytes::{BytesReader, BytesWriter};
 use net::{AsyncTcpListener, AsyncTcpStream, AsyncTlsConfig, AsyncTlsStream, AsyncUdpSocket, AsyncUnixListener, AsyncUnixStream, AsyncQuicListener, AsyncQuicConnection, AsyncQuicStream, AsyncQuicRecvStream, AsyncQuicSendStream};
 use fs::{AsyncFilesystem, AsyncFileHandle};
-use http::HttpServer;
 use channel::AsyncChannel;
 use pdo::{AsyncPdoMySql, AsyncPdoPgSql, AsyncPdoMySqlTransaction, AsyncPdoPgSqlTransaction};
 use curl::{CurlHandle, CurlMulti};
@@ -60,9 +59,9 @@ pub use io::{
     PhpReadWriter, PhpReadSeeker, PhpWriteSeeker, PhpReadWriteSeeker,
 };
 
-pub(crate) async fn drive_fiber(fiber: Zval) -> PhpResult<()> {
+pub(crate) async fn drive_fiber(fiber: Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> PhpResult<()> {
     let mut current_val = fiber
-        .try_call_method("start", vec![])
+        .try_call_method("start", args)
         .map_err(|e| PhpException::default(format!("Fiber start error: {}", e)))?;
 
     loop {
@@ -159,7 +158,7 @@ pub fn go(callable: &Zval) -> PhpResult<i64> {
     let fiber_id = crate::context::next_fiber_id() as i64;
     
     crate::context::spawn_local_with_fiber_id(fiber_id as u64, async move {
-        if let Err(e) = crate::drive_fiber(fiber_clone).await {
+        if let Err(e) = crate::drive_fiber(fiber_clone, vec![]).await {
             tracing::error!("Spawned fiber failed: {:?}", e);
         }
     });
@@ -176,10 +175,11 @@ pub fn run(fiber: &mut Zval) -> PhpResult<()> {
         .map_err(|e| PhpException::default(format!("Tokio Error: {}", e)))?;
 
     let local = tokio::task::LocalSet::new();
+    let _local_guard = crate::context::set_current_local_set(&local);
 
     local.block_on(&rt, crate::context::scope(async {
         let fiber_clone = fiber.shallow_clone();
-        drive_fiber(fiber_clone).await
+        drive_fiber(fiber_clone, vec![]).await
     }))
 }
 
@@ -394,8 +394,10 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<http::HttpClient>()
         .class::<http::HttpRequest>()
         .class::<http::HttpResponse>()
-        .class::<HttpServer>()
+        .class::<http::HttpServer>()
         .class::<http::Http3Server>()
+        .class::<http::AsyncSocketIo>()
+        .class::<http::AsyncSocket>()
         .class::<AsyncChannel>()
         .class::<AsyncPdoMySql>()
         .class::<AsyncPdoMySqlTransaction>()

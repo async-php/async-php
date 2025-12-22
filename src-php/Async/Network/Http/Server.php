@@ -82,6 +82,15 @@ class Server
     }
 
     /**
+     * Attach Socket.IO to the server
+     */
+    public function withSocketIo(SocketIo $socketIo): self
+    {
+        $this->httpServer->withSocketIo($socketIo->getKernel());
+        return $this;
+    }
+
+    /**
      * Serve HTTP requests on a connection with zero-copy IO
      *
      * The handler receives a Request and must return a Response.

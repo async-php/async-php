@@ -2,6 +2,7 @@ use crate::util::Shared;
 use crate::http::{HttpRequest, HttpResponse};
 use crate::io::{AsyncReadWriter, AsyncReadWrite};
 use crate::future::RustFuture;
+use crate::http::socket_io::AsyncSocketIo;
 use hyper::{Request, Response, body::Incoming};
 use http_body_util::BodyExt;
 use bytes::Bytes;
@@ -12,6 +13,8 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendHashTable, Zval};
 use ext_php_rs::convert::IntoZval;
 use std::task::{Context, Poll};
+use socketioxide::layer::SocketIoLayer;
+use tower::Layer;
 
 #[derive(Clone)]
 pub struct LocalExecutor;
@@ -73,16 +76,16 @@ struct PhpHandlerService {
 }
 
 impl hyper::service::Service<Request<Incoming>> for PhpHandlerService {
-    type Response = Response<http_body_util::combinators::BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>>;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Response = Response<http_body_util::combinators::BoxBody<Bytes, std::io::Error>>;
+    type Error = std::io::Error;
     type Future = std::pin::Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         let handler = self.handler.clone();
 
         Box::pin(async move {
-            let make_error = |msg: String| -> Box<dyn std::error::Error + Send + Sync> {
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, msg))
+            let make_error = |msg: String| -> std::io::Error {
+                std::io::Error::new(std::io::ErrorKind::Other, msg)
             };
 
             let http_request = http_request_from_hyper(req).await
@@ -125,7 +128,11 @@ impl hyper::service::Service<Request<Incoming>> for PhpHandlerService {
                     make_error(e)
                 })?;
 
-            Ok(hyper_response)
+            // Map the body error to std::io::Error
+            let (parts, body) = hyper_response.into_parts();
+            let boxed_body = body.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)).boxed();
+            
+            Ok(Response::from_parts(parts, boxed_body))
         })
     }
 }
@@ -133,7 +140,8 @@ impl hyper::service::Service<Request<Incoming>> for PhpHandlerService {
 #[php_class]
 #[php(name = "Async\\Kernel\\Network\\Http\\HttpServer")]
 pub struct HttpServer {
-    pub(super) conn_builder: Shared<auto::Builder<LocalExecutor>>
+    pub(super) conn_builder: Shared<auto::Builder<LocalExecutor>>,
+    pub(super) socket_io_layer: Option<SocketIoLayer>,
 }
 
 unsafe impl Send for HttpServer {}
@@ -146,8 +154,15 @@ impl HttpServer {
         let builder = auto::Builder::new(LocalExecutor);
         Self {
             conn_builder: Shared::new(builder),
+            socket_io_layer: None,
         }
     }
+
+    #[php]
+    pub fn with_socket_io(&mut self, socket_io: &AsyncSocketIo) {
+        self.socket_io_layer = socket_io.layer.clone();
+    }
+
 
     #[php]
     pub fn http1_only(&mut self) -> PhpResult<()> {
@@ -284,14 +299,22 @@ impl HttpServer {
         let service = PhpHandlerService {
             handler: std::sync::Arc::new(std::sync::Mutex::new(handler_clone)),
         };
+        let socket_io_layer = self.socket_io_layer.clone();
 
         let future = async move {
-            let result = builder.get_ref()
-                .serve_connection(
-                    hyper_util::rt::TokioIo::new(SharedIoAdapter { inner: io_inner }),
-                    service
-                )
-                .await;
+            let io_adapter = hyper_util::rt::TokioIo::new(SharedIoAdapter { inner: io_inner });
+            
+            let result = if let Some(layer) = socket_io_layer {
+                builder
+                    .get_ref()
+                    .serve_connection_with_upgrades(io_adapter, layer.layer(service))
+                    .await
+            } else {
+                builder
+                    .get_ref()
+                    .serve_connection_with_upgrades(io_adapter, service)
+                    .await
+            };
 
             match result {
                 Ok(_) => {
