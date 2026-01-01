@@ -8,7 +8,7 @@ use ext_php_rs::builders::ModuleBuilder;
 /// Returns: ['sql' => rewritten_sql, 'placeholders' => [...]]
 #[php_function]
 pub fn sql_compile_placeholders(driver: String, sql: String) -> PhpResult<Zval> {
-    let parsed = crate::sql_parser::parse_and_rewrite_sql(&sql, &driver)
+    let parsed = crate::pdo::sql_parser::parse_and_rewrite_sql(&sql, &driver)
         .map_err(|e| PhpException::default(e))?;
 
     // Build result array
@@ -22,11 +22,11 @@ pub fn sql_compile_placeholders(driver: String, sql: String) -> PhpResult<Zval> 
     for placeholder in parsed.placeholders {
         let mut ph_entry = ext_php_rs::types::ZendHashTable::new();
         match placeholder.kind {
-            crate::sql_parser::PlaceholderKind::Positional(num) => {
+            crate::pdo::sql_parser::PlaceholderKind::Positional(num) => {
                 ph_entry.insert("kind", "pos").ok();
                 ph_entry.insert("key", num as i64).ok();
             }
-            crate::sql_parser::PlaceholderKind::Named(name) => {
+            crate::pdo::sql_parser::PlaceholderKind::Named(name) => {
                 ph_entry.insert("kind", "named").ok();
                 ph_entry.insert("key", name).ok();
             }

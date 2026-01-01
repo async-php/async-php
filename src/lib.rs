@@ -35,7 +35,6 @@ mod time;
 mod util;
 mod logger;
 mod context;
-mod sql_parser;
 
 use future::RustFuture;
 use io::{
