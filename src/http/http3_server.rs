@@ -69,7 +69,7 @@ impl Http3Server {
                     Ok(Some(req_resolver)) => {
                         let handler = handler_clone.shallow_clone();
 
-                        crate::fiber::context::spawn_local(async move {
+                        crate::runtime::context::spawn_local(async move {
                             // Resolve the request to get headers and stream
                             let (req, mut stream) = match req_resolver.resolve_request().await {
                                 Ok(resolved) => resolved,

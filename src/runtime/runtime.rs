@@ -95,9 +95,9 @@ pub struct AsyncRuntime;
 impl AsyncRuntime {
     pub fn spawn(fiber: &mut Zval) -> PhpResult<i64> {
         let fiber_clone = fiber.shallow_clone();
-        let fiber_id = crate::fiber::context::next_fiber_id() as i64;
+        let fiber_id = crate::runtime::context::next_fiber_id() as i64;
         
-        crate::fiber::context::spawn_local_with_fiber_id(fiber_id as u64, async move {
+        crate::runtime::context::spawn_local_with_fiber_id(fiber_id as u64, async move {
             if let Err(e) = drive_fiber(fiber_clone, vec![]).await {
                 tracing::error!("Spawned fiber failed: {:?}", e);
             }
@@ -114,9 +114,9 @@ impl AsyncRuntime {
             .map_err(|e| PhpException::default(format!("Tokio Error: {}", e)))?;
 
         let local = tokio::task::LocalSet::new();
-        let _local_guard = crate::fiber::context::set_current_local_set(&local);
+        let _local_guard = crate::runtime::context::set_current_local_set(&local);
 
-        local.block_on(&rt, crate::fiber::context::scope(async {
+        local.block_on(&rt, crate::runtime::context::scope(async {
             let fiber_clone = fiber.shallow_clone();
             drive_fiber(fiber_clone, vec![]).await
         }))

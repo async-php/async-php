@@ -29,7 +29,7 @@ mod redis;
 mod time;
 mod util;
 mod logger;
-mod fiber;
+mod runtime;
 
 
 use future::RustFuture;
@@ -48,7 +48,7 @@ use curl::{CurlHandle, CurlMulti};
 use redis::AsyncRedisClient;
 use time::{AsyncTime, AsyncTicker};
 use logger::AsyncLogger;
-use fiber::context::AsyncContext;
+use runtime::context::AsyncContext;
 
 // Export PHP IO bridge types for external use
 pub use io::{
@@ -111,7 +111,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<PhpReadSeeker>()
         .class::<PhpWriteSeeker>()
         .class::<PhpReadWriteSeeker>()
-        .class::<fiber::AsyncRuntime>()
+        .class::<runtime::AsyncRuntime>()
         .constant(wrap_constant!(IO_READ))
         .constant(wrap_constant!(IO_WRITE))
         .constant(wrap_constant!(IO_SEEK))

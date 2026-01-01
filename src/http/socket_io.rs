@@ -60,7 +60,7 @@ impl AsyncSocket {
         };
         
         let socket = self.inner.clone();
-        crate::fiber::context::spawn_local(async move {
+        crate::runtime::context::spawn_local(async move {
             if let Err(e) = socket.broadcast().emit(event, &val).await {
                 eprintln!("Broadcast error: {}", e);
             }
@@ -77,7 +77,7 @@ impl AsyncSocket {
         };
         
         let socket = self.inner.clone();
-        crate::fiber::context::spawn_local(async move {
+        crate::runtime::context::spawn_local(async move {
             if let Err(e) = socket.to(room).emit(event, &val).await {
                  eprintln!("Emit to room error: {}", e);
             }
@@ -94,7 +94,7 @@ impl AsyncSocket {
             move |socket: SocketRef, data: Data<serde_json::Value>| {
                 let cb = cb.clone();
                 async move {
-                    crate::fiber::context::spawn_local(async move {
+                    crate::runtime::context::spawn_local(async move {
                         // Logic to spawn fiber
                         let fiber_class = match ClassEntry::try_find("Fiber") {
                             Some(ce) => ce,
@@ -132,7 +132,7 @@ impl AsyncSocket {
 
                         let args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> =
                             vec![&data_zval, &socket_zval];
-                        if let Err(e) = crate::fiber::runtime::drive_fiber(fiber_clone, args).await {
+                        if let Err(e) = crate::runtime::runtime::drive_fiber(fiber_clone, args).await {
                             eprintln!("Event handler fiber failed: {:?}", e);
                         }
                     });
@@ -170,7 +170,7 @@ impl AsyncSocketIo {
             move |socket: SocketRef| {
                 let cb = cb.clone();
                 async move {
-                    crate::fiber::context::spawn_local(async move {
+                    crate::runtime::context::spawn_local(async move {
                         // Logic to spawn fiber
                         let fiber_class = match ClassEntry::try_find("Fiber") {
                             Some(ce) => ce,
@@ -205,7 +205,7 @@ impl AsyncSocketIo {
                             .unwrap_or_else(|_| Zval::new());
 
                         let args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = vec![&socket_zval];
-                        if let Err(e) = crate::fiber::runtime::drive_fiber(fiber_clone, args).await {
+                        if let Err(e) = crate::runtime::runtime::drive_fiber(fiber_clone, args).await {
                             eprintln!("Socket.IO connection handler fiber error: {:?}", e);
                         }
                     });
