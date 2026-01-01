@@ -110,9 +110,8 @@ function mainConvenience(): void
 }
 
 // Run the server
-$fiber = new Fiber(function() {
+run(function() {
     main();
 });
-run($fiber);
 // Or use the convenience method:
 // mainConvenience();

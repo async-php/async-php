@@ -137,7 +137,7 @@ HTML;
 };
 
 // Start the server
-$fiber = new Fiber(function() use ($config, $handler) {
+run(function() use ($config, $handler) {
     try {
         $server = new Server();
         $server->listenAndServe($config, $handler);
@@ -146,5 +146,3 @@ $fiber = new Fiber(function() use ($config, $handler) {
         exit(1);
     }
 });
-
-run($fiber);

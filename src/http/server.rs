@@ -25,7 +25,7 @@ where
     Fut: Future + 'static,
 {
     fn execute(&self, fut: Fut) {
-        crate::context::spawn_local(fut);
+        crate::fiber::context::spawn_local(fut);
     }
 }
 

@@ -162,8 +162,7 @@ function handleConnection(Connection $conn, int $connId, string $remoteAddr): vo
 if (class_exists('Async\Kernel')) {
     \Async\Kernel::run(fn() => main());
 } elseif (function_exists('run')) {
-    $fiber = new Fiber(fn() => main());
-    run($fiber);
+    run(fn() => main());
 } else {
     echo "Warning: No event loop detected.\n";
     main();

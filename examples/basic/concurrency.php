@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 // Main Fiber
-$main = new Fiber(function () {
+run(function () {
     echo "[Main] Started.\n";
 
     // Spawn a child fiber using go()
@@ -49,11 +49,6 @@ $main = new Fiber(function () {
     
     echo "[Main] Done.\n";
 });
-
-echo "Starting Event Loop...\n";
-$start = microtime(true);
-
-run($main);
 
 $duration = microtime(true) - $start;
 echo "Loop Finished in " . round($duration, 2) . "s\n";

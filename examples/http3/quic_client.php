@@ -120,8 +120,7 @@ function main(): void
 if (class_exists('Async\Kernel')) {
     \Async\Kernel::run(fn() => main());
 } elseif (function_exists('run')) {
-    $fiber = new Fiber(fn() => main());
-    run($fiber);
+    run(fn() => main());
 } else {
     // Fallback if no run loop (likely will fail on suspend)
     echo "Warning: No event loop detected. Attempting to run directly...\n";

@@ -60,7 +60,7 @@ impl AsyncTime {
         let callback = callback.shallow_clone();
         let duration = Duration::from_secs_f64(seconds);
 
-        crate::context::spawn_local(async move {
+        crate::fiber::context::spawn_local(async move {
             tokio_sleep(duration).await;
             if let Err(e) = callback.try_call(vec![]) {
                 eprintln!("Timer callback failed: {}", e);

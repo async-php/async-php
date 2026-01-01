@@ -102,7 +102,6 @@ function testServer(): void
 }
 
 // Run the test server
-$fiber = new Fiber(function() {
+run(function() {
     testServer();
 });
-run($fiber);

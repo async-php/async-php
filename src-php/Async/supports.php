@@ -8,6 +8,18 @@
 
 use Async\Time;
 
+if (!function_exists('go')) {
+    function go(callable $callback): int {
+        return \Async\Kernel::spawn($callback);
+    }
+}
+
+if (!function_exists('run')) {
+    function run(callable $callback): void {
+        \Async\Kernel::run($callback);
+    }
+}
+
 if (!function_exists('sleep')) {
     function sleep(int $seconds): int {
         Time::sleep($seconds);

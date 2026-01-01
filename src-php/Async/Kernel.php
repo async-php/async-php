@@ -24,17 +24,18 @@ class Kernel
 
     public static function run(callable $main): void
     {
-        if (!function_exists('run')) {
+        if (!class_exists('Async\Kernel\Runtime')) {
             throw new \RuntimeException("Async extension not loaded.");
         }
 
         $fiber = new \Fiber($main);
-        \run($fiber);
+        \Async\Kernel\Runtime::block_on($fiber);
     }
 
     public static function spawn(callable $task): int
     {
-        return \go($task);
+        $fiber = new \Fiber($task);
+        return \Async\Kernel\Runtime::spawn($fiber);
     }
 
     public static function setupLog(array $config): void
@@ -45,11 +46,6 @@ class Kernel
     public static function enableCoroutine(int $flags = self::HOOK_ALL): void
     {
         // Ensure wrappers are loaded before registering
-        // (Autoloader should handle this now with composer, but requiring if needed just in case for explicit loading order, 
-        // though composer is better. Removing explicit require_once since we have composer now?
-        // Actually, let's rely on Composer autoloading since I switched to it. 
-        // But for safety if user doesn't use composer autoloader correctly in legacy mode... 
-        // No, I removed bootstrap.php. Composer is the way.)
         
         if (($flags & self::HOOK_TCP) && !self::isHooked(self::HOOK_TCP)) {
             self::hook('tcp', TcpStreamWrapper::class);
