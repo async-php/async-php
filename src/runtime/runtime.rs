@@ -7,6 +7,78 @@ use futures::FutureExt;
 
 use crate::future::RustFuture;
 
+pub(crate) async fn call_method_async(
+    handler: Zval,
+    method: &str,
+    args: Vec<Zval>,
+) -> PhpResult<Zval> {
+    let fiber_ce = ClassEntry::try_find("Fiber")
+        .ok_or_else(|| PhpException::default("Fiber class not found".into()))?;
+
+    let fiber_obj = fiber_ce.new();
+    let fiber_zval = fiber_obj.into_zval(false).map_err(|e| {
+        PhpException::default(format!("Failed to create Fiber zval: {:?}", e))
+    })?;
+
+    // Construct callable: [$handler, $method]
+    let mut callable = Vec::with_capacity(2);
+    callable.push(handler);
+    callable.push(
+        method
+            .into_zval(false)
+            .map_err(|e| PhpException::default(format!("Failed to convert method: {:?}", e)))?,
+    );
+
+    let mut callable_ht = ext_php_rs::types::ZendHashTable::new();
+    for item in callable {
+        callable_ht.push(item).map_err(|e| {
+            PhpException::default(format!("Failed to push to callable array: {:?}", e))
+        })?;
+    }
+    let callable_zval = callable_ht.into_zval(false).map_err(|e| {
+        PhpException::default(format!("Failed to convert callable to Zval: {:?}", e))
+    })?;
+
+    fiber_zval
+        .try_call_method("__construct", vec![&callable_zval])
+        .map_err(|e| {
+            PhpException::default(format!("Failed to construct Fiber: {:?}", e))
+        })?;
+
+    let args_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = args
+        .iter()
+        .map(|z| z as &dyn ext_php_rs::convert::IntoZvalDyn)
+        .collect();
+
+    drive_fiber(fiber_zval, args_refs).await
+}
+
+pub(crate) async fn call_closure_async(
+    closure: Zval,
+    args: Vec<Zval>,
+) -> PhpResult<Zval> {
+    let fiber_ce = ClassEntry::try_find("Fiber")
+        .ok_or_else(|| PhpException::default("Fiber class not found".into()))?;
+
+    let fiber_obj = fiber_ce.new();
+    let fiber_zval = fiber_obj.into_zval(false).map_err(|e| {
+        PhpException::default(format!("Failed to create Fiber zval: {:?}", e))
+    })?;
+
+    fiber_zval
+        .try_call_method("__construct", vec![&closure])
+        .map_err(|e| {
+            PhpException::default(format!("Failed to construct Fiber: {:?}", e))
+        })?;
+
+    let args_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = args
+        .iter()
+        .map(|z| z as &dyn ext_php_rs::convert::IntoZvalDyn)
+        .collect();
+
+    drive_fiber(fiber_zval, args_refs).await
+}
+
 pub(crate) async fn drive_fiber(fiber: Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> PhpResult<Zval> {
     let mut current_val = fiber
         .try_call_method("start", args)

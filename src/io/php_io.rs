@@ -5,74 +5,13 @@ use std::task::{Context, Poll};
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
-use ext_php_rs::zend::ClassEntry;
-use ext_php_rs::convert::{IntoZval, IntoZvalDyn};
 use pin_project::pin_project;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
 
 use super::cast::cast_io;
 use super::traits::AsyncReadWriteSeek;
-use crate::runtime::runtime::drive_fiber;
+use crate::runtime::runtime::call_method_async;
 use crate::util::Shared;
-
-// ==================== Fiber Call Helper ====================
-
-async fn invoke_method(
-    handler: Zval,
-    method: &str,
-    args: Vec<Zval>,
-) -> IoResult<Zval> {
-    let fiber_ce = ClassEntry::try_find("Fiber")
-        .ok_or_else(|| IoError::new(ErrorKind::Other, "Fiber class not found"))?;
-
-    let fiber_obj = fiber_ce.new();
-    let fiber_zval = fiber_obj.into_zval(false).map_err(|e| {
-        IoError::new(
-            ErrorKind::Other,
-            format!("Failed to create Fiber zval: {:?}", e),
-        )
-    })?;
-
-    // Construct callable: [$handler, $method]
-    let mut callable = Vec::with_capacity(2);
-    callable.push(handler);
-    callable.push(
-        method
-            .into_zval(false)
-            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to convert method: {:?}", e)))?,
-    );
-
-    let mut callable_ht = ext_php_rs::types::ZendHashTable::new();
-    for item in callable {
-        callable_ht.push(item).map_err(|e| {
-            IoError::new(
-                ErrorKind::Other,
-                format!("Failed to push to callable array: {:?}", e),
-            )
-        })?;
-    }
-    let callable_zval = callable_ht.into_zval(false).map_err(|e| {
-        IoError::new(
-            ErrorKind::Other,
-            format!("Failed to convert callable to Zval: {:?}", e),
-        )
-    })?;
-
-    fiber_zval
-        .try_call_method("__construct", vec![&callable_zval])
-        .map_err(|e| {
-            IoError::new(
-                ErrorKind::Other,
-                format!("Failed to construct Fiber: {:?}", e),
-            )
-        })?;
-
-    let args_refs: Vec<&dyn IntoZvalDyn> = args.iter().map(|z| z as &dyn IntoZvalDyn).collect();
-
-    drive_fiber(fiber_zval, args_refs)
-        .await
-        .map_err(|e| IoError::new(ErrorKind::Other, format!("Fiber execution failed: {:?}", e)))
-}
 
 // ==================== Universal PhpIo Implementation ====================
 
@@ -165,7 +104,9 @@ impl AsyncRead for PhpIo {
             let handler = this.handler.shallow_clone();
 
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "read", vec![len_zval]).await
+                call_method_async(handler, "read", vec![len_zval])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
@@ -228,7 +169,9 @@ impl AsyncWrite for PhpIo {
             let handler = this.handler.shallow_clone();
 
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "write", vec![data_zval]).await
+                call_method_async(handler, "write", vec![data_zval])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
@@ -258,7 +201,9 @@ impl AsyncWrite for PhpIo {
         if this.future.is_none() {
             let handler = this.handler.shallow_clone();
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "flush", vec![]).await
+                call_method_async(handler, "flush", vec![])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
@@ -281,7 +226,9 @@ impl AsyncWrite for PhpIo {
         if this.future.is_none() {
             let handler = this.handler.shallow_clone();
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "close", vec![]).await
+                call_method_async(handler, "close", vec![])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
@@ -328,7 +275,9 @@ impl AsyncSeek for PhpIo {
             let handler = this.handler.shallow_clone();
 
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "seek", vec![offset_zval, whence_zval]).await
+                call_method_async(handler, "seek", vec![offset_zval, whence_zval])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
@@ -368,7 +317,9 @@ impl AsyncBufRead for PhpIo {
         if this.future.is_none() {
             let handler = this.handler.shallow_clone();
             this.future.set(Some(Box::pin(async move {
-                invoke_method(handler, "read_line", vec![]).await
+                call_method_async(handler, "read_line", vec![])
+                    .await
+                    .map_err(|e| IoError::new(ErrorKind::Other, format!("PHP Error: {:?}", e)))
             })));
         }
 
