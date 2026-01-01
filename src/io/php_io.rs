@@ -3,18 +3,60 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
+use ext_php_rs::zend::ClassEntry;
+use ext_php_rs::convert::IntoZval;
 use std::io::{Error as IoError, ErrorKind, Result as IoResult, SeekFrom};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite};
 use futures::future::LocalBoxFuture;
 use futures::{FutureExt, Future};
-use pin_project::{pin_project, pinned_drop};
+use pin_project::pin_project;
 
-use super::php_bridge::{PhpIoBridge, PhpIoCallFuture, php_io_call_future};
 use super::traits::AsyncReadWriteSeek;
 use super::cast::cast_io;
 use crate::util::Shared;
+use crate::runtime::runtime::drive_fiber;
+
+// ==================== Fiber Call Helper ====================
+
+/// Executes a method on the PHP IO handler using a new Fiber
+fn php_call(
+    handler: Zval,
+    method: String,
+    args: Vec<Zval>
+) -> LocalBoxFuture<'static, IoResult<Zval>> {
+    async move {
+        let fiber_ce = ClassEntry::try_find("Fiber")
+            .ok_or_else(|| IoError::new(ErrorKind::Other, "Fiber class not found"))?;
+
+        let fiber_obj = fiber_ce.new();
+        let fiber_zval = fiber_obj.into_zval(false)
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to create Fiber zval: {:?}", e)))?;
+
+        // Construct callable: [$handler, $method]
+        let mut callable_ht = ext_php_rs::types::ZendHashTable::new();
+        callable_ht.push(handler.shallow_clone())
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to push handler to callable: {:?}", e)))?;
+        callable_ht.push(method.clone())
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to push method to callable: {:?}", e)))?;
+            
+        let callable = callable_ht.into_zval(false)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to convert callable: {:?}", e)))?;
+
+        fiber_zval.try_call_method("__construct", vec![&callable])
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to construct Fiber: {:?}", e)))?;
+
+        // Convert args to trait objects
+        let args_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = args.iter()
+            .map(|z| z as &dyn ext_php_rs::convert::IntoZvalDyn)
+            .collect();
+
+        drive_fiber(fiber_zval, args_refs).await
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Fiber execution failed: {:?}", e)))
+    }
+    .boxed_local()
+}
 
 // ==================== Helper Functions ====================
 
@@ -53,45 +95,44 @@ fn process_read_response(result: Zval, buf: &mut tokio::io::ReadBuf<'_>) -> IoRe
 
 /// Helper to create write future
 fn create_write_future(
-    bridge: PhpIoBridge,
+    handler: Zval,
     write_buf: &[u8],
 ) -> LocalBoxFuture<'static, IoResult<usize>> {
     let mut data_zval = Zval::new();
     data_zval.set_binary(write_buf.to_vec());
-    async move {
-        let result = bridge.call("write", vec![data_zval]).await?;
-        if let Some(n) = result.long() {
-            Ok(n as usize)
-        } else {
-            Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
-        }
-    }
-    .boxed_local()
+    
+    php_call(handler, "write".to_string(), vec![data_zval])
+        .map(|res| {
+            res.and_then(|val| {
+                if let Some(n) = val.long() {
+                    Ok(n as usize)
+                } else {
+                    Err(IoError::new(ErrorKind::InvalidData, "Invalid write response"))
+                }
+            })
+        })
+        .boxed_local()
 }
 
 /// Helper to create flush future
-fn create_flush_future(bridge: PhpIoBridge) -> LocalBoxFuture<'static, IoResult<()>> {
-    async move {
-        bridge.call("flush", vec![]).await?;
-        Ok(())
-    }
-    .boxed_local()
+fn create_flush_future(handler: Zval) -> LocalBoxFuture<'static, IoResult<()>> {
+    php_call(handler, "flush".to_string(), vec![])
+        .map(|res| res.map(|_| ()))
+        .boxed_local()
 }
 
 /// Helper to create shutdown future
-fn create_shutdown_future(bridge: PhpIoBridge) -> LocalBoxFuture<'static, IoResult<()>> {
-    async move {
-        bridge.call("close", vec![]).await?;
-        Ok(())
-    }
-    .boxed_local()
+fn create_shutdown_future(handler: Zval) -> LocalBoxFuture<'static, IoResult<()>> {
+    php_call(handler, "close".to_string(), vec![])
+        .map(|res| res.map(|_| ()))
+        .boxed_local()
 }
 
 /// Helper to create seek future
 fn create_seek_call_future(
-    bridge: PhpIoBridge,
+    handler: Zval,
     pos: SeekFrom,
-) -> PhpIoCallFuture {
+) -> LocalBoxFuture<'static, IoResult<Zval>> {
     let (offset, whence) = match pos {
         SeekFrom::Start(pos) => (pos as i64, 0),
         SeekFrom::Current(off) => (off, 1),
@@ -103,7 +144,7 @@ fn create_seek_call_future(
     let mut whence_zval = Zval::new();
     let _ = whence_zval.set_long(whence);
 
-    php_io_call_future(bridge, "seek".to_string(), vec![offset_zval, whence_zval])
+    php_call(handler, "seek".to_string(), vec![offset_zval, whence_zval])
 }
 
 /// Helper to process seek result
@@ -139,11 +180,11 @@ struct PhpIoState {
 /// Delegates to PHP methods and fails if not implemented.
 #[php_class]
 #[php(name = "Async\\Kernel\\IO\\PhpIo")]
-#[pin_project(PinnedDrop)]
+#[pin_project]
 pub struct PhpIo {
-    bridge: PhpIoBridge,
+    handler: Zval,
     #[pin]
-    pending: Option<PhpIoCallFuture>,
+    pending: Option<LocalBoxFuture<'static, IoResult<Zval>>>,
     state: PhpIoState,
 }
 
@@ -153,7 +194,7 @@ unsafe impl Sync for PhpIo {}
 impl Clone for PhpIo {
     fn clone(&self) -> Self {
         Self {
-            bridge: self.bridge.clone(),
+            handler: self.handler.shallow_clone(),
             pending: None,
             state: PhpIoState::default(),
         }
@@ -165,7 +206,7 @@ impl PhpIo {
     #[php(constructor)]
     pub fn __construct(handler: &Zval) -> Self {
         Self {
-            bridge: PhpIoBridge::new(handler.shallow_clone()),
+            handler: handler.shallow_clone(),
             pending: None,
             state: PhpIoState::default(),
         }
@@ -187,13 +228,6 @@ impl PhpIo {
         let trait_object: Box<dyn AsyncReadWriteSeek + Unpin + Send> = Box::new(io);
         let shared = Shared::new(trait_object);
         cast_io(&shared, ty)
-    }
-}
-
-#[pinned_drop]
-impl PinnedDrop for PhpIo {
-    fn drop(self: Pin<&mut Self>) {
-        self.bridge.close_sync();
     }
 }
 
@@ -221,8 +255,8 @@ impl AsyncRead for PhpIo {
         if this.pending.is_none() {
             let mut len_zval = Zval::new();
             let _ = len_zval.set_long(buf.remaining() as i64);
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
+            this.pending.set(Some(php_call(
+                this.handler.shallow_clone(),
                 "read".to_string(),
                 vec![len_zval],
             )));
@@ -257,10 +291,10 @@ impl AsyncWrite for PhpIo {
         let this = self.project();
 
         if this.state.pending_write.is_none() {
-            this.state.pending_write = Some(create_write_future(this.bridge.clone(), write_buf));
+            this.state.pending_write = Some(create_write_future(this.handler.shallow_clone(), write_buf));
         }
 
-        let poll_result = this.state.pending_write.as_mut() 
+        let poll_result = this.state.pending_write.as_mut()
             .expect("pending write must exist")
             .as_mut()
             .poll(cx);
@@ -278,7 +312,7 @@ impl AsyncWrite for PhpIo {
         let this = self.project();
 
         if this.state.pending_flush.is_none() {
-            this.state.pending_flush = Some(create_flush_future(this.bridge.clone()));
+            this.state.pending_flush = Some(create_flush_future(this.handler.shallow_clone()));
         }
 
         let poll_result = this.state.pending_flush.as_mut()
@@ -299,7 +333,7 @@ impl AsyncWrite for PhpIo {
         let this = self.project();
 
         if this.state.pending_shutdown.is_none() {
-            this.state.pending_shutdown = Some(create_shutdown_future(this.bridge.clone()));
+            this.state.pending_shutdown = Some(create_shutdown_future(this.handler.shallow_clone()));
         }
 
         let poll_result = this.state.pending_shutdown.as_mut()
@@ -333,7 +367,7 @@ impl AsyncSeek for PhpIo {
                 None => return Poll::Ready(Err(IoError::new(ErrorKind::Other, "No pending seek"))),
             };
 
-            this.pending.set(Some(create_seek_call_future(this.bridge.clone(), seek)));
+            this.pending.set(Some(create_seek_call_future(this.handler.shallow_clone(), seek)));
         }
 
         let poll_result = this.pending.as_mut().as_pin_mut()
@@ -368,8 +402,8 @@ impl AsyncBufRead for PhpIo {
         }
 
         if this.pending.is_none() {
-            this.pending.set(Some(php_io_call_future(
-                this.bridge.clone(),
+            this.pending.set(Some(php_call(
+                this.handler.shallow_clone(),
                 "read_line".to_string(),
                 vec![],
             )));

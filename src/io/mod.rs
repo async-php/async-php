@@ -11,7 +11,6 @@ pub mod shared_impl;
 pub mod cast;
 
 // Internal modules
-mod php_bridge;
 mod php_io;
 
 // Re-export main types for public API
