@@ -619,4 +619,23 @@ class Redis
     {
         $this->kernel->clearLastError();
     }
+
+    public function publish(string $channel, string $message): int|false
+    {
+        try {
+            return (int)Fiber::suspend($this->kernel->publish($channel, $message));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    public function subscribe(array $channels, callable $callback): bool
+    {
+        try {
+            Fiber::suspend($this->kernel->subscribe($channels, $callback));
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
 }
