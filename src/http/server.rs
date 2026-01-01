@@ -2,7 +2,7 @@ use crate::util::Shared;
 use crate::http::{HttpRequest, HttpResponse};
 use crate::io::{AsyncReadWriter, AsyncReadWrite};
 use crate::future::RustFuture;
-use crate::http::socket_io::AsyncSocketIo;
+use crate::http::socketio::AsyncSocketIo;
 use hyper::{Request, Response, body::Incoming};
 use http_body_util::BodyExt;
 use bytes::Bytes;
