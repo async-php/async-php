@@ -1,24 +1,30 @@
 /// PHP IO Bridge infrastructure
 ///
 /// This module provides the bridge between PHP IO objects and Rust tokio traits
-/// using channels for async communication
+/// by spawning nested Fibers.
 
-use ext_php_rs::types::{Zval, ZendHashTable};
+use ext_php_rs::types::Zval;
 use ext_php_rs::convert::IntoZval;
+use ext_php_rs::zend::ClassEntry;
 use futures::future::LocalBoxFuture;
 use futures::FutureExt;
 use std::io::{Error as IoError, ErrorKind, Result as IoResult};
 
-use crate::channel::AsyncChannel;
-use crate::util::tuple2;
+use crate::runtime::runtime::drive_fiber;
 
 // ==================== PHP IO Bridge ====================
 
-/// Helper for bridging PHP IO method calls through dual channels
-#[derive(Clone)]
+/// Helper for bridging PHP IO method calls
 pub(super) struct PhpIoBridge {
-    request_tx: flume::Sender<Zval>,
-    response_rx: flume::Receiver<Zval>,
+    handler: Zval,
+}
+
+impl Clone for PhpIoBridge {
+    fn clone(&self) -> Self {
+        Self {
+            handler: self.handler.shallow_clone(),
+        }
+    }
 }
 
 pub(super) type PhpIoCallFuture = LocalBoxFuture<'static, IoResult<Zval>>;
@@ -28,45 +34,46 @@ pub(super) fn php_io_call_future(bridge: PhpIoBridge, method: String, args: Vec<
 }
 
 impl PhpIoBridge {
-    pub(super) fn new(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+    pub(super) fn new(handler: Zval) -> Self {
         Self {
-            request_tx: request_channel.get_sender(),
-            response_rx: response_channel.get_receiver(),
+            handler,
         }
-    }
-
-    /// Build args array from Vec<Zval>
-    fn build_args_array(args: Vec<Zval>) -> IoResult<Zval> {
-        let mut args_ht = ZendHashTable::new();
-        for (i, arg) in args.into_iter().enumerate() {
-            args_ht.insert(i as i64, arg)
-                .map_err(|_| IoError::new(ErrorKind::Other, "Failed to build args"))?;
-        }
-        args_ht.into_zval(false)
-            .map_err(|_| IoError::new(ErrorKind::Other, "Failed to convert args"))
     }
 
     pub(super) async fn call(&self, method: &str, args: Vec<Zval>) -> IoResult<Zval> {
-        // Build request: [method, args] using tuple2
-        let args_zval = Self::build_args_array(args)?;
-        let request = tuple2(method, args_zval);
+        let fiber_ce = ClassEntry::try_find("Fiber")
+            .ok_or_else(|| IoError::new(ErrorKind::Other, "Fiber class not found"))?;
 
-        // Send request through request channel
-        self.request_tx.send_async(request).await
-            .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Send failed"))?;
+        let fiber_obj = fiber_ce.new();
+        let fiber_zval = fiber_obj.into_zval(false)
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to create Fiber zval: {:?}", e)))?;
 
-        // Receive response from response channel
-        self.response_rx.recv_async().await
-            .map_err(|_| IoError::new(ErrorKind::BrokenPipe, "Channel closed"))
+        // Construct callable: [$handler, $method]
+        let mut callable_ht = ext_php_rs::types::ZendHashTable::new();
+        callable_ht.push(self.handler.shallow_clone())
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to push handler to callable: {:?}", e)))?;
+        callable_ht.push(method)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to push method to callable: {:?}", e)))?;
+            
+        let callable = callable_ht.into_zval(false)
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to convert callable: {:?}", e)))?;
+
+        fiber_zval.try_call_method("__construct", vec![&callable])
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Failed to construct Fiber: {:?}", e)))?;
+
+        // Convert args to trait objects
+        let args_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = args.iter()
+            .map(|z| z as &dyn ext_php_rs::convert::IntoZvalDyn)
+            .collect();
+
+        drive_fiber(fiber_zval, args_refs).await
+             .map_err(|e| IoError::new(ErrorKind::Other, format!("Fiber execution failed: {:?}", e)))
     }
-
-    /// Send close command to terminate the spawned fiber
+    
+    /// CloseSync is no longer needed/functional in this model as we don't hold a persistent background fiber.
+    /// We keep the method signature for compatibility if needed, or we can remove it.
+    /// The caller (PhpIo::drop) calls this. We'll leave it empty.
     pub(super) fn close_sync(&self) {
-        // Build request: ['__close__', []] using tuple2
-        let empty_args = ZendHashTable::new().into_zval(false).unwrap_or_else(|_| Zval::new());
-        let request = tuple2("__close__", empty_args);
-
-        // Try to send close command (best effort, ignore errors)
-        let _ = self.request_tx.try_send(request);
+        // No-op
     }
 }

@@ -156,89 +156,34 @@ class IO
             );
         }
 
-        [$requestChannel, $responseChannel] = self::spawnIO($io);
-        $reqChan = $requestChannel->unwrap();
-        $resChan = $responseChannel->unwrap();
-
         // Check for combined types first (most specific to least specific)
         if (($type & self::READ) && ($type & self::WRITE) && ($type & self::SEEK)) {
-            return new \Async\Kernel\IO\PhpReadWriteSeeker($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpReadWriteSeeker($io);
         }
         if (($type & self::READ) && ($type & self::SEEK)) {
-            return new \Async\Kernel\IO\PhpReadSeeker($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpReadSeeker($io);
         }
         if (($type & self::WRITE) && ($type & self::SEEK)) {
-            return new \Async\Kernel\IO\PhpWriteSeeker($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpWriteSeeker($io);
         }
         if (($type & self::READ) && ($type & self::WRITE)) {
-            return new \Async\Kernel\IO\PhpReadWriter($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpReadWriter($io);
         }
 
         // Check for single types
         if ($type & self::BUF) {
-            return new \Async\Kernel\IO\PhpBufReader($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpBufReader($io);
         }
         if ($type & self::READ) {
-            return new \Async\Kernel\IO\PhpReader($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpReader($io);
         }
         if ($type & self::WRITE) {
-            return new \Async\Kernel\IO\PhpWriter($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpWriter($io);
         }
         if ($type & self::SEEK) {
-            return new \Async\Kernel\IO\PhpSeeker($reqChan, $resChan);
+            return new \Async\Kernel\IO\PhpSeeker($io);
         }
 
         throw new \InvalidArgumentException('Invalid IO type flags: ' . $type);
-    }
-
-    /**
-     * Wraps an IO object into dual Channels for asynchronous operations in coroutines
-     *
-     * This method creates a new coroutine to handle IO operations and communicates through two Channels:
-     * - Request channel: for sending method calls to the spawned fiber
-     * - Response channel: for receiving results from the spawned fiber
-     *
-     * It enables non-blocking IO operations by delegating work to a separate coroutine context.
-     *
-     * The spawned fiber will terminate when:
-     * - Request channel is closed (pop returns null)
-     * - Receives '__close__' command
-     *
-     * @param object $io The IO object to be wrapped
-     * @return array Returns [requestChannel, responseChannel]
-     */
-    private static function spawnIO($io): array
-    {
-        $requestChannel = new Channel();
-        $responseChannel = new Channel();
-
-        Kernel::spawn(function () use ($io, $requestChannel, $responseChannel) {
-            while (true) {
-                [$request, $ok] = $requestChannel->pop();
-                if (!$ok) {
-                    break;
-                }
-
-                if (!is_array($request) || count($request) !== 2) {
-                    throw new \InvalidArgumentException('Request must be [$method, $args] tuple');
-                }
-
-                [$method, $args] = $request;
-
-                // Terminate on close command
-                if ($method === '__close__') {
-                    break;
-                }
-
-                $result = $io->$method(...$args);
-
-                $ok = $responseChannel->push($result);
-                if (!$ok) {
-                    break;
-                }
-            }
-        });
-
-        return [$requestChannel, $responseChannel];
     }
 }

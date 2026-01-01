@@ -7,7 +7,7 @@ use futures::FutureExt;
 
 use crate::future::RustFuture;
 
-pub(crate) async fn drive_fiber(fiber: Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> PhpResult<()> {
+pub(crate) async fn drive_fiber(fiber: Zval, args: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>) -> PhpResult<Zval> {
     let mut current_val = fiber
         .try_call_method("start", args)
         .map_err(|e| PhpException::default(format!("Fiber start error: {}", e)))?;
@@ -84,7 +84,10 @@ pub(crate) async fn drive_fiber(fiber: Zval, args: Vec<&dyn ext_php_rs::convert:
             return Err(PhpException::default(format!("Fiber suspended with unknown value. Type: {:?}", current_val.get_type())));
         }
     }
-    Ok(())
+    
+    fiber
+        .try_call_method("getReturn", vec![])
+        .map_err(|e| PhpException::default(format!("Fiber getReturn error: {}", e)))
 }
 
 #[php_class]
@@ -106,7 +109,7 @@ impl AsyncRuntime {
         Ok(fiber_id)
     }
 
-    pub fn block_on(fiber: &mut Zval) -> PhpResult<()> {
+    pub fn run(fiber: &mut Zval) -> PhpResult<()> {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -118,7 +121,7 @@ impl AsyncRuntime {
 
         local.block_on(&rt, crate::runtime::context::scope(async {
             let fiber_clone = fiber.shallow_clone();
-            drive_fiber(fiber_clone, vec![]).await
+            drive_fiber(fiber_clone, vec![]).await.map(|_| ())
         }))
     }
 }

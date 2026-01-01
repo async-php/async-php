@@ -10,13 +10,11 @@ use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite};
 use futures::future::LocalBoxFuture;
 use futures::{FutureExt, Future};
 use pin_project::{pin_project, pinned_drop};
-use crate::channel::AsyncChannel;
-use crate::util::Shared;
-
 // Re-export types from parent module
 use super::php_bridge::{PhpIoBridge, PhpIoCallFuture, php_io_call_future};
 use super::traits::{AsyncReadSeek, AsyncReadWrite, AsyncReadWriteSeek, AsyncWriteSeek};
 use super::cast::cast_io;
+use crate::util::Shared;
 
 // ==================== Helper Functions ====================
 
@@ -214,9 +212,9 @@ struct PhpIo<Op: IoOperation> {
 }
 
 impl<Op: IoOperation> PhpIo<Op> {
-    fn new(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
+    fn new(handler: Zval) -> Self {
         Self {
-            bridge: PhpIoBridge::new(request_channel, response_channel),
+            bridge: PhpIoBridge::new(handler),
             pending: None,
             state: Op::init_state(),
         }
@@ -976,8 +974,8 @@ unsafe impl Sync for PhpReader {}
 #[php_impl]
 impl PhpReader {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1009,8 +1007,8 @@ unsafe impl Sync for PhpWriter {}
 #[php_impl]
 impl PhpWriter {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1046,8 +1044,8 @@ unsafe impl Sync for PhpSeeker {}
 #[php_impl]
 impl PhpSeeker {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1079,8 +1077,8 @@ unsafe impl Sync for PhpBufReader {}
 #[php_impl]
 impl PhpBufReader {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1122,8 +1120,8 @@ unsafe impl Sync for PhpReadWriter {}
 #[php_impl]
 impl PhpReadWriter {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1169,8 +1167,8 @@ unsafe impl Sync for PhpReadSeeker {}
 #[php_impl]
 impl PhpReadSeeker {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1212,8 +1210,8 @@ unsafe impl Sync for PhpWriteSeeker {}
 #[php_impl]
 impl PhpWriteSeeker {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]
@@ -1259,8 +1257,8 @@ unsafe impl Sync for PhpReadWriteSeeker {}
 #[php_impl]
 impl PhpReadWriteSeeker {
     #[php(constructor)]
-    pub fn __construct(request_channel: &AsyncChannel, response_channel: &AsyncChannel) -> Self {
-        Self(PhpIo::new(request_channel, response_channel))
+    pub fn __construct(handler: &Zval) -> Self {
+        Self(PhpIo::new(handler.shallow_clone()))
     }
 
     #[php]

@@ -29,7 +29,7 @@ class Kernel
         }
 
         $fiber = new \Fiber($main);
-        \Async\Kernel\Runtime::block_on($fiber);
+        \Async\Kernel\Runtime::run($fiber);
     }
 
     public static function spawn(callable $task): int
