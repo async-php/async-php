@@ -19,7 +19,4 @@ pub use traits::{AsyncReadSeek, AsyncReadWrite, AsyncReadWriteSeek};
 pub use wrappers::{AsyncReader, AsyncSeeker, AsyncWriter};
 pub use combined::{AsyncBufReader, AsyncReadSeeker, AsyncReadWriter, AsyncReadWriteSeeker, AsyncWriteSeeker};
 pub use cast::cast_io;
-pub use php_io::{
-    PhpBufReader, PhpReadSeeker, PhpReadWriteSeeker, PhpReadWriter, PhpReader, PhpSeeker,
-    PhpWriteSeeker, PhpWriter,
-};
+pub use php_io::PhpIo;

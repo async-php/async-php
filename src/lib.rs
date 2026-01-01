@@ -51,10 +51,7 @@ use logger::AsyncLogger;
 use runtime::context::AsyncContext;
 
 // Export PHP IO bridge types for external use
-pub use io::{
-    PhpReader, PhpWriter, PhpSeeker, PhpBufReader,
-    PhpReadWriter, PhpReadSeeker, PhpWriteSeeker, PhpReadWriteSeeker,
-};
+pub use io::PhpIo;
 
 #[php_module]
 pub fn module(module: ModuleBuilder) -> ModuleBuilder {
@@ -103,14 +100,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<AsyncReadWriteSeeker>()
         .class::<BytesReader>() // In-memory IO
         .class::<BytesWriter>()
-        .class::<PhpReader>() // PHP IO bridges
-        .class::<PhpWriter>()
-        .class::<PhpSeeker>()
-        .class::<PhpBufReader>()
-        .class::<PhpReadWriter>() // Combined PHP IO bridges
-        .class::<PhpReadSeeker>()
-        .class::<PhpWriteSeeker>()
-        .class::<PhpReadWriteSeeker>()
+        .class::<PhpIo>() // PHP IO bridge
         .class::<runtime::AsyncRuntime>()
         .constant(wrap_constant!(IO_READ))
         .constant(wrap_constant!(IO_WRITE))
